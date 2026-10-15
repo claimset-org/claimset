@@ -26,7 +26,8 @@ INIT_ID = "INIT"
 
 #: Event types whose bodies this version of the tool can write and fully check.
 IMPLEMENTED = {"init", "actor", "question", "hypothesis", "status", "assumption",
-               "decision", "check", "artefact", "note"}
+               "decision", "check", "artefact", "note", "plan", "approval", "run", "result",
+               "deviation"}
 
 ENUM = {
     "actor_kind": {"agent", "human", "organisation"},
@@ -41,6 +42,9 @@ ENUM = {
     "artefact_kind": {"code", "data", "protocol", "proof", "model", "software", "figure", "table",
                       "prompt", "trace", "manuscript", "other"},
     "withheld_reason": {"personal_data", "commercial", "legal", "ethics", "security", "other"},
+    "plan_kind": {"confirmatory", "exploratory"},
+    "run_label": {"confirmatory", "exploratory"},
+    "exit_status": {"success", "failed", "crashed", "cancelled"},
 }
 
 HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -337,10 +341,78 @@ def check_note(state, body, by, eid):
     _refs(state, body.get("refers_to"), "note", "refers_to")
 
 
+def check_plan(state, body, by, eid):
+    kind = _enum(body, "kind", "plan_kind", "plan")
+    _req(body, "design", "plan")
+    _req(body, "analysis", "plan")
+    hyps = body.get("hypotheses") or []
+    _refs(state, hyps, "plan", "hypotheses", {"hypothesis"})
+    if kind == "confirmatory":
+        if not hyps:
+            raise LabError("schema", "plan: a confirmatory plan names the hypotheses it tests")
+        _req(body, "criterion", "plan")
+    for d in body.get("data") or []:
+        if not isinstance(d, dict) or not d.get("description"):
+            raise LabError("schema", "plan: each data entry needs a description")
+        if d.get("hash") and not HASH_RE.match(str(d["hash"])):
+            raise LabError("schema", "plan: data hash must be sha256: followed by 64 hex digits")
+
+
+def check_approval(state, body, by, eid):
+    _ref(state, _req(body, "target", "approval"), "approval", "target")
+    actor = state.latest(by)
+    if actor is None or is_withheld(actor) or actor["body"].get("kind") != "human":
+        raise LabError("schema", "approval: approvals are made by a human actor")
+
+
+def check_run(state, body, by, eid):
+    label = _enum(body, "label", "run_label", "run")
+    _enum(body, "exit_status", "exit_status", "run")
+    cmd = body.get("command")
+    if not isinstance(cmd, list) or not cmd or not all(isinstance(c, str) for c in cmd):
+        raise LabError("schema", "run: command must be a non-empty list of strings")
+    for f in ("outputs", "data"):
+        for o in body.get(f) or []:
+            if not isinstance(o, dict) or not o.get("path") or not HASH_RE.match(str(o.get("hash", ""))):
+                raise LabError("schema", f"run: each {f} entry needs a path and a sha256 hash")
+    plan_id = body.get("plan")
+    if plan_id is not None:
+        _ref(state, plan_id, "run", "plan", {"plan"})
+    if label == "confirmatory":
+        if plan_id is None:
+            raise LabError("L5", "run: a confirmatory run names the confirmatory plan it carries out")
+        plan = state.latest(plan_id)
+        if is_withheld(plan) or plan["body"].get("kind") != "confirmatory":
+            raise LabError("L5", f"run: {plan_id} is not a confirmatory plan, so the run is exploratory")
+
+
+def check_result(state, body, by, eid):
+    run_id = _ref(state, _req(body, "run", "result"), "result", "run", {"run"})
+    _req(body, "quantity", "result")
+    v = body.get("value")
+    if not isinstance(v, (int, float)) or isinstance(v, bool):
+        raise LabError("schema", "result: value must be a number")
+    src = _req(body, "source", "result")
+    run = state.get(run_id)
+    if not is_withheld(run) and src not in {o.get("path") for o in run["body"].get("outputs") or []}:
+        raise LabError("L4", f"result: source '{src}' is not an output of {run_id}")
+
+
+def check_deviation(state, body, by, eid):
+    _ref(state, _req(body, "plan", "deviation"), "deviation", "plan", {"plan"})
+    _ref(state, _req(body, "run", "deviation"), "deviation", "run", {"run"})
+    _req(body, "text", "deviation")
+    reason = body.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        raise LabError("L7", "deviation: a reason is required")
+
+
 BODY_CHECKS = {
     "init": check_init, "actor": check_actor, "question": check_question,
     "hypothesis": check_hypothesis, "status": check_status, "assumption": check_assumption,
     "decision": check_decision, "check": check_check, "artefact": check_artefact, "note": check_note,
+    "plan": check_plan, "approval": check_approval, "run": check_run, "result": check_result,
+    "deviation": check_deviation,
 }
 
 
@@ -520,10 +592,40 @@ def verify_events(events):
             "unchecked_types": sorted(unchecked), "errors": errors}
 
 
-def verify(lab):
+def verify_run_files(lab, events):
+    """Rule L13: each run directory holds exactly the files recorded in the run's outputs."""
+    errors = []
+    for e in events:
+        if e.get("type") != "run" or is_withheld(e):
+            continue
+        rdir = lab.root / "runs" / e["id"]
+        recorded = {o["path"]: o["hash"] for o in e["body"].get("outputs") or []}
+        if not rdir.is_dir():
+            if recorded:
+                errors.append({"seq": e["seq"], "id": e["id"], "rule": "L13",
+                               "message": f"run directory {rdir} is missing"})
+            continue
+        present = {str(p.relative_to(rdir)).replace(os.sep, "/") for p in rdir.rglob("*") if p.is_file()}
+        for path, h in recorded.items():
+            if path not in present:
+                errors.append({"seq": e["seq"], "id": e["id"], "rule": "L13", "message": f"output {path} is missing"})
+            elif file_hash(rdir / path) != h:
+                errors.append({"seq": e["seq"], "id": e["id"], "rule": "L13",
+                               "message": f"output {path} was changed after the run"})
+        for path in sorted(present - set(recorded)):
+            errors.append({"seq": e["seq"], "id": e["id"], "rule": "L13",
+                           "message": f"file {path} was added to the run directory after the run"})
+    return errors
+
+
+def verify(lab, check_files=True):
     try:
         events = lab.read()
     except LabError as exc:
         return {"ok": False, "events": 0, "withheld": 0, "unchecked_types": [],
                 "errors": [{"seq": None, "id": None, "rule": exc.rule, "message": exc.message}]}
-    return verify_events(events)
+    rep = verify_events(events)
+    if check_files:
+        rep["errors"] += verify_run_files(lab, events)
+        rep["ok"] = not rep["errors"]
+    return rep

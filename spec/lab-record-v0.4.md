@@ -1,8 +1,15 @@
-# Claimset Lab Record — Specification v0.3 (draft)
+# Claimset Lab Record — Specification v0.4 (draft)
 
-Status: working draft · Date: 2026-10-15 · Supersedes v0.2 · Companion to the claimset specification (`spec/claimset-v0.11.md`)
+Status: working draft · Date: 2026-10-15 · Supersedes v0.3 · Companion to the claimset specification (`spec/claimset-v0.11.md`)
 
-## Changes since v0.2
+## Changes since v0.3
+
+- Exact bodies for `plan`, `approval`, `run`, `result` and `deviation` (§5.7–5.10, §5.12).
+- How the tool runs a command, captures its output and reads results (§5.9.1); the results file format (§5.10.1).
+- Approvals are made by humans (§5.8).
+- Rules L4 and L5 stated precisely; new rule L13 (run outputs) (§6).
+
+## Changes in v0.3 (since v0.2)
 
 Clarifications needed to implement the reference tool. No change to the meaning of v0.2 records.
 
@@ -163,35 +170,62 @@ A revised hypothesis is a new `H` event; the old one gets a `status` event with 
 
 `{kind, hypotheses, design, analysis, criterion, data}`
 
-- `kind`: `confirmatory` or `exploratory`.
-- `hypotheses`: hypothesis IDs the plan tests (required for `confirmatory`).
-- `design`: what will be run, on what, with which settings.
-- `analysis`: what will be computed from the outputs.
-- `criterion`: for `confirmatory`, how the outcome will be judged (e.g. "supported if the KL divergence is below 0.01 in every cell").
-- `data`: description and content hashes of the data, if it exists.
+- `kind`: `confirmatory` or `exploratory`. Required.
+- `hypotheses`: hypothesis IDs the plan tests. Required (at least one) for `confirmatory`.
+- `design`: what will be run, on what, with which settings. Required.
+- `analysis`: what will be computed from the outputs. Required.
+- `criterion`: how the outcome will be judged (e.g. "supported if the KL divergence is below 0.01 in every cell"). Required for `confirmatory`.
+- `data`: optional list of `{description, hash}` for data that exists when the plan is written.
 
 Plans are immutable. A changed plan is a new plan that supersedes the old one; runs already made under the old plan keep pointing at it.
 
 ### 5.8 `approval` (prefix `AP`)
 
-`{target, comment}`: a human approves a plan (or another event) before it is acted on. Optional; lets a supervisor sign off confirmatory plans.
+`{target, comment}`: a human approves a plan (or another event) before it is acted on. The `by` of an approval is an actor of kind `human`. Optional; lets a supervisor sign off confirmatory plans.
 
 ### 5.9 `run` (prefix `RN`), written by the tool
 
-`{plan, label, command, code_version, dirty, parameters, seeds, data_hashes, environment, started_at, ended_at, exit_status, outputs}`
+`{plan, label, command, code_version, dirty, parameters, seeds, data, environment, started_at, ended_at, exit_status, exit_code, outputs}`
 
 - `plan`: plan ID or `null`.
 - `label`: `confirmatory` (only if rule L5 holds) or `exploratory`.
-- `code_version`: commit hash; `dirty`: true if the working tree had uncommitted changes.
-- `environment`: `{software, hardware}`.
-- `exit_status`: `success` · `failed` · `crashed` · `cancelled`.
-- `outputs`: list of `{path, hash}` for every file the run wrote under `runs/<run id>/`.
+- `command`: the command as a list of arguments.
+- `code_version`: commit hash of the working directory's repository, or `null` if it is not a git repository; `dirty`: true if it had uncommitted changes outside the lab directory.
+- `parameters`: optional object of named settings given to the tool; `seeds`: optional list of random seeds given to the tool.
+- `data`: list of `{path, hash}` for input files declared to the tool.
+- `environment`: `{software: {python, platform}, hardware: {machine, cpus}}`, as recorded by the tool.
+- `started_at`, `ended_at`: UTC times as in `at`.
+- `exit_status`: `success` (exit code 0) · `failed` (non-zero exit code) · `crashed` (killed by a signal, or the command could not be started) · `cancelled` (interrupted by the user).
+- `exit_code`: the process's exit code, or `null`.
+- `outputs`: list of `{path, hash}` for every file in the run's directory after the run, with paths relative to that directory.
+
+#### 5.9.1 How the tool runs a command
+
+1. It checks rule L5 before starting. A run is confirmatory only when it names a confirmatory plan; otherwise, or when asked, it is exploratory.
+2. It creates a pending run directory under `runs/` and starts the command with two environment variables: `CLAIMSET_RUN_DIR` (the directory, for any output files) and `CLAIMSET_RESULTS` (the path of `results.json` inside it).
+3. It writes the command's standard output and standard error to `stdout.txt` and `stderr.txt` in that directory, and shows them as the command runs.
+4. When the command ends, however it ends, it hashes every file in the directory, writes the `run` event, and renames the directory to `runs/<run id>/`.
+5. If `results.json` exists, it writes one `result` event per entry (§5.10.1).
+6. It exits with the command's exit code.
 
 ### 5.10 `result` (prefix `RS`), written by the tool
 
 `{run, quantity, value, unit, interval, conditions, source}`
 
-Same fields as claimset results (`quantity`, `value`, `unit`, `interval`, `conditions`), plus `run` and `source` (the output file the value was read from, whose hash is in the run's `outputs`). Scripts report results by writing them to the file named in the environment variable `CLAIMSET_RESULTS`; the tool reads that file after the run and writes one result event per entry.
+Same fields as claimset results (`quantity`, `value`, `unit`, `interval`, `conditions`), plus `run` and `source`: the output file the value was read from, whose path is in the run's `outputs`.
+
+#### 5.10.1 Results file
+
+A script reports results by writing a JSON array to the file named by `CLAIMSET_RESULTS`:
+
+```json
+[{"quantity": "largest KL divergence per observation, mixture vs exact", "value": 0.00115,
+  "conditions": {"distribution": "Gamma", "form": "conventional"}},
+ {"quantity": "share of failed fits", "value": 0.18, "unit": "proportion",
+  "interval": {"level": 0.95, "lower": 0.15, "upper": 0.21}}]
+```
+
+Each entry needs `quantity` (text) and `value` (a number); `unit`, `interval` and `conditions` are optional. Values are written exactly as computed. An entry that is not valid produces no event and is reported by the tool.
 
 ### 5.11 `decision` (prefix `DC`)
 
@@ -199,7 +233,7 @@ Same fields as claimset results (`quantity`, `value`, `unit`, `interval`, `condi
 
 ### 5.12 `deviation` (prefix `DV`)
 
-`{plan, run, text, reason}`: a run that departed from its plan, and why.
+`{plan, run, text, reason}`: a run that departed from its plan, and why. `plan` and `run` are required, `text` says what differed, and `reason` (required) says why.
 
 ### 5.13 `check` (prefix `CK`)
 
@@ -222,8 +256,8 @@ Same fields as claimset results (`quantity`, `value`, `unit`, `interval`, `condi
 L1. No line of `lab.jsonl` is modified or removed after it is written.
 L2. `seq` increases by exactly 1; every `prev` matches the previous header; every `content_hash` matches its body (or its withheld body, §8).
 L3. Every executed command started through the tool produces a `run` event, whatever its exit status.
-L4. `result` events are written only by the tool, from a file listed in the run's `outputs`.
-L5. A run is labelled `confirmatory` only if it names a `confirmatory` plan, that plan was written earlier (lower `seq`) and, when anchoring is in use, anchored before the run started (§7). Otherwise it is `exploratory`.
+L4. `result` events are written only by the tool. A result names an earlier `run`, and its `source` is a path listed in that run's `outputs`.
+L5. A run is labelled `confirmatory` only if it names a `confirmatory` plan, that plan was written earlier (lower `seq`) and, when anchoring is in use, anchored before the run started (§7). Otherwise it is `exploratory`. A run labelled `exploratory` may name any plan or none.
 L6. A `status` event moving a hypothesis to `supported` must not list as evidence any event in that hypothesis's `prompted_by`, nor results of runs listed there.
 L7. Every `status`, `decision` and `deviation` has a rationale or reason; every `revised` status names `revised_to`.
 L8. Every `by` names an `actor` event with a lower `seq`.
@@ -231,8 +265,9 @@ L9. A `check` is not made by the actor who wrote its target.
 L10. Agent logs follow L1–L9 on their own; merged events keep their IDs and record their `origin`; an agent log is not merged twice.
 L11. A `supersedes` reference names an earlier event of the same type that has not already been superseded.
 L12. Every `id` has the prefix of its `type` and is unique in the log; every reference in a body names an event with a lower `seq`.
+L13. The files of a run directory match the hashes in the run's `outputs`. Run directories are never changed after the run.
 
-The tool enforces L1–L5 and L8–L12 mechanically, and refuses L6 and L7 violations.
+The tool enforces L1–L5 and L8–L13 mechanically, and refuses L6 and L7 violations.
 
 ## 7. Timestamp anchoring
 
@@ -293,7 +328,7 @@ The reference tool is part of the `claimset` package. Indicative commands:
 | `claimset lab status H3 supported --evidence RS12 RS13 --why "…"` | status change, with L6 and L7 checked |
 | `claimset lab plan` | writes a plan and anchors it |
 | `claimset lab approve PL2` | human approval |
-| `claimset lab run [--plan PL2] -- <command>` | runs the command, records `run` and `result` events |
+| `claimset lab run [--plan PL2] [--exploratory] [--param k=v] [--seed N] [--data FILE] -- <command>` | runs the command, records `run` and `result` events (§5.9.1) |
 | `claimset lab decide` / `deviate` / `check` / `artefact` | writes the corresponding event |
 | `claimset lab summary` | current state: open questions, hypotheses by status, pending plans, recent decisions |
 | `claimset lab show H3` | one event, with corrections resolved |

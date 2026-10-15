@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .core import Lab, LabError, file_hash, verify
 from . import summary as _summary
+from .run import run_command
 
 
 def _lab(args):
@@ -115,6 +116,56 @@ def cmd_artefact(args):
                                      "licence": args.licence, "description": args.description})
 
 
+def cmd_plan(args):
+    data = [{"description": d, "hash": file_hash(d)} if Path(d).is_file() else {"description": d}
+            for d in args.data]
+    return _write(args, "plan", {"kind": args.kind, "hypotheses": args.hypotheses, "design": args.design,
+                                 "analysis": args.analysis, "criterion": args.criterion, "data": data})
+
+
+def cmd_approve(args):
+    return _write(args, "approval", {"target": args.target, "comment": args.comment})
+
+
+def cmd_deviate(args):
+    return _write(args, "deviation", {"plan": args.plan, "run": args.run, "text": args.text,
+                                      "reason": args.reason})
+
+
+def _parse_param(p):
+    if "=" not in p:
+        raise LabError("schema", f"--param '{p}': use name=value")
+    k, v = p.split("=", 1)
+    try:
+        v = json.loads(v)
+    except json.JSONDecodeError:
+        pass
+    return k, v
+
+
+def cmd_run(args):
+    argv = list(args.command)
+    if argv and argv[0] == "--":
+        argv = argv[1:]
+    lab = _lab(args)
+    out = run_command(lab, _actor(args), argv, plan=args.plan, exploratory=args.exploratory,
+                      parameters=dict(_parse_param(p) for p in args.param) or None,
+                      seeds=args.seed or None, data=args.data or None)
+    run = out["run"]
+    if args.json:
+        print(json.dumps({"run": run, "results": out["results"], "problems": out["problems"]},
+                         ensure_ascii=False, indent=2))
+    msg = (f"claimset: recorded {run['id']} ({run['body']['label']}, {run['body']['exit_status']}, "
+           f"exit code {out['exit_code']})")
+    if out["results"]:
+        msg += "; results " + " ".join(r["id"] for r in out["results"])
+    print(msg, file=sys.stderr)
+    for p in out["problems"]:
+        print(f"claimset: results.json {p}", file=sys.stderr)
+    code = out["exit_code"]
+    return 1 if code is None else (code if code >= 0 else 1)
+
+
 def cmd_show(args):
     st = _lab(args).state()
     e = st.get(args.id)
@@ -147,7 +198,7 @@ def cmd_list(args):
 
 
 def cmd_verify(args):
-    rep = verify(_lab(args))
+    rep = verify(_lab(args), check_files=not args.no_files)
     if args.json:
         print(json.dumps(rep, indent=2))
     else:
@@ -251,6 +302,36 @@ def add_parser(subparsers):
     p.add_argument("--licence")
     p.add_argument("--hash")
 
+    p = cmd("plan", cmd_plan, "record a plan before running it")
+    p.add_argument("--kind", required=True, choices=["confirmatory", "exploratory"])
+    p.add_argument("--hypotheses", nargs="+", default=[], metavar="ID",
+                   help="hypotheses the plan tests (required for confirmatory)")
+    p.add_argument("--design", required=True, help="what will be run, on what, with which settings")
+    p.add_argument("--analysis", required=True, help="what will be computed from the outputs")
+    p.add_argument("--criterion", help="how the outcome will be judged (required for confirmatory)")
+    p.add_argument("--data", action="append", default=[], metavar="FILE",
+                   help="data file the plan uses (hashed); repeat for several")
+
+    p = cmd("approve", cmd_approve, "approve a plan or other event (human actors only)")
+    p.add_argument("target")
+    p.add_argument("--comment")
+
+    p = cmd("run", cmd_run, "run a command and record its run and results",
+            parents=(common,))
+    p.add_argument("--by", help="actor ID of the writer (default: $CLAIMSET_ACTOR)")
+    p.add_argument("--plan", metavar="ID", help="plan this run carries out")
+    p.add_argument("--exploratory", action="store_true", help="label the run exploratory even under a plan")
+    p.add_argument("--param", action="append", default=[], metavar="NAME=VALUE")
+    p.add_argument("--seed", action="append", type=int, default=[])
+    p.add_argument("--data", action="append", default=[], metavar="FILE", help="input file (hashed)")
+    p.add_argument("command", nargs=argparse.REMAINDER, help="-- command and arguments")
+
+    p = cmd("deviate", cmd_deviate, "record that a run departed from its plan")
+    p.add_argument("--plan", required=True)
+    p.add_argument("--run", required=True)
+    p.add_argument("--text", required=True, help="what differed")
+    p.add_argument("--reason", required=True, help="why")
+
     p = cmd("show", cmd_show, "show one event, with corrections resolved", parents=(common,))
     p.add_argument("id")
 
@@ -258,7 +339,8 @@ def add_parser(subparsers):
     p.add_argument("--type")
     p.add_argument("--last", type=int)
 
-    cmd("verify", cmd_verify, "check the hash chain and the rules", parents=(common,))
+    p = cmd("verify", cmd_verify, "check the hash chain, the rules and the run files", parents=(common,))
+    p.add_argument("--no-files", action="store_true", help="skip checking run directories against their hashes")
     cmd("summary", cmd_summary, "current state of the research", parents=(common,))
 
     def lab_help(args):
