@@ -6,3 +6,7 @@
 - Every validator rule needs a test: a valid case that passes and a broken case that fails with that rule's number.
 - Run `python3 -m unittest discover -s tests` before committing.
 - Specification text is written for LLM readers as much as for humans: plain, explicit, one meaning per term.
+
+## Pull requests
+
+- Keep the description short: a bulleted list of what was done, each item one or two sentences. No other sections (no "Try it", "Next steps", background or test logs).
