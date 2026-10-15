@@ -9,6 +9,7 @@ import threading
 import uuid
 from pathlib import Path
 
+from .anchor import anchoring, ensure_covered
 from .core import LabError, file_hash, is_withheld
 
 RESULTS_FILE = "results.json"
@@ -104,6 +105,12 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
         latest = st.latest(plan)
         if not exploratory and not is_withheld(latest) and latest["body"].get("kind") == "confirmatory":
             label = "confirmatory"
+    if label == "confirmatory" and anchoring(lab):
+        try:
+            ensure_covered(lab, st.latest(plan)["seq"])
+        except LabError as exc:
+            raise LabError("L5", f"run: plan {plan} could not be anchored before the run ({exc.message}); "
+                                 f"fix anchoring or run with --exploratory") from None
     data_entries = []
     for d in data or []:
         if not Path(d).is_file():

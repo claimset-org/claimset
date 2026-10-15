@@ -1,4 +1,4 @@
-"""Tests for the lab record core (lab record spec v0.3)."""
+"""Tests for the lab record core (lab record spec v0.4)."""
 
 import contextlib
 import io
