@@ -1,8 +1,19 @@
-# Claimset Lab Record — Specification v0.2 (draft)
+# Claimset Lab Record — Specification v0.3 (draft)
 
-Status: working draft · Date: 2026-10-15 · Supersedes v0.1 · Companion to the claimset specification (`spec/claimset-v0.11.md`)
+Status: working draft · Date: 2026-10-15 · Supersedes v0.2 · Companion to the claimset specification (`spec/claimset-v0.11.md`)
 
-## Changes since v0.1
+## Changes since v0.2
+
+Clarifications needed to implement the reference tool. No change to the meaning of v0.2 records.
+
+- Canonical JSON, hash format and header hash defined exactly (§4.1).
+- `by` of the `init` event is `null`; an `actor` event may name its own ID in `by` (self-registration) (§4.2).
+- Event numbering within each prefix (§4.2).
+- Corrections: what `supersedes` means and how references to a corrected event resolve (§4.3).
+- Writers take a lock on the log (§4.4).
+- New rules L11 (corrections) and L12 (event IDs). New informative commands `show` and `list` (§10).
+
+## Changes in v0.2 (since v0.1)
 
 - Several agents working at once each write their own log, merged into the main log when they finish (§3.1). Event IDs from agent logs carry the actor prefix (`AC2.RN4`); headers gain `origin`.
 
@@ -82,11 +93,34 @@ Each event has a **header**, written by the tool, and a **body**, specific to th
 
 The headers form a hash chain. Because each header commits to its body only through `content_hash`, a body can be withheld at publication (§8) without breaking the chain: a reader can still verify the order, timing and integrity of every event.
 
+### 4.1 Canonical JSON and hashes
+
+- **Canonical JSON** of a value is its JSON serialisation with object keys sorted, no whitespace outside strings (separators `,` and `:`), non-ASCII characters written as UTF-8 rather than escaped, encoded as UTF-8 bytes. (In Python: `json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")`.)
+- Every hash is written `sha256:` followed by 64 lowercase hexadecimal digits.
+- `content_hash` is the SHA-256 of the canonical JSON of `body`.
+- The **header hash** of an event is the SHA-256 of the canonical JSON of an object holding all header fields: `seq`, `id`, `type`, `at`, `by`, `prev`, `content_hash`, `supersedes`, `origin`. The `prev` of the next event is this value.
+- For `seq` 1, `prev` is the SHA-256 of the empty byte string.
+
+### 4.2 Actors and IDs
+
+- `by` is an actor ID. Two exceptions: the `init` event has `by: null`, and an `actor` event may name its own ID (an actor registering itself).
+- An event ID is its type prefix (§5) followed by a positive integer: `H1`, `H2`, `RN17`. Within each prefix, numbers are allocated in order: the next number is one more than the highest used so far in the log. Events from agent logs carry the actor prefix (`AC2.H1`, §3.1).
+
+### 4.3 Corrections
+
+Events are never edited. To correct one, write a new event of the **same type** whose header names the old one in `supersedes`. The new event has its own ID and a complete new body. An event can be superseded at most once, so corrections form a chain.
+
+The first event of a chain is the **root**. Other events keep referring to the root's ID (or any ID in the chain), and every reference resolves to the latest event of the chain. Status changes, checks and evidence that point at a hypothesis therefore still apply after its statement is corrected. A correction is for errors in what was recorded (a typo, a wrong reference); a change of mind about a hypothesis is a `status` event with `to: revised` and a new hypothesis.
+
+### 4.4 Writing
+
+Only the tool writes the log. A writer takes an exclusive lock, the file `lab/.lock` created atomically, appends one complete line and releases the lock. A lock older than 60 seconds is treated as stale. Several agents working at the same time write separate logs (§3.1) rather than contending for one lock.
+
 ## 5. Event types
 
-### 5.1 `init` (one per lab, `seq` 1)
+### 5.1 `init` (one per lab, `seq` 1, ID `INIT`)
 
-`{lab_spec_version, working_title, repository, started_at}`
+`{lab_spec_version, working_title, repository, started_at}`. Its `by` is `null`.
 
 ### 5.2 `actor` (prefix `AC`)
 
@@ -195,8 +229,10 @@ L7. Every `status`, `decision` and `deviation` has a rationale or reason; every 
 L8. Every `by` names an `actor` event with a lower `seq`.
 L9. A `check` is not made by the actor who wrote its target.
 L10. Agent logs follow L1–L9 on their own; merged events keep their IDs and record their `origin`; an agent log is not merged twice.
+L11. A `supersedes` reference names an earlier event of the same type that has not already been superseded.
+L12. Every `id` has the prefix of its `type` and is unique in the log; every reference in a body names an event with a lower `seq`.
 
-The tool enforces L1–L5 and L8–L10 mechanically, and refuses L6 and L7 violations.
+The tool enforces L1–L5 and L8–L12 mechanically, and refuses L6 and L7 violations.
 
 ## 7. Timestamp anchoring
 
@@ -260,6 +296,9 @@ The reference tool is part of the `claimset` package. Indicative commands:
 | `claimset lab run [--plan PL2] -- <command>` | runs the command, records `run` and `result` events |
 | `claimset lab decide` / `deviate` / `check` / `artefact` | writes the corresponding event |
 | `claimset lab summary` | current state: open questions, hypotheses by status, pending plans, recent decisions |
+| `claimset lab show H3` | one event, with corrections resolved |
+| `claimset lab list [--type hypothesis] [--last 20]` | events in order, one line each |
+| any writing command `--supersedes ID` | writes a correction of `ID` (§4.3) |
 | `claimset lab merge [AC2 AC3]` | merges finished agent logs into the main log (§3.1) |
 | `claimset lab verify` | checks the main and agent chains and rules L1–L10 |
 | `claimset lab anchor` | anchors the head of the chain |

@@ -6,4 +6,4 @@ __version__ = "0.1.0.dev0"
 SPEC_VERSION = "0.11"
 
 #: Version of the lab record specification this package implements.
-LAB_SPEC_VERSION = "0.2"
+LAB_SPEC_VERSION = "0.3"

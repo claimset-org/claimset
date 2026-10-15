@@ -6,6 +6,7 @@ import sys
 
 from . import LAB_SPEC_VERSION, SPEC_VERSION, __version__
 from . import validate as _validate
+from .lab import cli as _lab_cli
 
 
 def _cmd_validate(args):
@@ -38,6 +39,8 @@ def build_parser():
                    help="check a published file instead of a submission")
     v.add_argument("--json", action="store_true", help="machine-readable report")
     v.set_defaults(func=_cmd_validate)
+
+    _lab_cli.add_parser(sub)
     return p
 
 
@@ -47,7 +50,7 @@ def main(argv=None):
     if not getattr(args, "func", None):
         parser.print_help()
         return 2
-    return args.func(args)
+    return _lab_cli.run(args.func, args)
 
 
 if __name__ == "__main__":

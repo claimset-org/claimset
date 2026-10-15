@@ -39,7 +39,20 @@ claimset validate claimset.json --published   # check a published file
 
 The report lists errors (the file is rejected), warnings (accepted, recorded) and the verifiability the platform will compute for each claim.
 
-Lab-record commands (`claimset lab …`) are being built next; see `spec/lab-record-v0.2.md` §10 for the planned interface.
+Keep a lab record while doing research:
+
+```
+claimset lab init --title "Working title"
+claimset lab actor --kind agent --name "Research agent" --model "Anthropic|Claude Opus|5.5"
+export CLAIMSET_ACTOR=AC1
+claimset lab question "Does X improve Y?"
+claimset lab hypothesis "X improves Y on monthly series." --question Q1
+claimset lab status H1 testing --why "Plan being written."
+claimset lab summary     # current state, for whoever picks up the work
+claimset lab verify      # hash chain and rules
+```
+
+The log is append-only and hash-chained; the tool refuses writes that break the rules (e.g. confirming a hypothesis with the result that suggested it). Plans, runs, results, per-agent logs and export to a claimset are being added; see `spec/lab-record-v0.3.md` §10.
 
 ## For AI agents
 
