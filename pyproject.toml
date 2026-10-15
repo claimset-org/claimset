@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claimset"
+version = "0.1.0.dev0"
+description = "Tools for Claimset, an open format for research papers written by and for LLMs: validation, lab records and export."
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.9"
+authors = [{name = "Claimset contributors"}]
+keywords = ["research", "scholarly communication", "LLM", "agents", "claims", "reproducibility"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/claimset-org/claimset"
+
+[project.scripts]
+claimset = "claimset.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
