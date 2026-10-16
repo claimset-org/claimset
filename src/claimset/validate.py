@@ -22,7 +22,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.14"
+SCHEMA_VERSION = "0.15"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -79,7 +79,7 @@ ENUM = {
     "weights": {"open", "api_only"},
     "support_kind": {"empirical_quant", "empirical_qual", "simulation", "demonstration", "formal_proof",
                      "argument", "cited", "consensus", "expert_judgement", "assumption", "unstated"},
-    "id_type": {"doi", "arxiv", "handle", "pmid", "isbn", "url", "physical"},
+    "id_type": {"doi", "arxiv", "handle", "pmid", "isbn", "url", "physical", "reference"},
     "rel_id_type": {"claimset", "doi", "arxiv", "handle", "pmid", "isbn", "url", "physical"},
     "by": {"author", "converter", "reviewer"},
     "reviewer_type": {"ai", "human"},
@@ -247,12 +247,41 @@ def validate(doc, published=False):
         if c.get("role") == "principal" and cid not in contributions:
             r.err("5", f"claims:{cid}", "principal claim missing from paper.contributions")
 
+    # ---------- Corrections in the conversion record (rule 49) ----------
+    corrections = as_dict(paper.get("converted_from")).get("corrections")
+    if corrections is not None:
+        cw = "paper.converted_from.corrections"
+        if not converted:
+            r.err("49", cw, "corrections appear only in converted papers")
+        elif not isinstance(corrections, list):
+            r.err("49", cw, "must be a list")
+        else:
+            for i, corr in enumerate(corrections):
+                w = f"{cw}[{i}]"
+                if not isinstance(corr, dict):
+                    r.err("49", w, "must be an object")
+                    continue
+                for f in ("field", "where", "printed", "recorded", "reason"):
+                    if not isinstance(corr.get(f), str) or not corr[f].strip():
+                        r.err("49", w, f"missing {f}")
+                fld = corr.get("field")
+                if isinstance(fld, str) and fld.split(".")[0] not in ids:
+                    r.err("49", f"{w}.field", f"'{fld}' does not begin with the ID of an object in the file")
+
     # ---------- Definitions ----------
     for d in coll["definitions"]:
         if isinstance(d, dict):
             for f in ("term", "definition"):
                 if not d.get(f):
                     r.err("1", f"definitions:{d.get('id')}", f"missing {f}")
+            if "source" in d:
+                src = d["source"]
+                ok = (isinstance(src, str) and src.strip()) or (
+                    isinstance(src, dict) and isinstance(src.get("target"), str) and src["target"].strip()
+                    and src.get("id_type") in ENUM["id_type"])
+                if not ok:
+                    r.err("50", f"definitions:{d.get('id')}.source",
+                          "must be a non-empty string or {target, id_type} with id_type from the list for cited support")
 
     # ---------- Artefacts ----------
     for a in coll["artefacts"]:
@@ -778,6 +807,8 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
             check_enum(r, "10", f"{sw}.id_type", s.get("id_type"), "id_type", required=True)
             if s.get("id_type") == "url" and not s.get("archive_uri"):
                 r.err("10", sw, "url citations require archive_uri")
+            if s.get("id_type") == "reference" and not converted:
+                r.warn("W14", f"{sw}.id_type", "a printed reference without identifier: give the cited work's identifier (doi, arxiv, …)")
             if "self" in s and not isinstance(s.get("self"), bool):
                 r.err("10", f"{sw}.self", "must be true or false")
         elif k == "expert_judgement":

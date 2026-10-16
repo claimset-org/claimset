@@ -597,5 +597,54 @@ class TestRulesV014(Base):
         self.assertRule(self.d, "1")
 
 
+class TestRulesV015(Base):
+    def setUp(self):
+        self.d = load("submission-native.json")
+
+    def cite(self, d, id_type, target):
+        claim(d, "C1")["support"] = [{"kind": "cited", "target": target, "id_type": id_type}]
+
+    def test_reference_citation_in_converted_paper(self):
+        d = converted_base()
+        self.cite(d, "reference", "Kolassa, S. (2011). Combining exponential smoothing forecasts using Akaike "
+                                  "weights. International Journal of Forecasting, 27(2), 238-251.")
+        errors, warnings = self.rules(d)
+        self.assertNotIn("10", errors)
+        self.assertNotIn("W14", warnings)
+
+    def test_w14_reference_citation_in_native_paper(self):
+        self.cite(self.d, "reference", "Kolassa, S. (2011). Combining exponential smoothing forecasts.")
+        self.assertWarning(self.d, "W14")
+
+    def test_49_valid_corrections(self):
+        d = converted_base()
+        d["paper"]["converted_from"]["corrections"] = [
+            {"field": "C1.statement", "where": "p2.3", "printed": "AIC = 2k + 2l", "recorded": "AIC = 2k - 2l",
+             "reason": "the sign of the log-likelihood is inverted in Equation (1)"}]
+        errors, _ = self.rules(d)
+        self.assertNotIn("49", errors)
+
+    def test_49_broken_corrections(self):
+        good = {"field": "C1.statement", "where": "p2.3", "printed": "a", "recorded": "b", "reason": "r"}
+        for bad in ([dict(good, reason="")], [dict(good, field="C99.statement")], [{"field": "C1"}], "x"):
+            d = converted_base()
+            d["paper"]["converted_from"]["corrections"] = bad
+            self.assertRule(d, "49")
+
+    def test_49_corrections_only_in_converted_papers(self):
+        self.d["paper"]["converted_from"] = {"corrections": []}
+        self.assertRule(self.d, "49")
+
+    def test_50_definition_source(self):
+        self.d["definitions"].append({"id": "D9", "term": "MASE", "definition": "Mean absolute scaled error.",
+                                      "source": {"target": "10.1016/j.ijforecast.2006.03.001", "id_type": "doi"}})
+        errors, _ = self.rules(self.d)
+        self.assertNotIn("50", errors)
+        for bad in ({"target": "x", "id_type": "website"}, {"id_type": "doi"}, "", 3):
+            d = load("submission-native.json")
+            d["definitions"].append({"id": "D9", "term": "MASE", "definition": "x", "source": bad})
+            self.assertRule(d, "50")
+
+
 if __name__ == "__main__":
     unittest.main()
