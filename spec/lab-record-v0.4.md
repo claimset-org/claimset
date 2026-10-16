@@ -342,12 +342,12 @@ The header still carries the original `content_hash`, so the chain verifies and 
 - no agent log is unmerged (§3.1);
 - every hypothesis has a final status: `supported`, `not_supported`, `inconclusive`, `revised` or `abandoned`. A hypothesis still `proposed` or `testing` cannot be counted in `paper.exploration`, so it must be closed first, for example as `abandoned` with a rationale.
 
-**Mapping.** The latest correction of each event is used throughout.
+**Mapping.** The latest correction of each event is used throughout. A hypothesis's **final status** is its last `status` event, a correction standing in its original's place: correcting an earlier status does not make it the latest. An actor's events are those written under its ID or any correction of it. Withheld content (§8) is never guessed: a withheld event is left out of the draft, or the fields it would supply are, and the completion list names it.
 
 | Lab record | Claimset |
 |---|---|
 | `init` | `paper.title` (the working title), `paper.origin: native` |
-| `actor`, agent | contributor of type `agent` with its models (each model defined once in `models`, `accessed` the date of the earliest event by an agent using it), `name`, `record_source`, `run_period` (dates of its first and last events) and `tools: [code_execution]` if it ran commands. Position `author` if it wrote any event other than `check`; otherwise `contributor`, with AI task `review` |
+| `actor`, agent | contributor of type `agent` with its models (each model defined once in `models`, `accessed` the date of the earliest event by an agent using it), `name`, `record_source`, `run_period` (dates of its first and last events) and `tools: [code_execution]` if it ran commands. Position `author` if it wrote any event other than `actor` and `check`; otherwise `contributor`, with AI task `review` |
 | `actor`, human or organisation | contributor with `name` and `orcid`, position `contributor`. Who is supervisor and guarantor is decided by people (completion list) |
 | `hypothesis` with final status `supported`, `not_supported` or `inconclusive` | claim, in the order of the hypotheses: `statement` from the hypothesis, `hypothesis: {lab_event, outcome}` (`lab_event` is the latest correction's ID), defaults `type: descriptive`, `role: supporting`, `novelty: new`, `provenance: author_stated` |
 | `hypothesis` with final status `revised` or `abandoned` | not a claim; counted in `paper.exploration` |
@@ -355,18 +355,18 @@ The header still carries the original `content_hash`, so the chain verifies and 
 | `plan` | `planning`, `planned_at`, `planned_at_anchor` on the claims it tested (below) |
 | `deviation` | `planning: confirmatory_with_deviations`, and a limitation on the affected claim: `category: analytic_flexibility`, `impact: could_bias_magnitude`, `mitigation: none`, statement naming the run, the plan, what differed and why |
 | `assumption` | assumption claim with `assumption_category` and `check`; `check_evidence` when it names a run or result used in an evidence object |
-| `check` | a `checks` entry on the claim whose hypothesis, final status, or evidence run or result it targets |
+| `check` | a `checks` entry on the claim whose hypothesis, final status, or evidence run or result it targets. A check by an actor exported as an author is not exported (claimset rule 39) and is named in the completion list |
 | `artefact` | artefact with `kind`, `uri` (the path or URI), `version` (the hash), `licence`, `description` |
 | the whole record | artefact of kind `lab_record`: `uri` (the repository URI from `init` followed by the log's path, or the path alone), `version` (the hash of `lab.jsonl`), `availability: public`, `withheld_events`; referenced from `paper.exploration.lab_record` |
 
-**Planning label of an exported claim.** A run *tests* a claim's hypothesis under a plan when it is labelled `confirmatory`, is named in the final status's evidence (directly or through a result), and its plan, in the latest version written before the run, names the hypothesis (any version of it).
+**Planning label of an exported claim.** A run *tests* a claim's hypothesis under a plan when it is labelled `confirmatory`, is named in the final status's evidence (directly or through a result), and its plan, in the latest version its writer could see when the run was written, names the hypothesis (any version of it). For a run written directly to the main log, that is the latest version with a lower `seq`; for a run merged from an agent log, the latest version in the main log up to the agent log's base or earlier in the same agent log (§3.1).
 - `confirmatory`: some run tests the hypothesis under a plan, and no deviation is recorded for that plan and run.
 - `confirmatory_with_deviations`: every such run has a recorded deviation.
 - `exploratory`: every other case.
 
 For confirmatory labels, `planned_at` is the `at` of that plan version (of the earliest such run), and `planned_at_anchor` is the service of the earliest anchor that covers the plan version and was made before the run started, or `none`.
 
-**Exploration summary.** `questions` counts question events; `hypotheses` counts hypotheses by final status, each correction chain once; `runs` counts all run events by label, and `failed` those whose exit status is not `success`.
+**Exploration summary.** `questions` counts questions, each correction chain once; `hypotheses` counts hypotheses by final status, each correction chain once; `runs` counts all run events by label, and `failed` those whose exit status is not `success`.
 
 **Defaults the completion list always names:** `paper.licence` and the guarantor (asked of the responsible human), `paper.contributions` and principal roles, `paper.autonomy` (exported as `unknown`), claim types, statements of negative results (to say plainly what was not found), scopes, evidence profiles and descriptions, and links from claims to assumptions.
 

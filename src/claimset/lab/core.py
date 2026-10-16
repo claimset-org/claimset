@@ -235,6 +235,26 @@ class State:
                                       f"correct that one instead")
 
 
+def final_statuses(st):
+    """{hypothesis root ID: its final status event}.
+
+    The final status is the last status event for the hypothesis, a correction standing in
+    its original's place: correcting an earlier status does not make it later.
+    """
+    out = {}
+    for e in st.events:
+        if e.get("type") != "status" or is_withheld(e) or e["id"] in st.superseded_by:
+            continue
+        target = e["body"].get("target") if isinstance(e.get("body"), dict) else None
+        if not target:
+            continue
+        root = st.root(target)
+        place = st.get(st.root(e["id"]))["seq"]
+        if root not in out or place > out[root][0]:
+            out[root] = (place, e)
+    return {k: v[1] for k, v in out.items()}
+
+
 # ---------------------------------------------------------------- body checks
 
 def _req(body, field, etype):
@@ -430,7 +450,9 @@ def check_run(state, body, by, eid):
         if plan_id is None:
             raise LabError("L5", "run: a confirmatory run names the confirmatory plan it carries out")
         plan = state.latest(plan_id)
-        if is_withheld(plan) or plan["body"].get("kind") != "confirmatory":
+        if is_withheld(plan):
+            return  # the plan's kind is withheld (§8); the run was checked when it was written
+        if plan["body"].get("kind") != "confirmatory":
             raise LabError("L5", f"run: {plan_id} is not a confirmatory plan, so the run is exploratory")
 
 

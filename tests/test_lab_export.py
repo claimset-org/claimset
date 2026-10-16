@@ -245,6 +245,109 @@ class TestDetails(ExportCase):
         self.assertFalse([e for e in validate(out["draft"]).errors if e["rule"] == "1"])
 
 
+def withhold(case, eid, reason="personal_data"):
+    events = [json.loads(l) for l in case.lines()]
+    for e in events:
+        if e["id"] == eid:
+            e["body"] = {"withheld": True, "reason": reason, "comment": "c"}
+    case.write_lines([canonical(e).decode("utf-8") for e in events])
+
+
+class TestReviewFindings(ExportCase):
+    """Cases found in review of the first version of export."""
+
+    def rule_errors(self, out, allowed=("16", "19")):
+        return [e for e in validate(out["draft"]).errors if e["rule"] not in allowed]
+
+    def test_claims_sharing_a_run_cite_their_own_evidence(self):
+        script = Path(self.tmp.name) / "two.py"
+        script.write_text("import json, os\njson.dump([{'quantity': 'a', 'value': 1}, {'quantity': 'b', 'value': 2}],"
+                          " open(os.environ['CLAIMSET_RESULTS'], 'w'))\n")
+        out = run_command(self.lab, self.agent, [sys.executable, str(script)], echo=False, cwd=self.tmp.name)
+        rs1, rs2 = [r["id"] for r in out["results"]]
+        h2 = self.hyp("Second.")
+        self.status(self.h, "supported", rs1)
+        self.status(h2, "not_supported", rs2)
+        exp = export(self.lab)
+        c2 = self.claim(exp, h2)
+        self.assertTrue(all(r.startswith(c2["support"][0]["evidence"] + ".") for r in c2["support"][0]["results"]))
+        self.assertEqual(self.rule_errors(exp), [])
+
+    def test_corrected_earlier_status_does_not_become_final(self):
+        rn, rs = self.run_(0.1, "m")
+        st1 = self.status(self.h, "supported", rs)
+        self.status(self.h, "abandoned", why="dropped")
+        self.add("status", {"target": self.h, "to": "supported", "rationale": "typo fixed", "evidence": rs},
+                 supersedes=st1)
+        out = export(self.lab)
+        self.assertEqual(out["draft"]["claims"], [])
+        self.assertEqual(out["draft"]["paper"]["exploration"]["hypotheses"]["abandoned"], 1)
+
+    def test_withheld_actor_is_left_out(self):
+        self.status(self.h, "abandoned")
+        withhold(self, self.human)
+        out = export(self.lab)
+        self.assertEqual([c["name"] for c in out["draft"]["contributors"]], ["Agent"])
+        self.assertEqual(out["draft"]["paper"]["contribution_record"], "partial")
+        self.assertIn(f"actor {self.human} is withheld", self.todo(out))
+
+    def test_merged_run_judged_against_plan_its_agent_saw(self):
+        pl = self.plan()
+        self.lab.start_agent(self.agent)
+        rn, rs = self.run_(0.1, "m", plan=pl)
+        self.status(self.h, "supported", rs)
+        other = self.lab.append("hypothesis", {"statement": "Other.", "question": self.q, "origin": "a_priori"},
+                                by=self.human)["id"]
+        self.lab.append("plan", {"kind": "confirmatory", "hypotheses": [other], "design": "d2", "analysis": "a",
+                                 "criterion": "c"}, by=self.human, supersedes=pl)
+        self.lab.append("status", {"target": other, "to": "abandoned", "rationale": "r"}, by=self.human)
+        self.lab.merge(self.human)
+        out = export(self.lab)
+        c = self.claim(out, self.h)
+        self.assertEqual(c["planning"], "confirmatory")
+        self.assertIn(f"under plan {pl}.", out["draft"]["evidence"][0]["description"])
+
+    def test_check_by_author_is_not_exported(self):
+        rn, rs = self.run_(0.1, "m")
+        self.status(self.h, "supported", rs)
+        other_agent = self.lab.append("actor", {"kind": "agent", "name": "B", "models": [
+            {"provider": "P", "name": "M", "version": "1"}]}, by=self.human)["id"]
+        self.lab.append("note", {"text": "B also wrote"}, by=other_agent)
+        self.lab.append("check", {"target": rn, "outcome": "confirmed", "extent": "full"}, by=other_agent)
+        out = export(self.lab)
+        self.assertNotIn("checks", self.claim(out, self.h))
+        self.assertIn("is an author", self.todo(out))
+        self.assertEqual(self.rule_errors(out), [])
+
+    def test_assumption_checked_by_uncited_run_gets_evidence(self):
+        self.status(self.h, "abandoned")
+        rn, _ = self.run_(0.1, "m")
+        self.add("assumption", {"statement": "Errors are independent.", "category": "statistical",
+                                "check": "tested", "check_evidence": rn})
+        out = export(self.lab)
+        a = out["draft"]["claims"][0]
+        self.assertEqual(out["draft"]["evidence"][0]["lab_runs"], [rn])
+        self.assertEqual(a["check_evidence"], "E1")
+        self.assertEqual(self.rule_errors(out), [])
+
+    def test_figure_without_description_is_listed(self):
+        self.status(self.h, "abandoned")
+        self.add("artefact", {"kind": "figure", "path_or_uri": "fig.png"})
+        self.assertIn("describe what A1 shows", self.todo(export(self.lab)))
+
+    def test_guarantor_always_asked(self):
+        self.status(self.h, "abandoned")
+        self.assertIn("guarantor", " ".join(t["what"] for t in export(self.lab)["completion"][:3]))
+
+    def test_withheld_plan_still_verifies(self):
+        pl = self.plan()
+        rn, rs = self.run_(0.1, "m", plan=pl)
+        self.status(self.h, "supported", rs)
+        withhold(self, pl, "commercial")
+        out = export(self.lab)
+        self.assertEqual(self.claim(out, self.h)["planning"], "exploratory")
+
+
 @unittest.skipUnless(HAVE_GIT, "git is not installed")
 class TestAnchoredExport(ExportCase):
     def test_anchor_strength_recorded(self):
@@ -280,6 +383,9 @@ class TestExportCli(TestCli):
         self.assertIn("--force", err)
         code, out, _ = self.run_cli("lab", "export", "-o", str(out_file), "--force", "--json")
         self.assertEqual(json.loads(out)["validation"]["errors"][0]["rule"], "19")
+        code, _, err = self.run_cli("lab", "export", "-o", str(Path(self.tmp.name) / "missing" / "d.json"))
+        self.assertEqual(code, 1)
+        self.assertIn("could not write", err)
 
 
 if __name__ == "__main__":

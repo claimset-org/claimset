@@ -283,7 +283,10 @@ def cmd_export(args):
     if out_path.exists() and not args.force:
         raise LabError("export", f"{out_path} exists; choose another --output or add --force")
     out = _export.export(_lab(args))
-    out_path.write_text(json.dumps(out["draft"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        out_path.write_text(json.dumps(out["draft"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        raise LabError("export", f"could not write {out_path}: {exc.strerror or exc}") from None
     rep = validate(out["draft"])
     if args.json:
         print(json.dumps({"output": str(out_path), "mapping": out["mapping"], "completion": out["completion"],
