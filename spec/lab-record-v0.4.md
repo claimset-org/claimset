@@ -10,6 +10,7 @@ Status: working draft · Date: 2026-10-16 · Supersedes v0.3 · Companion to the
 - Rules L4 and L5 stated precisely; new rule L13 (run outputs) (§6).
 - Protecting the log: what is prevented and what is detected at each level of protection (§4.5).
 - Git anchoring specified: configuration, what is committed, receipts, automatic anchoring, checking against the remote (§7.1); new rule L14 (§6).
+- Export specified precisely: preconditions, the draft and its completion list, defaults, how planning labels are derived (§9).
 - Agent logs specified precisely: how one is started, what an agent sees and may write, the order and layout of a merge, and when a merge is refused (§3.1, §5.16); rule L10 stated precisely; anchors cover agent logs (§7).
 
 ## Changes in v0.3 (since v0.2)
@@ -334,24 +335,40 @@ The header still carries the original `content_hash`, so the chain verifies and 
 
 ## 9. Export to a claimset
 
-`export` produces a draft claimset submission from the record. The claimset-submit workflow then completes it (principal claims, wording, scope review, guarantor and licence).
+`export` produces a **draft** claimset submission from the record, and a **completion list**: the decisions and wording the draft still needs. The claimset-submit workflow then completes it (principal claims, wording, scope, guarantor and licence). The draft holds only what the record states. Where a field needs a judgement the record cannot supply, the draft uses the neutral default given below, or leaves the field out, and the completion list says so. The completion list is kept separate from the draft, because a claimset never contains instructions (claimset §1).
+
+**Preconditions.** `export` refuses, and says why, unless:
+- the record verifies (§6);
+- no agent log is unmerged (§3.1);
+- every hypothesis has a final status: `supported`, `not_supported`, `inconclusive`, `revised` or `abandoned`. A hypothesis still `proposed` or `testing` cannot be counted in `paper.exploration`, so it must be closed first, for example as `abandoned` with a rationale.
+
+**Mapping.** The latest correction of each event is used throughout.
 
 | Lab record | Claimset |
 |---|---|
-| `actor` | contributors and models |
-| `hypothesis` with final status `supported`, `not_supported` or `inconclusive` | claim, with `hypothesis: {lab_event, outcome}` |
-| `hypothesis` with final status `abandoned` or `revised` | not a claim; counted in `paper.exploration` |
-| `run` and its `result`s | evidence object with `results`, `execution` and `lab_runs` |
-| `assumption` | assumption claim |
-| `check` | claim `checks` |
-| `plan` | `planning`, `planned_at`, `planned_at_anchor` on the claims it tested |
-| `deviation` | `planning: confirmatory_with_deviations`, and a limitation on the affected claims |
-| the whole record | artefact of kind `lab_record`, referenced from `paper.exploration.lab_record` |
+| `init` | `paper.title` (the working title), `paper.origin: native` |
+| `actor`, agent | contributor of type `agent` with its models (each model defined once in `models`, `accessed` the date of the earliest event by an agent using it), `name`, `record_source`, `run_period` (dates of its first and last events) and `tools: [code_execution]` if it ran commands. Position `author` if it wrote any event other than `check`; otherwise `contributor`, with AI task `review` |
+| `actor`, human or organisation | contributor with `name` and `orcid`, position `contributor`. Who is supervisor and guarantor is decided by people (completion list) |
+| `hypothesis` with final status `supported`, `not_supported` or `inconclusive` | claim, in the order of the hypotheses: `statement` from the hypothesis, `hypothesis: {lab_event, outcome}` (`lab_event` is the latest correction's ID), defaults `type: descriptive`, `role: supporting`, `novelty: new`, `provenance: author_stated` |
+| `hypothesis` with final status `revised` or `abandoned` | not a claim; counted in `paper.exploration` |
+| the runs behind a final status | one evidence object per claim, from the runs the final `status` names as evidence, directly or through their results: `lab_runs`, `results` (one per `result` event: `quantity`, `value`, `unit`, `interval`, `conditions`), `execution` (`code_version` when the runs share one), default `profile: quant`, `design: other`, `availability: public`. The claim's support is `empirical_quant` pointing to the evidence and its results |
+| `plan` | `planning`, `planned_at`, `planned_at_anchor` on the claims it tested (below) |
+| `deviation` | `planning: confirmatory_with_deviations`, and a limitation on the affected claim: `category: analytic_flexibility`, `impact: could_bias_magnitude`, `mitigation: none`, statement naming the run, the plan, what differed and why |
+| `assumption` | assumption claim with `assumption_category` and `check`; `check_evidence` when it names a run or result used in an evidence object |
+| `check` | a `checks` entry on the claim whose hypothesis, final status, or evidence run or result it targets |
+| `artefact` | artefact with `kind`, `uri` (the path or URI), `version` (the hash), `licence`, `description` |
+| the whole record | artefact of kind `lab_record`: `uri` (the repository URI from `init` followed by the log's path, or the path alone), `version` (the hash of `lab.jsonl`), `availability: public`, `withheld_events`; referenced from `paper.exploration.lab_record` |
 
-**Planning label of an exported claim:**
-- `confirmatory`: supported or refuted by a confirmatory run under a plan that named the hypothesis, with no deviation.
-- `confirmatory_with_deviations`: as above, but a deviation was recorded.
+**Planning label of an exported claim.** A run *tests* a claim's hypothesis under a plan when it is labelled `confirmatory`, is named in the final status's evidence (directly or through a result), and its plan, in the latest version written before the run, names the hypothesis (any version of it).
+- `confirmatory`: some run tests the hypothesis under a plan, and no deviation is recorded for that plan and run.
+- `confirmatory_with_deviations`: every such run has a recorded deviation.
 - `exploratory`: every other case.
+
+For confirmatory labels, `planned_at` is the `at` of that plan version (of the earliest such run), and `planned_at_anchor` is the service of the earliest anchor that covers the plan version and was made before the run started, or `none`.
+
+**Exploration summary.** `questions` counts question events; `hypotheses` counts hypotheses by final status, each correction chain once; `runs` counts all run events by label, and `failed` those whose exit status is not `success`.
+
+**Defaults the completion list always names:** `paper.licence` and the guarantor (asked of the responsible human), `paper.contributions` and principal roles, `paper.autonomy` (exported as `unknown`), claim types, statements of negative results (to say plainly what was not found), scopes, evidence profiles and descriptions, and links from claims to assumptions.
 
 **Negative results** are exported as claims in the same claimset: the statement says what was not found, under what scope, and `hypothesis.outcome` is `not_supported`.
 
@@ -381,7 +398,7 @@ The reference tool is part of the `claimset` package. Indicative commands:
 | `claimset lab guard` | the guard for agent harnesses: reads a proposed tool call as JSON on standard input and exits with code 2 if it would modify the lab directory (§4.5); `--print-config` prints the Claude Code hook configuration |
 | `claimset lab protect` | sets the operating system's append-only attribute on the log files, or explains how an administrator can (§4.5) |
 | `claimset lab publish --withhold RN7 --reason personal_data --comment "…"` | prepares the publishable record |
-| `claimset lab export` | drafts the claimset submission |
+| `claimset lab export [-o FILE]` | writes the draft claimset submission and prints the completion list (§9) |
 
 ## 11. Open questions
 

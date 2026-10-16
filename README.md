@@ -54,7 +54,15 @@ claimset lab summary     # current state, for whoever picks up the work
 claimset lab verify      # hash chain, rules and run files
 ```
 
-`run` records the command, code version, environment and every output file, and turns the numbers the script writes to `$CLAIMSET_RESULTS` into result events. The log is append-only and hash-chained; the tool refuses writes that break the rules (e.g. confirming a hypothesis with the result that suggested it). Export to a claimset is being added; see `spec/lab-record-v0.4.md` §10.
+`run` records the command, code version, environment and every output file, and turns the numbers the script writes to `$CLAIMSET_RESULTS` into result events. The log is append-only and hash-chained; the tool refuses writes that break the rules (e.g. confirming a hypothesis with the result that suggested it).
+
+When the research is done, draft the claimset from the record:
+
+```
+claimset lab export -o claimset.json
+```
+
+The draft carries everything the record states: a claim for every tested hypothesis (negative results included) with its outcome and whether the test was planned, evidence with the runs and results behind it, contributors, models and the exploration counts. Export also prints a completion list of what only people or the writing agent can decide: licence, guarantor, principal claims, wording and scope. The `claimset-submit` skill works through it.
 
 Several agents working at once each keep their own log, merged when they finish:
 

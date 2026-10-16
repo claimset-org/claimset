@@ -9,6 +9,7 @@ from pathlib import Path
 from .core import Lab, LabError, file_hash, verify
 from . import summary as _summary
 from .run import run_command
+from . import export as _export
 from . import anchor as _anchor
 from . import guard as _guard
 from . import protect as _protect
@@ -275,6 +276,36 @@ def cmd_merge(args):
     return 0
 
 
+def cmd_export(args):
+    from ..validate import validate
+
+    out_path = Path(args.output)
+    if out_path.exists() and not args.force:
+        raise LabError("export", f"{out_path} exists; choose another --output or add --force")
+    out = _export.export(_lab(args))
+    out_path.write_text(json.dumps(out["draft"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    rep = validate(out["draft"])
+    if args.json:
+        print(json.dumps({"output": str(out_path), "mapping": out["mapping"], "completion": out["completion"],
+                          "validation": {"errors": rep.errors, "warnings": rep.warnings}},
+                         ensure_ascii=False, indent=2))
+        return 0
+    draft = out["draft"]
+    print(f"Wrote {out_path}: {len(draft['claims'])} claims, {len(draft['evidence'])} evidence, "
+          f"{len(draft['contributors'])} contributors, {len(draft['artefacts'])} artefacts.")
+    for k, v in out["mapping"].items():
+        if k.startswith("C"):
+            c = next(x for x in draft["claims"] if x["id"] == k)
+            label = (f"{c['hypothesis']['outcome']}, {c.get('planning')}" if "hypothesis" in c else "assumption")
+            print(f"  {k} <- {v} ({label})")
+    print("To complete before submission:")
+    for item in out["completion"]:
+        print(f"  - {item['where']}: {item['what']}")
+    print(f"Validator: {len(rep.errors)} error(s), {len(rep.warnings)} warning(s) in the draft; "
+          f"`claimset validate {out_path}` lists them.")
+    return 0
+
+
 def cmd_verify(args):
     rep = verify(_lab(args), check_files=not args.no_files, remote=args.remote)
     if args.json:
@@ -442,6 +473,10 @@ def add_parser(subparsers):
     p = cmd("verify", cmd_verify, "check the hash chain, the rules and the run files", parents=(common,))
     p.add_argument("--no-files", action="store_true", help="skip checking run directories against their hashes")
     p.add_argument("--remote", action="store_true", help="also check the log against the anchor branch on the remote")
+
+    p = cmd("export", cmd_export, "draft a claimset submission from the record", parents=(common,))
+    p.add_argument("-o", "--output", default="claimset.draft.json", help="draft file (default claimset.draft.json)")
+    p.add_argument("--force", action="store_true", help="overwrite the draft file")
 
     p = cmd("anchor", cmd_anchor, "record the head of the log outside the agent's reach", parents=(common,))
     p.add_argument("--git", action="store_true", help="use git anchoring (records the configuration)")
