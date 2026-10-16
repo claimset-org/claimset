@@ -242,9 +242,34 @@ class TestSubmissionAndPublished(Base):
         self.assertRule(d, "30")
 
     def test_31_source_licence_forbids_conversion(self):
-        d = converted_base()
-        d["paper"]["converted_from"]["source_licence"] = "CC-BY-NC-4.0"
-        self.assertRule(d, "31")
+        for src in ("CC-BY-ND-4.0", "CC-BY-NC-ND-4.0", "LicenseRef-all-rights-reserved"):
+            d = converted_base()
+            d["paper"]["converted_from"]["source_licence"] = src
+            self.assertRule(d, "31")
+
+    def test_31_non_commercial_source_allowed_and_kept(self):
+        for src, lic in (("CC-BY-NC-4.0", "CC-BY-NC-4.0"), ("CC-BY-NC-4.0", "CC-BY-NC-SA-4.0"),
+                         ("CC-BY-NC-3.0", "CC-BY-NC-3.0"), ("CC-BY-NC-SA-4.0", "CC-BY-NC-SA-4.0")):
+            d = converted_base()
+            d["paper"]["converted_from"]["source_licence"] = src
+            d["paper"]["licence"] = lic
+            self.assertNotIn("31", self.rules(d), f"{src} -> {lic}")
+
+    def test_31_non_commercial_condition_cannot_be_dropped(self):
+        for src, lic in (("CC-BY-NC-4.0", "CC-BY-4.0"), ("CC-BY-NC-4.0", "CC0-1.0"),
+                         ("CC-BY-NC-SA-4.0", "CC-BY-NC-4.0"), ("CC-BY-SA-4.0", "CC-BY-4.0")):
+            d = converted_base()
+            d["paper"]["converted_from"]["source_licence"] = src
+            d["paper"]["licence"] = lic
+            self.assertRule(d, "31")
+
+    def test_31_permissive_source(self):
+        for src, lic in (("CC-BY-4.0", "CC-BY-4.0"), ("CC-BY-3.0", "CC-BY-4.0"), ("CC0-1.0", "CC0-1.0"),
+                         ("CC-BY-SA-3.0", "CC-BY-SA-4.0")):
+            d = converted_base()
+            d["paper"]["converted_from"]["source_licence"] = src
+            d["paper"]["licence"] = lic
+            self.assertNotIn("31", self.rules(d), f"{src} -> {lic}")
 
 
 class TestRulesV09V10(Base):

@@ -21,7 +21,7 @@ import json
 import re
 import sys
 
-SCHEMA_VERSION = "0.12"
+SCHEMA_VERSION = "0.13"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -92,8 +92,17 @@ ORCID_RE = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TERM_RE = re.compile(r"\[\[(D\d+):[^\]]+\]\]")
 
-SOURCE_LICENCES_OK = {"CC0-1.0", "CC-BY-4.0", "CC-BY-3.0", "CC-BY-2.0", "CC-BY-SA-4.0", "CC-BY-SA-3.0"}
-PERMISSIVE_TARGETS = {"CC0-1.0", "CC-BY-4.0", "CC-BY-SA-4.0"}
+# Rule 31: source licences that permit conversion → the licences the claimset may carry (spec §3.1).
+_BY = {"CC0-1.0", "CC-BY-4.0", "CC-BY-SA-4.0"}
+_SA = {"CC-BY-SA-3.0", "CC-BY-SA-4.0"}
+_NC = {"CC-BY-NC-4.0", "CC-BY-NC-SA-4.0"}
+_NC_SA = {"CC-BY-NC-SA-3.0", "CC-BY-NC-SA-4.0"}
+CONVERSION_LICENCES = {
+    "CC0-1.0": _BY, "CC-BY-2.0": _BY | {"CC-BY-2.0"}, "CC-BY-3.0": _BY | {"CC-BY-3.0"}, "CC-BY-4.0": _BY,
+    "CC-BY-SA-3.0": _SA, "CC-BY-SA-4.0": _SA,
+    "CC-BY-NC-3.0": _NC | {"CC-BY-NC-3.0"}, "CC-BY-NC-4.0": _NC,
+    "CC-BY-NC-SA-3.0": _NC_SA, "CC-BY-NC-SA-4.0": _NC_SA,
+}
 
 ANAPHORA_RE = re.compile(r"^(this|these|those|it|they|such)\b|\b(as shown|the above|aforementioned|see section|"
                          r"see figure|see table|as mentioned|as discussed|previously described)\b", re.I)
@@ -1017,13 +1026,12 @@ def validate_contributors(r, contributors, paper, ref, converted):
         if cf.get("source_id") and cf.get("source_id") == paper.get("id"):
             r.err("30", "paper.id", "must differ from converted_from.source_id")
         src, lic = cf.get("source_licence"), paper.get("licence")
-        if src and src not in SOURCE_LICENCES_OK:
-            r.err("31", "paper.converted_from.source_licence", f"{src} does not permit conversion")
-        elif src and lic:
-            ok = lic == src or (not src.startswith("CC-BY-SA") and lic in PERMISSIVE_TARGETS) \
-                 or (src.startswith("CC-BY-SA") and lic.startswith("CC-BY-SA"))
-            if not ok:
-                r.err("31", "paper.licence", f"{lic} is not compatible with source licence {src}")
+        if src and src not in CONVERSION_LICENCES:
+            r.err("31", "paper.converted_from.source_licence",
+                  f"{src} does not permit conversion (it must permit derivatives; see spec §3.1)")
+        elif src and lic and lic not in CONVERSION_LICENCES[src]:
+            r.err("31", "paper.licence", f"{lic} is not allowed for a claimset of a {src} source; "
+                                         f"use one of {', '.join(sorted(CONVERSION_LICENCES[src]))}")
 
     cr = paper.get("contribution_record")
     if cr in ("partial", "unknown"):
