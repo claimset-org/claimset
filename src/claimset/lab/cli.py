@@ -9,6 +9,9 @@ from pathlib import Path
 from .core import Lab, LabError, file_hash, verify
 from . import summary as _summary
 from .run import run_command
+from . import anchor as _anchor
+from . import guard as _guard
+from . import protect as _protect
 
 
 def _lab(args):
@@ -33,11 +36,25 @@ def _emit(args, event):
         print(event["id"])
 
 
+def _auto_anchor(lab, event):
+    """Anchor after a plan (or after every event, if configured); warn instead of failing."""
+    cfg = _anchor.anchoring(lab)
+    if not cfg:
+        return
+    if event["type"] == "plan" or cfg.get("every") == "event":
+        try:
+            entry = _anchor.anchor(lab)
+            print(f"claimset: anchored seq {entry['seq']} at {entry['receipt']['commit'][:12]}", file=sys.stderr)
+        except LabError as exc:
+            print(f"claimset: WARNING {event['id']} was written but not anchored: {exc.message}", file=sys.stderr)
+
+
 def _write(args, etype, body, by=None):
     lab = _lab(args)
     by = _actor(args) if by is None else by
     event = lab.append(etype, _clean(body), by=by, supersedes=getattr(args, "supersedes", None))
     _emit(args, event)
+    _auto_anchor(lab, event)
     return 0
 
 
@@ -162,6 +179,9 @@ def cmd_run(args):
     print(msg, file=sys.stderr)
     for p in out["problems"]:
         print(f"claimset: results.json {p}", file=sys.stderr)
+    cfg = _anchor.anchoring(lab)
+    if cfg and cfg.get("every") == "event":
+        _auto_anchor(lab, out["results"][-1] if out["results"] else run)
     code = out["exit_code"]
     return 1 if code is None else (code if code >= 0 else 1)
 
@@ -197,8 +217,41 @@ def cmd_list(args):
     return 0
 
 
+def cmd_anchor(args):
+    lab = _lab(args)
+    cfg = _anchor.load_config(lab)
+    if args.git or args.remote or args.branch or args.every:
+        current = cfg.get("anchor") or {}
+        cfg["anchor"] = {"service": "git_remote",
+                         "remote": args.remote or current.get("remote", "origin"),
+                         "branch": args.branch or current.get("branch", _anchor.DEFAULT_BRANCH),
+                         "every": args.every or current.get("every", "plan")}
+        _anchor.save_config(lab, cfg)
+    entry = _anchor.anchor(lab)
+    if args.json:
+        print(json.dumps(entry, indent=2))
+    else:
+        r = entry["receipt"]
+        print(f"anchored seq {entry['seq']} at {r['remote']}/{r['branch']} {r['commit'][:12]}")
+    return 0
+
+
+def cmd_guard(args):
+    if args.print_config:
+        print(json.dumps(_guard.claude_code_config(), indent=2))
+        return 0
+    return _guard.main_hook(sys.stdin, sys.stderr)
+
+
+def cmd_protect(args):
+    out = _protect.protect(_lab(args), undo=args.undo)
+    for line in out["messages"]:
+        print(line)
+    return 0 if out["ok"] else 1
+
+
 def cmd_verify(args):
-    rep = verify(_lab(args), check_files=not args.no_files)
+    rep = verify(_lab(args), check_files=not args.no_files, remote=args.remote)
     if args.json:
         print(json.dumps(rep, indent=2))
     else:
@@ -341,6 +394,21 @@ def add_parser(subparsers):
 
     p = cmd("verify", cmd_verify, "check the hash chain, the rules and the run files", parents=(common,))
     p.add_argument("--no-files", action="store_true", help="skip checking run directories against their hashes")
+    p.add_argument("--remote", action="store_true", help="also check the log against the anchor branch on the remote")
+
+    p = cmd("anchor", cmd_anchor, "record the head of the log outside the agent's reach", parents=(common,))
+    p.add_argument("--git", action="store_true", help="use git anchoring (records the configuration)")
+    p.add_argument("--remote", help="git remote (default origin)")
+    p.add_argument("--branch", help=f"anchor branch (default {_anchor.DEFAULT_BRANCH})")
+    p.add_argument("--every", choices=["plan", "event"], help="anchor after every plan (default) or every event")
+
+    p = lab_sub.add_parser("guard", help="hook for agent harnesses: refuse tool calls that would modify the lab")
+    p.add_argument("--print-config", action="store_true", help="print the Claude Code hook configuration")
+    p.set_defaults(func=cmd_guard)
+
+    p = cmd("protect", cmd_protect, "make the log files append-only at the operating-system level",
+            parents=(common,))
+    p.add_argument("--undo", action="store_true", help="remove the append-only attribute")
     cmd("summary", cmd_summary, "current state of the research", parents=(common,))
 
     def lab_help(args):

@@ -56,6 +56,20 @@ claimset lab verify      # hash chain, rules and run files
 
 `run` records the command, code version, environment and every output file, and turns the numbers the script writes to `$CLAIMSET_RESULTS` into result events. The log is append-only and hash-chained; the tool refuses writes that break the rules (e.g. confirming a hypothesis with the result that suggested it). Per-agent logs and export to a claimset are being added; see `spec/lab-record-v0.4.md` §10.
 
+### Protecting the lab record
+
+The hash chain makes any edit to the log detectable. Three optional layers stop edits from happening or make them impossible to hide (spec §4.5):
+
+```
+claimset lab anchor --git     # push the log to a `claimset-lab` branch after every plan
+claimset lab verify --remote  # check the local log against the anchored copy
+claimset lab protect          # append-only attribute on the log files (Linux, needs sudo)
+```
+
+- **Anchoring** commits the log to its own branch without touching your working tree and never force-pushes. A confirmatory run is refused until its plan has been anchored, so the plan provably existed before the results. Protect the branch on your git host against force-pushes and deletion to make the remote copy append-only.
+- **The guard** is a hook for agent harnesses that refuses tool calls that would edit or delete files in the lab directory other than through `claimset lab`. For Claude Code, add the output of `claimset lab guard --print-config` to `.claude/settings.json` (see [hooks](https://docs.claude.com/en/docs/claude-code/hooks)).
+- **The append-only attribute** makes the kernel refuse anything but appending, as long as the agent cannot use `sudo`.
+
 ## For AI agents
 
 `skills/claimset-submit/` teaches an agent to turn finished research, or a lab record, into a valid claimset submission. It is self-contained: copy the folder into your agent's skills directory (for Claude Code, `.claude/skills/` in a project or `~/.claude/skills/`). Agents without skills support can be given its `SKILL.md` as instructions.

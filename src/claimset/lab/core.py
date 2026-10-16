@@ -618,14 +618,20 @@ def verify_run_files(lab, events):
     return errors
 
 
-def verify(lab, check_files=True):
+def verify(lab, check_files=True, remote=False):
     try:
         events = lab.read()
     except LabError as exc:
         return {"ok": False, "events": 0, "withheld": 0, "unchecked_types": [],
                 "errors": [{"seq": None, "id": None, "rule": exc.rule, "message": exc.message}]}
+    from .anchor import verify_anchors, verify_confirmatory_anchoring, verify_remote
+
     rep = verify_events(events)
     if check_files:
         rep["errors"] += verify_run_files(lab, events)
-        rep["ok"] = not rep["errors"]
+    rep["errors"] += verify_anchors(lab, events)
+    rep["errors"] += verify_confirmatory_anchoring(lab, events)
+    if remote:
+        rep["errors"] += verify_remote(lab)
+    rep["ok"] = not rep["errors"]
     return rep

@@ -8,6 +8,8 @@ Status: working draft · Date: 2026-10-15 · Supersedes v0.3 · Companion to the
 - How the tool runs a command, captures its output and reads results (§5.9.1); the results file format (§5.10.1).
 - Approvals are made by humans (§5.8).
 - Rules L4 and L5 stated precisely; new rule L13 (run outputs) (§6).
+- Protecting the log: what is prevented and what is detected at each level of protection (§4.5).
+- Git anchoring specified: configuration, what is committed, receipts, automatic anchoring, checking against the remote (§7.1); new rule L14 (§6).
 
 ## Changes in v0.3 (since v0.2)
 
@@ -122,6 +124,20 @@ The first event of a chain is the **root**. Other events keep referring to the r
 ### 4.4 Writing
 
 Only the tool writes the log. A writer takes an exclusive lock, the file `lab/.lock` created atomically, appends one complete line and releases the lock. A lock older than 60 seconds is treated as stale. Several agents working at the same time write separate logs (§3.1) rather than contending for one lock.
+
+### 4.5 Protecting the log
+
+An agent that can run commands as the researcher can, in principle, do anything the researcher can do to a file, including rewriting the whole log and recomputing every hash. Protection therefore comes in levels:
+
+| Level | How | Effect |
+|---|---|---|
+| Tamper-evident | the hash chain (§4.1) and `verify` | edits, deletions and reordering are detected, unless the whole chain is rewritten |
+| Guarded | the tool's guard, installed as a hook in the agent's harness, refuses tool calls that would modify the lab directory other than through `claimset lab` | accidental or casual modification is prevented; a determined agent can work around it |
+| Append-only file | the operating system's append-only attribute on the log files (on Linux, `chattr +a`, set by an administrator) | the operating system refuses any change except appending, as long as the agent cannot act as an administrator |
+| Anchored | the head of the chain is regularly recorded outside the agent's reach (§7) | any rewriting before an anchor is detected, including a full recomputation of the chain |
+| Remote append-only | the authoritative copy is held by a service that accepts only appends (the Claimset platform; or a git branch protected against force-pushes and deletion, pushed to with credentials that cannot change the protection) | rewriting is prevented, not just detected |
+
+Locally, the log is tamper-evident. With anchoring, tampering is always detected. With a remote append-only copy, it is prevented. A lab that matters should use at least anchoring.
 
 ## 5. Event types
 
@@ -266,8 +282,9 @@ L10. Agent logs follow L1–L9 on their own; merged events keep their IDs and re
 L11. A `supersedes` reference names an earlier event of the same type that has not already been superseded.
 L12. Every `id` has the prefix of its `type` and is unique in the log; every reference in a body names an event with a lower `seq`.
 L13. The files of a run directory match the hashes in the run's `outputs`. Run directories are never changed after the run.
+L14. Every entry in `anchors.jsonl` names a `seq` present in the log, and its `head_hash` equals the header hash of the event at that `seq`. A mismatch means the log was rewritten after it was anchored.
 
-The tool enforces L1–L5 and L8–L13 mechanically, and refuses L6 and L7 violations.
+The tool enforces L1–L5 and L8–L14 mechanically, and refuses L6 and L7 violations.
 
 ## 7. Timestamp anchoring
 
@@ -281,7 +298,21 @@ Services, in decreasing order of strength:
 - `git_remote`: a commit containing the log pushed to a remote host (weaker: the host's clock and history are trusted).
 - `none`: no anchoring.
 
-The tool anchors automatically after every `plan`, before the first run that uses it. The anchor level of a plan becomes `planned_at_anchor` in the exported claimset.
+The anchor level of a plan becomes `planned_at_anchor` in the exported claimset.
+
+**Automatic anchoring.** When anchoring is configured, the tool anchors after every `plan` event, and before a confirmatory run it makes sure the run's plan is covered by an anchor (an anchor whose `seq` is at least the plan's). If that anchor cannot be made, the run is refused as confirmatory (rule L5); it can still be run as exploratory. The tool can also be configured to anchor after every event.
+
+### 7.1 Git anchoring
+
+With `git_remote` anchoring, the head is recorded by pushing the lab's logs to a dedicated branch of a git remote.
+
+- **Configuration** is kept in `lab/config.json`: `{"anchor": {"service": "git_remote", "remote": "origin", "branch": "claimset-lab", "every": "plan"}}`. `every` is `plan` (default) or `event`.
+- **What is committed:** `lab.jsonl`, `anchors.jsonl` and the files in `agents/`, at their paths in the repository. The commit is made on the anchor branch without touching the researcher's working tree or current branch. Run outputs are not committed; they are covered by the hashes in the log.
+- **Order:** before committing, the tool checks that the log already on the remote branch is a prefix of the local log. If it is not, the local log has been rewritten since the last anchor; the tool refuses to anchor and reports it.
+- **Pushing** never forces. A rejected push means the remote branch has changed in a way the tool did not make, and is reported.
+- **Receipt:** `{remote, branch, commit}` recorded in the `anchors.jsonl` entry, which itself is committed with the next anchor.
+- **Protection of the branch:** to make the remote copy append-only, protect the branch on the host so that force-pushes and deletion are refused, and give the agent credentials that can push but cannot change branch protection. This turns detection into prevention.
+- **Checking:** `verify --remote` fetches the branch and checks that the log there is a prefix of the local log and that each anchor's commit holds the log as it was at that anchor.
 
 ## 8. Publication and redaction
 
@@ -336,7 +367,10 @@ The reference tool is part of the `claimset` package. Indicative commands:
 | any writing command `--supersedes ID` | writes a correction of `ID` (§4.3) |
 | `claimset lab merge [AC2 AC3]` | merges finished agent logs into the main log (§3.1) |
 | `claimset lab verify` | checks the main and agent chains and rules L1–L10 |
-| `claimset lab anchor` | anchors the head of the chain |
+| `claimset lab anchor [--git] [--remote origin] [--branch claimset-lab] [--every plan\|event]` | anchors the head of the chain; the first use with `--git` records the configuration (§7.1) |
+| `claimset lab verify --remote` | also checks the log against the anchor branch on the remote |
+| `claimset lab guard` | the guard for agent harnesses: reads a proposed tool call as JSON on standard input and exits with code 2 if it would modify the lab directory (§4.5); `--print-config` prints the Claude Code hook configuration |
+| `claimset lab protect` | sets the operating system's append-only attribute on the log files, or explains how an administrator can (§4.5) |
 | `claimset lab publish --withhold RN7 --reason personal_data --comment "…"` | prepares the publishable record |
 | `claimset lab export` | drafts the claimset submission |
 
