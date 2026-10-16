@@ -186,8 +186,13 @@ def cmd_run(args):
     return 1 if code is None else (code if code >= 0 else 1)
 
 
+def _view(args):
+    """The state the current actor sees: its open agent log on top of the main log, or the main log."""
+    return _lab(args).view(_actor(args, required=False))
+
+
 def cmd_show(args):
-    st = _lab(args).state()
+    st = _view(args)
     e = st.get(args.id)
     if e is None:
         raise LabError("L12", f"no event '{args.id}'")
@@ -204,7 +209,7 @@ def cmd_show(args):
 
 
 def cmd_list(args):
-    events = _lab(args).read()
+    events = _view(args).events
     if args.type:
         events = [e for e in events if e["type"] == args.type]
     if args.last:
@@ -250,6 +255,26 @@ def cmd_protect(args):
     return 0 if out["ok"] else 1
 
 
+def cmd_start(args):
+    lab = _lab(args)
+    by = _actor(args)
+    path = lab.start_agent(by)
+    print(f"{by} now writes to {path} until `claimset lab merge {by}`")
+    return 0
+
+
+def cmd_merge(args):
+    lab = _lab(args)
+    event = lab.merge(_actor(args), args.actors or None)
+    if args.json:
+        print(json.dumps(event, ensure_ascii=False, indent=2))
+    else:
+        b = event["body"]
+        print(f"{event['id']}: merged {b['events_merged']} events from {', '.join(b['agents'])}")
+    _auto_anchor(lab, event)
+    return 0
+
+
 def cmd_verify(args):
     rep = verify(_lab(args), check_files=not args.no_files, remote=args.remote)
     if args.json:
@@ -258,14 +283,28 @@ def cmd_verify(args):
         state = "OK" if rep["ok"] else "FAILED"
         print(f"{state}: {rep['events']} events, {len(rep['errors'])} error(s), {rep['withheld']} withheld")
         for e in rep["errors"]:
-            print(f"  ERROR [{e['rule']}] seq {e['seq']} {e['id'] or ''}: {e['message']}")
+            where = f"{e['log']} " if e.get("log") else ""
+            print(f"  ERROR [{e['rule']}] {where}seq {e['seq']} {e['id'] or ''}: {e['message']}")
+        for a, x in (rep.get("agents") or {}).items():
+            state = f"merged by {x['merged_by']}" if x["merged_by"] else "open"
+            print(f"  agent log {a}: {x['events']} events, {state}")
+        for n in rep.get("notes") or []:
+            print(f"  NOTE {n}")
         if rep["unchecked_types"]:
             print("  Not yet checked by this version: " + ", ".join(rep["unchecked_types"]))
     return 0 if rep["ok"] else 1
 
 
 def cmd_summary(args):
-    s = _summary.build(_lab(args).read())
+    lab = _lab(args)
+    main = lab.read()
+    st = lab.view(_actor(args, required=False), main)
+    s = _summary.build(st.events)
+    if st.owner:
+        s["view"] = {"actor": st.owner, "own_events": len(st.agent_events), "base": st.base,
+                     "newer_main_events": len(main) - st.base}
+    merged = lab.view(main=main).merged
+    s["agent_logs"] = {a: {"events": len(lab.read_agent(a)), "merged_by": merged.get(a)} for a in lab.agent_logs()}
     if args.json:
         print(json.dumps(s, ensure_ascii=False, indent=2))
     else:
@@ -385,10 +424,18 @@ def add_parser(subparsers):
     p.add_argument("--text", required=True, help="what differed")
     p.add_argument("--reason", required=True, help="why")
 
-    p = cmd("show", cmd_show, "show one event, with corrections resolved", parents=(common,))
+    p = cmd("start", cmd_start, "start an agent log: this actor's events go there until it is merged")
+
+    p = cmd("merge", cmd_merge, "merge finished agent logs into the main log")
+    p.add_argument("actors", nargs="*", metavar="ACTOR", help="agent logs to merge (default: all open ones)")
+
+    viewer = argparse.ArgumentParser(add_help=False, parents=[common])
+    viewer.add_argument("--by", help="read as this actor: its open agent log included (default: $CLAIMSET_ACTOR)")
+
+    p = cmd("show", cmd_show, "show one event, with corrections resolved", parents=(viewer,))
     p.add_argument("id")
 
-    p = cmd("list", cmd_list, "list events, one per line", parents=(common,))
+    p = cmd("list", cmd_list, "list events, one per line", parents=(viewer,))
     p.add_argument("--type")
     p.add_argument("--last", type=int)
 
@@ -409,7 +456,7 @@ def add_parser(subparsers):
     p = cmd("protect", cmd_protect, "make the log files append-only at the operating-system level",
             parents=(common,))
     p.add_argument("--undo", action="store_true", help="remove the append-only attribute")
-    cmd("summary", cmd_summary, "current state of the research", parents=(common,))
+    cmd("summary", cmd_summary, "current state of the research", parents=(viewer,))
 
     def lab_help(args):
         lab.print_help()

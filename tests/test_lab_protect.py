@@ -105,10 +105,10 @@ class TestGitAnchoring(PlanRunCase):
 
     def test_confirmatory_run_anchors_its_plan_first(self):
         pl = self.plan()
-        self.assertFalse(anchor_mod.covered(self.lab, self.lab.state().get(pl)["seq"]))
+        self.assertFalse(anchor_mod.covered(self.lab, self.lab.state().get(pl)))
         out = self.execute(plan=pl)
         self.assertEqual(out["run"]["body"]["label"], "confirmatory")
-        self.assertTrue(anchor_mod.covered(self.lab, self.lab.state().get(pl)["seq"]))
+        self.assertTrue(anchor_mod.covered(self.lab, self.lab.state().get(pl)))
         rep = verify(self.lab)
         self.assertTrue(rep["ok"], rep["errors"])
 

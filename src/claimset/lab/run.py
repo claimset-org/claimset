@@ -96,7 +96,7 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
     if not argv:
         raise LabError("schema", "run: give the command after --")
     cwd = cwd or os.getcwd()
-    st = lab.state()
+    st = lab.view(by)
     label = "exploratory"
     if plan is not None:
         p = st.get(plan)
@@ -107,7 +107,7 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
             label = "confirmatory"
     if label == "confirmatory" and anchoring(lab):
         try:
-            ensure_covered(lab, st.latest(plan)["seq"])
+            ensure_covered(lab, st.latest(plan), st.owner)
         except LabError as exc:
             raise LabError("L5", f"run: plan {plan} could not be anchored before the run ({exc.message}); "
                                  f"fix anchoring or run with --exploratory") from None

@@ -26,6 +26,8 @@ def _text(event):
         return f"approves {b.get('target')}"
     if event["type"] == "deviation":
         return f"{b.get('run')} vs {b.get('plan')}: {b.get('text', '')}"
+    if event["type"] == "merge":
+        return f"{b.get('events_merged')} events from {', '.join(b.get('agents') or [])}"
     return ""
 
 
@@ -129,6 +131,16 @@ def build(events):
 def render(s):
     """Plain-text rendering of a summary."""
     out = [f"Lab: {s['title']}  ({s['events']} events)"]
+    v = s.get("view")
+    if v:
+        out.append(f"Agent log of {v['actor']}: {v['own_events']} own events on top of main seq {v['base']}"
+                   + (f"; the main log has {v['newer_main_events']} newer events, not visible here until "
+                      f"this log is merged" if v["newer_main_events"] else ""))
+    logs = s.get("agent_logs") or {}
+    if logs:
+        out.append("Agent logs: " + "; ".join(
+            f"{a} " + (f"merged by {x['merged_by']}" if x["merged_by"] else f"open, {x['events']} events")
+            for a, x in logs.items()))
     if s["actors"]:
         out.append("Actors: " + "; ".join(f"{a['id']} {a['name']} ({a['kind']})" for a in s["actors"]))
     qs = {q["id"]: q for q in s["questions"]}
@@ -177,4 +189,4 @@ def list_line(event):
     text = _text(event)
     if len(text) > 100:
         text = text[:97] + "..."
-    return f"{event['seq']:>5} {event['id']:<8} {event['type']:<11} {event['by'] or '-':<6} {event['at']}  {text}{sup}"
+    return f"{event['seq']:>5} {event['id']:<10} {event['type']:<11} {event['by'] or '-':<6} {event['at']}  {text}{sup}"
