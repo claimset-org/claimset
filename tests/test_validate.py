@@ -502,5 +502,100 @@ class TestCli(unittest.TestCase):
         self.assertIn("C4", report["computed"])
 
 
+def with_table(d, **override):
+    """The native example with a result table on E1, cited by C2."""
+    t = {"id": "T1", "description": "Mean MASE and MSIS of three methods on monthly retail sales, horizons 1 to 12",
+         "conditions": {"data": "monthly retail sales"}, "row_labels": ["method"],
+         "columns": ["mean MASE", "mean MSIS"], "units": [None, None],
+         "rows": [{"id": "r1", "label": ["M"], "values": [0.861, 6.95]},
+                  {"id": "r2", "label": ["seasonal naive"], "values": [0.874, 6.71]},
+                  {"id": "r3", "label": ["ETS"], "values": [0.902, None]}],
+         "artefact": "A1", "source_spans": ["p4.2"]}
+    t.update(override)
+    d["evidence"][0]["tables"] = [t]
+    claim(d, "C2")["support"][0]["results"] = ["E1.T1", "E1.T1.r1"]
+    return t
+
+
+class TestRulesV014(Base):
+    def setUp(self):
+        self.d = load("submission-native.json")
+
+    def test_48_valid_table_and_row_references(self):
+        with_table(self.d)
+        self.assertValid(self.d)
+
+    def test_table_alone_satisfies_w8(self):
+        e = self.d["evidence"][0]
+        for k in ("estimate", "estimand", "interval"):
+            e.pop(k, None)
+        with_table(self.d)
+        _, warnings = self.rules(self.d)
+        self.assertNotIn("W8", warnings)
+
+    def test_48_broken_tables(self):
+        cases = [
+            {"id": "X1"},
+            {"description": ""},
+            {"columns": []},
+            {"columns": ["a", "a"], "units": None},
+            {"row_labels": "method"},
+            {"units": [None]},
+            {"rows": []},
+            {"rows": [{"id": "r1", "label": ["M"], "values": [0.8]}]},
+            {"rows": [{"id": "r1", "label": [], "values": [0.8, 1.0]}]},
+            {"rows": [{"id": "r1", "label": ["M"], "values": ["0.8", 1.0]}]},
+            {"rows": [{"id": "r1", "label": ["M"], "values": [None, None]}]},
+            {"rows": [{"id": "r1", "label": ["M"], "values": [1, 2]}, {"id": "r1", "label": ["N"], "values": [1, 2]}]},
+            {"artefact": "A99"},
+        ]
+        for override in cases:
+            d = load("submission-native.json")
+            t = with_table(d, **override)
+            if t.get("units") is None:
+                t.pop("units")
+            claim(d, "C2")["support"][0]["results"] = ["E1.T1"]
+            self.assertRule(d, "48")
+
+    def test_48_tables_only_in_quant_and_simulation(self):
+        self.d["evidence"].append({"id": "E2", "profile": "qual", "description": "Interviews.",
+                                   "tables": [{"id": "T1", "description": "x", "row_labels": [],
+                                               "columns": ["a"], "rows": [{"id": "r1", "label": [], "values": [1]}]}]})
+        self.assertRule(self.d, "48")
+
+    def test_38_unresolved_table_references(self):
+        for bad in ("E1.T2", "E1.T1.r9", "E1.R1.r1", "E2.T1"):
+            d = load("submission-native.json")
+            with_table(d)
+            claim(d, "C2")["support"][0]["results"] = [bad]
+            self.assertRule(d, "38")
+
+    def test_07_converted_formal_evidence_by_source_spans(self):
+        d = converted_base()
+        d["evidence"].append({"id": "E2", "profile": "formal", "description": "Derivation of the identity.",
+                              "foundation": "real analysis", "source_spans": ["p3.4", "p3.5"]})
+        d["claims"].append({"id": "C4", "statement": "Identity holds for every real $x$.", "type": "formal",
+                            "role": "supporting", "novelty": "new",
+                            "support": [{"kind": "formal_proof", "evidence": "E2"}],
+                            "verification": "unchecked", "provenance": "extracted", "source_spans": ["p3.4"]})
+        errors, _ = self.rules(d)
+        self.assertNotIn("7", errors)
+        del d["evidence"][-1]["source_spans"]
+        self.assertRule(d, "7")
+
+    def test_07_native_formal_evidence_needs_steps(self):
+        self.d["evidence"].append({"id": "E2", "profile": "formal", "description": "Derivation.",
+                                   "foundation": "ZFC", "source_spans": ["sec2:p1"]})
+        self.d["claims"].append({"id": "C4", "statement": "Identity holds for every real $x$.", "type": "formal",
+                                 "role": "supporting", "novelty": "new",
+                                 "support": [{"kind": "formal_proof", "evidence": "E2"}],
+                                 "verification": "unchecked", "provenance": "author_stated"})
+        self.assertRule(self.d, "7")
+
+    def test_evidence_source_spans_must_be_strings(self):
+        self.d["evidence"][0]["source_spans"] = [3]
+        self.assertRule(self.d, "1")
+
+
 if __name__ == "__main__":
     unittest.main()
