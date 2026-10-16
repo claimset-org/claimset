@@ -43,7 +43,7 @@ If the human cannot be asked (unattended run), stop after building and validatin
 
 ### 2a. If the research has a lab record
 
-If the work was done with a lab record (`lab/lab.jsonl`, specified in `references/lab-record-v0.2.md`), start from it rather than from a manuscript:
+If the work was done with a lab record (`lab/lab.jsonl`, specified in `references/lab-record-v0.3.md`), start from it rather than from a manuscript:
 - Run `claimset lab export` if the tool is available; otherwise build the claims from the record by hand, following the mapping in lab record §9.
 - Every hypothesis that reached `supported`, `not_supported` or `inconclusive` becomes a claim with `hypothesis: {lab_event, outcome}`, `planning`, and for planned tests `planned_at` and `planned_at_anchor` copied from the record. Never upgrade `exploratory` to `confirmatory`.
 - **Negative results are claims too**, in this claimset: state plainly what was not found, with scope and evidence (see `examples/submission-from-lab.json`, claim C4).
