@@ -20,8 +20,9 @@ def protect(lab, undo=False, chattr="chattr"):
         if not f.exists():
             f.touch()
     agents = lab.root / "agents"
-    if agents.is_dir():
-        files += sorted(agents.glob("*.jsonl"))
+    agents.mkdir(exist_ok=True)
+    # On a directory the attribute allows new agent logs to be created but none to be removed or renamed.
+    files += sorted(agents.glob("*.jsonl")) + [agents]
     flag = "-a" if undo else "+a"
     paths = " ".join(str(f) for f in files)
     if platform.system() != "Linux" or shutil.which(chattr) is None:
@@ -38,4 +39,5 @@ def protect(lab, undo=False, chattr="chattr"):
             "Note: some file systems (e.g. tmpfs, many network and overlay mounts) do not support it."]}
     state = "removed from" if undo else "set on"
     return {"ok": True, "messages": [f"Append-only attribute {state}: {paths}",
-                                     "Only an administrator can remove it (sudo chattr -a ...)."]}
+                                     "Only an administrator can remove it (sudo chattr -a ...).",
+                                     "Agent logs started later get it when this command is run again."]}

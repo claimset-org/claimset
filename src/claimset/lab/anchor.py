@@ -48,9 +48,28 @@ def read_anchors(lab):
     return out
 
 
-def covered(lab, seq):
-    """True if some anchor covers the event at `seq`."""
-    return any(a.get("seq", 0) >= seq for a in read_anchors(lab))
+def covers(entry, event, owner=None):
+    """True if the anchor `entry` covers `event`.
+
+    `owner` is the actor whose open agent log the event is read from, if any. An event
+    is covered by an anchor of the main log at or after its seq, or, if it was written
+    to an agent log, by an anchor of that agent log at or after its seq there.
+    """
+    agents = entry.get("agents") or {}
+    eid = str(event.get("id"))
+    if owner and eid.startswith(owner + "."):
+        return (agents.get(owner) or {}).get("seq", 0) >= event["seq"]
+    if entry.get("seq", 0) >= event["seq"]:
+        return True
+    o = event.get("origin")
+    if isinstance(o, dict):
+        return (agents.get(eid.split(".")[0]) or {}).get("seq", 0) >= o.get("seq", 0)
+    return False
+
+
+def covered(lab, event, owner=None):
+    """True if some anchor covers `event`."""
+    return any(covers(a, event, owner) for a in read_anchors(lab))
 
 
 # ---------------------------------------------------------------- git
@@ -78,18 +97,38 @@ def _lab_files(lab, top):
     return [(f, f.resolve().relative_to(top.resolve()).as_posix()) for f in files if f.is_file()]
 
 
-def _remote_log(lab, top, remote, branch):
-    """Lines of lab.jsonl on the remote anchor branch, or None if the branch does not exist there."""
+def _remote_log(lab, top, remote, branch, path=None):
+    """Lines of a log file (default lab.jsonl) on the remote anchor branch, or None if the branch
+    does not exist there."""
     fetch = _git(["fetch", "-q", remote, f"+refs/heads/{branch}:refs/claimset/remote-anchor"], cwd=top, check=False)
     if fetch.returncode != 0:
         if "couldn't find remote ref" in fetch.stderr or "not found" in fetch.stderr.lower():
             return None
         raise LabError("anchor", f"could not fetch {remote}/{branch}: {fetch.stderr.strip()}")
-    rel = lab.log_path.resolve().relative_to(top.resolve()).as_posix()
+    return _remote_file(lab, top, path or lab.log_path)
+
+
+def _remote_file(lab, top, path):
+    rel = Path(path).resolve().relative_to(top.resolve()).as_posix()
     show = _git(["show", f"refs/claimset/remote-anchor:{rel}"], cwd=top, check=False)
     if show.returncode != 0:
         return []
     return show.stdout.splitlines()
+
+
+def _lines(path):
+    return [l for l in Path(path).read_text(encoding="utf-8").splitlines() if l.strip()]
+
+
+def _agent_problems(lab, top):
+    """Differences between the local agent logs and their copies on the fetched anchor branch."""
+    problems = []
+    for actor in lab.agent_logs():
+        path = lab.agent_log_path(actor)
+        problem = check_prefix(_lines(path), _remote_file(lab, top, path))
+        if problem:
+            problems.append(f"{lab.agent_log_name(actor)}: {problem}")
+    return problems
 
 
 def check_prefix(local_lines, remote_lines):
@@ -115,6 +154,9 @@ def anchor_git(lab, remote="origin", branch=DEFAULT_BRANCH):
         problem = check_prefix(local_lines, remote_lines)
         if problem:
             raise LabError("L14", f"refusing to anchor: {problem}")
+        problems = _agent_problems(lab, top)
+        if problems:
+            raise LabError("L14", f"refusing to anchor: {problems[0]}")
     parent = None
     if remote_lines is not None:
         parent = _git(["rev-parse", "refs/claimset/remote-anchor"], cwd=top).stdout.strip()
@@ -142,6 +184,13 @@ def anchor_git(lab, remote="origin", branch=DEFAULT_BRANCH):
                                  f"The remote branch changed in a way the tool did not make.")
     entry = {"seq": head["seq"], "head_hash": header_hash(head), "service": "git_remote",
              "receipt": {"remote": remote, "branch": branch, "commit": commit}, "at": lab.clock()}
+    agents = {}
+    for actor in lab.agent_logs():
+        events = lab.read_agent(actor)
+        if events:
+            agents[actor] = {"seq": events[-1]["seq"], "head_hash": header_hash(events[-1])}
+    if agents:
+        entry["agents"] = agents
     with open(lab.root / ANCHORS_FILE, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, separators=(",", ":")) + "\n")
         fh.flush()
@@ -159,9 +208,9 @@ def anchor(lab):
     return anchor_git(lab, cfg.get("remote", "origin"), cfg.get("branch", DEFAULT_BRANCH))
 
 
-def ensure_covered(lab, seq):
-    """Make sure the event at `seq` is covered by an anchor, anchoring now if needed."""
-    if covered(lab, seq):
+def ensure_covered(lab, event, owner=None):
+    """Make sure `event` is covered by an anchor, anchoring now if needed."""
+    if covered(lab, event, owner):
         return None
     return anchor(lab)
 
@@ -183,24 +232,44 @@ def verify_anchors(lab, events):
         elif header_hash(events[seq - 1]) != a.get("head_hash"):
             errors.append({"seq": seq, "id": events[seq - 1].get("id"), "rule": "L14",
                            "message": f"anchor {n} does not match the log: the log was rewritten after it was anchored"})
+        for actor, pos in sorted((a.get("agents") or {}).items()):
+            log = lab.agent_log_name(actor)
+            try:
+                agent = lab.read_agent(actor)
+            except LabError:
+                agent = []
+            s_ = (pos or {}).get("seq")
+            if not isinstance(s_, int) or s_ < 1 or s_ > len(agent):
+                errors.append({"seq": s_, "id": None, "rule": "L14", "log": log,
+                               "message": f"anchor {n} names seq {s_} of {log}, which is not there: events were removed"})
+            elif header_hash(agent[s_ - 1]) != pos.get("head_hash"):
+                errors.append({"seq": s_, "id": agent[s_ - 1].get("id"), "rule": "L14", "log": log,
+                               "message": f"anchor {n} does not match {log}: it was rewritten after it was anchored"})
     return errors
 
 
-def verify_confirmatory_anchoring(lab, events):
-    """Rule L5 with anchoring: a confirmatory run's plan was anchored before the run started."""
+def verify_confirmatory_anchoring(lab, events, owner=None):
+    """Rule L5 with anchoring: a confirmatory run's plan was anchored before the run started.
+
+    `events` is the main log, or, with `owner`, the view of that actor's open agent log.
+    """
     if not anchoring(lab):
         return []
     anchors = read_anchors(lab)
-    by_id = {e.get("id"): e for e in events}
+    by_id = {e.get("id"): e for e in events if isinstance(e, dict)}
     errors = []
     for e in events:
+        if not isinstance(e, dict):
+            continue
         b = e.get("body") or {}
         if e.get("type") != "run" or b.get("label") != "confirmatory" or b.get("withheld"):
+            continue
+        if owner and not str(e.get("id")).startswith(owner + "."):
             continue
         plan = by_id.get(b.get("plan"))
         if plan is None:
             continue
-        ok = any(a.get("seq", 0) >= plan["seq"] and a.get("at", "") <= b.get("started_at", "") for a in anchors)
+        ok = any(covers(a, plan, owner) and a.get("at", "") <= b.get("started_at", "") for a in anchors)
         if not ok:
             errors.append({"seq": e["seq"], "id": e["id"], "rule": "L5",
                            "message": f"plan {plan['id']} was not anchored before this confirmatory run started"})
@@ -223,6 +292,7 @@ def verify_remote(lab):
         return [{"seq": None, "id": None, "rule": "L14", "message": f"{remote}/{branch} does not exist"}]
     problem = check_prefix(local_lines, remote_lines)
     errors = [] if problem is None else [{"seq": None, "id": None, "rule": "L14", "message": problem}]
+    errors += [{"seq": None, "id": None, "rule": "L14", "message": p} for p in _agent_problems(lab, top)]
     rel = lab.log_path.resolve().relative_to(top.resolve()).as_posix()
     for a in read_anchors(lab):
         commit = (a.get("receipt") or {}).get("commit")

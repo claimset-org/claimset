@@ -1,6 +1,6 @@
 # Claimset Lab Record — Specification v0.4 (draft)
 
-Status: working draft · Date: 2026-10-15 · Supersedes v0.3 · Companion to the claimset specification (`spec/claimset-v0.11.md`)
+Status: working draft · Date: 2026-10-16 · Supersedes v0.3 · Companion to the claimset specification (`spec/claimset-v0.11.md`)
 
 ## Changes since v0.3
 
@@ -10,6 +10,7 @@ Status: working draft · Date: 2026-10-15 · Supersedes v0.3 · Companion to the
 - Rules L4 and L5 stated precisely; new rule L13 (run outputs) (§6).
 - Protecting the log: what is prevented and what is detected at each level of protection (§4.5).
 - Git anchoring specified: configuration, what is committed, receipts, automatic anchoring, checking against the remote (§7.1); new rule L14 (§6).
+- Agent logs specified precisely: how one is started, what an agent sees and may write, the order and layout of a merge, and when a merge is refused (§3.1, §5.16); rule L10 stated precisely; anchors cover agent logs (§7).
 
 ## Changes in v0.3 (since v0.2)
 
@@ -66,14 +67,16 @@ lab/
 
 ### 3.1 Several agents
 
-When several agents work on one lab at the same time, each writes its own log instead of the main log:
+When several agents work on one lab at the same time, each can write its own log instead of the main log, for example in its own working copy of the repository. The agent logs are merged into the main log when the agents finish.
 
-1. Every agent is registered by an `actor` event in the main log before it starts.
-2. The agent writes `lab/agents/<actor id>.jsonl`, with its own `seq` (from 1) and its own hash chain. Its first event's `prev` is the header hash of the latest main-log event when the agent started, so the agent log records which state of the lab it began from.
-3. Event IDs in an agent log are prefixed by the actor ID: `AC2.H1`, `AC2.RN4`. IDs therefore never collide between agents. Run output directories use the same IDs (`runs/AC2.RN4/`).
-4. An agent's events may refer to main-log events that existed when it started and to earlier events in its own log, but not to events in other agents' logs that have not been merged.
-5. When the agent finishes, `merge` appends its events to the main log in order of `at` (ties broken by actor ID, then `seq`). Each merged event gets a new main-log `seq` and `prev` and keeps its ID; its header records `origin: {log, seq, header_hash}`, the event's position and header hash in the agent log. The agent log is kept unchanged, so both chains remain verifiable.
-6. Merging several agents at once interleaves their events by `at`. A merge is recorded by a `merge` event in the main log: `{agents, events_merged}`.
+1. **Starting.** Every agent is registered by an `actor` event in the main log. `start` then creates the empty file `lab/agents/<actor id>.jsonl`. From then on, every event written by that actor goes to its agent log, until the log is merged.
+2. **Chain.** An agent log has its own `seq` (from 1) and its own hash chain. Its first event's `prev` is the header hash of the latest main-log event when that first event was written. That main-log event is the log's **base**: it records which state of the lab the agent worked from.
+3. **IDs.** Event IDs in an agent log are prefixed by the actor ID: `AC2.H1`, `AC2.RN4`, numbered within the log. IDs therefore never collide between agents. Run output directories use the same IDs (`runs/AC2.RN4/`).
+4. **What an agent sees.** An agent's events may refer to main-log events up to its base and to earlier events in its own log, and to nothing else: not to later main-log events, and not to events in other agent logs.
+5. **What an agent may write.** Only its own actor writes an agent log. `init`, `actor` and `merge` events are written only to the main log. A correction (`supersedes`) in an agent log corrects only an event of the same agent log; other events are corrected in the main log after merging. Human approvals are therefore given in the main log, after the log they approve is merged.
+6. **Once.** An agent log is merged once. After the merge, the actor's events go to the main log; for new concurrent work, an agent is registered as a new actor.
+7. **Merging.** `merge` appends to the main log a `merge` event (§5.16) followed immediately by the events of the agent logs it names, interleaved in order of `at`, each agent's own order kept, ties broken by actor ID, then `seq`. Each merged event keeps its ID, type, `at`, `by`, `supersedes`, `content_hash` and body, gets a new main-log `seq` and `prev`, and records in `origin` its position and header hash in the agent log: `{log: "agents/AC2.jsonl", seq, header_hash}`. The agent log is kept unchanged, so both chains remain verifiable.
+8. **Refusal.** Before writing anything, the tool verifies each agent log on its own and checks every event against the main log as it will be after the events before it. If any check fails (for example, a status change that is no longer valid because the main log has moved on), nothing is written and the problem is reported.
 
 Events written directly to the main log have `origin: null`.
 
@@ -113,7 +116,7 @@ The headers form a hash chain. Because each header commits to its body only thro
 ### 4.2 Actors and IDs
 
 - `by` is an actor ID. Two exceptions: the `init` event has `by: null`, and an `actor` event may name its own ID (an actor registering itself).
-- An event ID is its type prefix (§5) followed by a positive integer: `H1`, `H2`, `RN17`. Within each prefix, numbers are allocated in order: the next number is one more than the highest used so far in the log. Events from agent logs carry the actor prefix (`AC2.H1`, §3.1).
+- An event ID is its type prefix (§5) followed by a positive integer: `H1`, `H2`, `RN17`. Within each prefix, numbers are allocated in order: the next number is one more than the highest used so far in the log. Events from agent logs carry the actor prefix (`AC2.H1`) and are numbered within their agent log, independently of the main log (§3.1).
 
 ### 4.3 Corrections
 
@@ -265,7 +268,7 @@ Each entry needs `quantity` (text) and `value` (a number); `unit`, `interval` an
 
 ### 5.16 `merge` (prefix `MG`), written by the tool
 
-`{agents, events_merged}`: records that the listed agent logs were merged into the main log (§3.1).
+`{agents, events_merged}`: records that the agent logs of the listed actors were merged into the main log (§3.1). The merge event is followed immediately by exactly `events_merged` events, each with an `origin` in one of the listed logs.
 
 ## 6. Rules
 
@@ -278,11 +281,11 @@ L6. A `status` event moving a hypothesis to `supported` must not list as evidenc
 L7. Every `status`, `decision` and `deviation` has a rationale or reason; every `revised` status names `revised_to`.
 L8. Every `by` names an `actor` event with a lower `seq`.
 L9. A `check` is not made by the actor who wrote its target.
-L10. Agent logs follow L1–L9 on their own; merged events keep their IDs and record their `origin`; an agent log is not merged twice.
+L10. Agent logs follow L1–L9 and L11–L12 on their own, starting from their base, and the restrictions of §3.1 (who writes them, what they may refer to and correct, which event types they hold). A merged event equals the event its `origin` names, whose header hash it records; an agent log is merged once, and nothing is added to it afterwards. Only merged events carry an actor prefix in the main log.
 L11. A `supersedes` reference names an earlier event of the same type that has not already been superseded.
 L12. Every `id` has the prefix of its `type` and is unique in the log; every reference in a body names an event with a lower `seq`.
 L13. The files of a run directory match the hashes in the run's `outputs`. Run directories are never changed after the run.
-L14. Every entry in `anchors.jsonl` names a `seq` present in the log, and its `head_hash` equals the header hash of the event at that `seq`. A mismatch means the log was rewritten after it was anchored.
+L14. Every entry in `anchors.jsonl` names a `seq` present in the log, and its `head_hash` equals the header hash of the event at that `seq`; the same holds for each agent log the entry names. A mismatch means the log was rewritten after it was anchored.
 
 The tool enforces L1–L5 and L8–L14 mechanically, and refuses L6 and L7 violations.
 
@@ -290,7 +293,9 @@ The tool enforces L1–L5 and L8–L14 mechanically, and refuses L6 and L7 viola
 
 A timestamp written by the tool proves order, not time. To make "this plan existed before this run" verifiable to others, the tool periodically anchors the head of the chain (the latest `seq` and its header hash) with an external service and records the receipt in `anchors.jsonl`:
 
-`{seq, head_hash, service, receipt, at}`
+`{seq, head_hash, service, receipt, at, agents}`
+
+`agents` (omitted when there are none) records the head of each non-empty agent log in the same way: `{"AC2": {seq, head_hash}}`. An event is covered by an anchor if the anchor's `seq` is at least the event's main-log `seq`, or, for an event written to an agent log, if the anchor's entry for that log has a `seq` at least the event's `seq` there.
 
 Services, in decreasing order of strength:
 - `platform`: the Claimset platform records the hash and returns a signed receipt.
@@ -300,7 +305,7 @@ Services, in decreasing order of strength:
 
 The anchor level of a plan becomes `planned_at_anchor` in the exported claimset.
 
-**Automatic anchoring.** When anchoring is configured, the tool anchors after every `plan` event, and before a confirmatory run it makes sure the run's plan is covered by an anchor (an anchor whose `seq` is at least the plan's). If that anchor cannot be made, the run is refused as confirmatory (rule L5); it can still be run as exploratory. The tool can also be configured to anchor after every event.
+**Automatic anchoring.** When anchoring is configured, the tool anchors after every `plan` event, and before a confirmatory run it makes sure the run's plan is covered by an anchor. If that anchor cannot be made, the run is refused as confirmatory (rule L5); it can still be run as exploratory. The tool can also be configured to anchor after every event.
 
 ### 7.1 Git anchoring
 
@@ -308,7 +313,7 @@ With `git_remote` anchoring, the head is recorded by pushing the lab's logs to a
 
 - **Configuration** is kept in `lab/config.json`: `{"anchor": {"service": "git_remote", "remote": "origin", "branch": "claimset-lab", "every": "plan"}}`. `every` is `plan` (default) or `event`.
 - **What is committed:** `lab.jsonl`, `anchors.jsonl` and the files in `agents/`, at their paths in the repository. The commit is made on the anchor branch without touching the researcher's working tree or current branch. Run outputs are not committed; they are covered by the hashes in the log.
-- **Order:** before committing, the tool checks that the log already on the remote branch is a prefix of the local log. If it is not, the local log has been rewritten since the last anchor; the tool refuses to anchor and reports it.
+- **Order:** before committing, the tool checks that each log already on the remote branch (main and agent logs) is a prefix of the local one. If it is not, the local log has been rewritten since the last anchor; the tool refuses to anchor and reports it.
 - **Pushing** never forces. A rejected push means the remote branch has changed in a way the tool did not make, and is reported.
 - **Receipt:** `{remote, branch, commit}` recorded in the `anchors.jsonl` entry, which itself is committed with the next anchor.
 - **Protection of the branch:** to make the remote copy append-only, protect the branch on the host so that force-pushes and deletion are refused, and give the agent credentials that can push but cannot change branch protection. This turns detection into prevention.
@@ -361,12 +366,13 @@ The reference tool is part of the `claimset` package. Indicative commands:
 | `claimset lab approve PL2` | human approval |
 | `claimset lab run [--plan PL2] [--exploratory] [--param k=v] [--seed N] [--data FILE] -- <command>` | runs the command, records `run` and `result` events (§5.9.1) |
 | `claimset lab decide` / `deviate` / `check` / `artefact` | writes the corresponding event |
-| `claimset lab summary` | current state: open questions, hypotheses by status, pending plans, recent decisions |
+| `claimset lab summary` | current state: open questions, hypotheses by status, pending plans, recent decisions; for an actor with an open agent log, what that agent sees |
 | `claimset lab show H3` | one event, with corrections resolved |
 | `claimset lab list [--type hypothesis] [--last 20]` | events in order, one line each |
 | any writing command `--supersedes ID` | writes a correction of `ID` (§4.3) |
-| `claimset lab merge [AC2 AC3]` | merges finished agent logs into the main log (§3.1) |
-| `claimset lab verify` | checks the main and agent chains and rules L1–L10 |
+| `claimset lab start --by AC2` | starts an agent log for AC2: its events go there until merged (§3.1) |
+| `claimset lab merge [AC2 AC3]` | merges agent logs (default: all unmerged ones) into the main log (§3.1) |
+| `claimset lab verify` | checks the main and agent chains, the rules and the run files |
 | `claimset lab anchor [--git] [--remote origin] [--branch claimset-lab] [--every plan\|event]` | anchors the head of the chain; the first use with `--git` records the configuration (§7.1) |
 | `claimset lab verify --remote` | also checks the log against the anchor branch on the remote |
 | `claimset lab guard` | the guard for agent harnesses: reads a proposed tool call as JSON on standard input and exits with code 2 if it would modify the lab directory (§4.5); `--print-config` prints the Claude Code hook configuration |

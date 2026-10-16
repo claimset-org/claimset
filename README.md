@@ -54,7 +54,17 @@ claimset lab summary     # current state, for whoever picks up the work
 claimset lab verify      # hash chain, rules and run files
 ```
 
-`run` records the command, code version, environment and every output file, and turns the numbers the script writes to `$CLAIMSET_RESULTS` into result events. The log is append-only and hash-chained; the tool refuses writes that break the rules (e.g. confirming a hypothesis with the result that suggested it). Per-agent logs and export to a claimset are being added; see `spec/lab-record-v0.4.md` §10.
+`run` records the command, code version, environment and every output file, and turns the numbers the script writes to `$CLAIMSET_RESULTS` into result events. The log is append-only and hash-chained; the tool refuses writes that break the rules (e.g. confirming a hypothesis with the result that suggested it). Export to a claimset is being added; see `spec/lab-record-v0.4.md` §10.
+
+Several agents working at once each keep their own log, merged when they finish:
+
+```
+claimset lab start --by AC2     # AC2's events now go to lab/agents/AC2.jsonl, with IDs like AC2.H1
+claimset lab start --by AC3
+claimset lab merge              # appends both logs to the main log, interleaved by time
+```
+
+An agent sees the main log as it was when it started, plus its own events. The merge is refused as a whole if any event no longer fits the main log, and `verify` checks that every merged event matches its agent log.
 
 ### Protecting the lab record
 
