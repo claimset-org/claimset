@@ -95,7 +95,7 @@ Each event has a **header**, written by the tool, and a **body**, specific to th
 | `seq` | Integer, starting at 1, increasing by exactly 1 per event |
 | `id` | Event ID, prefixed by type (§5), unique in the log |
 | `type` | Event type (§5) |
-| `at` | UTC time the tool wrote the event (ISO 8601 with seconds) |
+| `at` | UTC time the tool wrote the event, ISO 8601 with seconds and `Z` (`2026-10-15T10:00:00Z`) |
 | `by` | Actor ID (§5.2) of whoever caused the event |
 | `prev` | `sha256` of the previous event's header (all header fields, canonical JSON); for `seq` 1, the hash of the empty string |
 | `content_hash` | `sha256` of the body (canonical JSON: sorted keys, no insignificant whitespace) |
@@ -268,7 +268,7 @@ Each entry needs `quantity` (text) and `value` (a number); `unit`, `interval` an
 
 ### 5.16 `merge` (prefix `MG`), written by the tool
 
-`{agents, events_merged}`: records that the agent logs of the listed actors were merged into the main log (§3.1). The merge event is followed immediately by exactly `events_merged` events, each with an `origin` in one of the listed logs.
+`{agents, events_merged}`: records that the agent logs of the listed actors were merged into the main log (§3.1). The merge event is followed immediately by exactly `events_merged` events, each with an `origin` in one of the listed logs: every listed log whole, from its `seq` 1, in the order of §3.1. A merge event is never withheld (§8).
 
 ## 6. Rules
 
@@ -317,7 +317,8 @@ With `git_remote` anchoring, the head is recorded by pushing the lab's logs to a
 - **Pushing** never forces. A rejected push means the remote branch has changed in a way the tool did not make, and is reported.
 - **Receipt:** `{remote, branch, commit}` recorded in the `anchors.jsonl` entry, which itself is committed with the next anchor.
 - **Protection of the branch:** to make the remote copy append-only, protect the branch on the host so that force-pushes and deletion are refused, and give the agent credentials that can push but cannot change branch protection. This turns detection into prevention.
-- **Checking:** `verify --remote` fetches the branch and checks that the log there is a prefix of the local log and that each anchor's commit holds the log as it was at that anchor.
+- **Several working copies:** when agents work in their own clones (§3.1), each copy anchors to the same branch. The commit starts from the branch as it is on the remote: a local log that extends its anchored copy replaces it; a log that is behind (another copy has added to it) is kept as anchored; a log that differs is refused. `anchors.jsonl` on the branch holds the receipts of all copies. In the repository, `lab/.gitattributes` (written by `init`) marks `anchors.jsonl` with `merge=union`, so merging the copies' branches combines their receipts without conflicts; agent logs never conflict because each has its own file.
+- **Checking:** `verify --remote` fetches the branch and checks that each local log agrees with its copy there (a local log that is behind is reported as a note, not an error), that each anchor's commit is on the branch, and that it holds every anchored log as it was at that anchor.
 
 ## 8. Publication and redaction
 
@@ -326,6 +327,8 @@ By default the whole lab record is published with the claimset, as an artefact o
 Individual events can be withheld. A withheld event keeps its header and replaces its body with:
 
 `{"withheld": true, "reason": personal_data | commercial | legal | ethics | security | other, "comment": "…"}`
+
+Withholding hides the body only: the header, including the event's type, actor and corrections, is still checked against the rules. `merge` events are never withheld.
 
 The header still carries the original `content_hash`, so the chain verifies and the platform's audit agents can check the original if it is provided to them. Run output files can be withheld the same way, keeping their hashes. Withheld events lower the verifiability of the claims that depend on them (claimset §5).
 

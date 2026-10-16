@@ -288,6 +288,8 @@ def cmd_verify(args):
         for a, x in (rep.get("agents") or {}).items():
             state = f"merged by {x['merged_by']}" if x["merged_by"] else "open"
             print(f"  agent log {a}: {x['events']} events, {state}")
+        for n in rep.get("notes") or []:
+            print(f"  NOTE {n}")
         if rep["unchecked_types"]:
             print("  Not yet checked by this version: " + ", ".join(rep["unchecked_types"]))
     return 0 if rep["ok"] else 1

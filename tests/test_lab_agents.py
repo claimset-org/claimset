@@ -287,6 +287,148 @@ class TestAgentAnchoring(AgentCase):
         self.assertEqual(cm.exception.rule, "L14")
 
 
+class TestMalformedAndForged(AgentCase):
+    """Forged or malformed logs are reported by verify, never crash it, and are never merged."""
+
+    def forge_agent(self, actor, events):
+        path = self.lab.agent_log_path(actor)
+        path.write_text("".join(canonical(e).decode("utf-8") + "\n" for e in events))
+
+    def test_withheld_event_still_follows_agent_log_rules(self):
+        body = {"withheld": True, "reason": "other"}
+        e = chained(self.lab.read()[-1], 1, f"{self.a}.NT1", "note", self.b, body)
+        e["content_hash"] = content_hash({"text": "hidden"})
+        self.forge_agent(self.a, [e])
+        self.assertIn("L10", [r for r, _, _ in self.errors()])
+
+    def test_withheld_merge_event_is_an_error_and_log_stays_merged(self):
+        self.write(self.a, "note", {"text": "a1"})
+        self.lab.merge(self.human, [self.a])
+        events = self.lab.read()
+        mg = next(i for i, e in enumerate(events) if e["type"] == "merge")
+        events[mg]["body"] = {"withheld": True, "reason": "other"}
+        self.lab.log_path.write_text("".join(canonical(e).decode("utf-8") + "\n" for e in events))
+        self.assertTrue(any("never withheld" in m for _, _, m in self.errors()))
+        with self.assertRaises(LabError) as cm:
+            self.lab.merge(self.human, [self.a])
+        self.assertEqual(cm.exception.rule, "L10")
+
+    def test_malformed_time_is_reported_and_not_merged(self):
+        self.forge_agent(self.a, [chained(self.lab.read()[-1], 1, f"{self.a}.NT1", "note", self.a,
+                                          {"text": "x"}, at=None)])
+        self.write(self.b, "note", {"text": "b"})
+        self.assertIn(("L2", f"agents/{self.a}.jsonl"), [(r, l) for r, l, _ in self.errors()])
+        with self.assertRaises(LabError) as cm:
+            self.lab.merge(self.human)
+        self.assertEqual(cm.exception.rule, "L10")
+
+    def test_reordered_merged_events_detected(self):
+        self.write(self.a, "note", {"text": "a1"})
+        self.write(self.a, "note", {"text": "a2"})
+        self.lab.merge(self.human, [self.a])
+        events = self.lab.read()
+        events[-1], events[-2] = events[-2], events[-1]
+        for i in (-2, -1):
+            events[i]["seq"] = len(events) + i + 1
+            events[i]["prev"] = header_hash(events[i - 1])
+        self.lab.log_path.write_text("".join(canonical(e).decode("utf-8") + "\n" for e in events))
+        self.assertTrue(any("own order" in m for _, _, m in self.errors()))
+
+    def test_malformed_lines_do_not_crash_verify(self):
+        self.write(self.a, "note", {"text": "a1"})
+        with open(self.lab.agent_log_path(self.a), "a") as fh:
+            fh.write('{"seq": 2}\n[1, 2]\n')
+        with open(self.lab.log_path, "a") as fh:
+            fh.write('{"seq": 99}\n')
+        rep = verify(self.lab)
+        self.assertFalse(rep["ok"])
+        self.assertIn("L2", [e["rule"] for e in rep["errors"]])
+
+    def test_malformed_anchor_entries_do_not_crash_verify(self):
+        (self.lab.root / "anchors.jsonl").write_text('{"seq": null, "agents": {"AC2": "bad"}}\n"x"\n')
+        anchor_mod.save_config(self.lab, {"anchor": {"service": "git_remote"}})
+        self.plan_id = self.lab.append("plan", {"kind": "confirmatory", "hypotheses": [self.h], "design": "d",
+                                                "analysis": "a", "criterion": "c"}, by=self.human)["id"]
+        rules = [r for r, _, _ in self.errors(verify(self.lab, check_files=False))]
+        self.assertIn("L14", rules)
+
+    def test_log_of_unregistered_actor_reported(self):
+        (self.lab.root / "agents" / "AC9.jsonl").write_text("")
+        self.assertTrue(any("not a registered actor" in m for _, _, m in self.errors()))
+
+
+@unittest.skipUnless(HAVE_GIT, "git is not installed")
+class TestWorkingCopies(unittest.TestCase):
+    """An agent working in its own clone anchors and later merges (§3.1, §7.1)."""
+
+    def setUp(self):
+        import subprocess
+        import tempfile
+        from claimset.lab.core import Lab
+        from test_lab import ticking_clock
+
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.git = lambda *a, cwd: subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True,
+                                                  text=True).stdout.strip()
+        self.A = root / "A"
+        self.A.mkdir()
+        remote = make_repo(self.A)
+        self.labA = Lab.create(self.A / "lab", "t", clock=ticking_clock())
+        self.hum = self.labA.append("actor", {"kind": "human", "name": "H"}, by="AC1")["id"]
+        self.ag = self.labA.append("actor", {"kind": "agent", "name": "A", "models": [
+            {"provider": "p", "name": "n", "version": "1"}]}, by=self.hum)["id"]
+        q = self.labA.append("question", {"text": "q"}, by=self.hum)["id"]
+        self.h = self.labA.append("hypothesis", {"statement": "s", "question": q, "origin": "a_priori"},
+                                  by=self.hum)["id"]
+        anchor_mod.save_config(self.labA, {"anchor": {"service": "git_remote", "remote": "origin",
+                                                      "branch": "claimset-lab"}})
+        self.git("add", "-A", cwd=self.A)
+        self.git("commit", "-qm", "x", cwd=self.A)
+        self.git("push", "-q", "origin", "HEAD:main", cwd=self.A)
+        self.B = root / "B"
+        self.git("clone", "-q", "-b", "main", str(remote), str(self.B), cwd=root)
+        self.git("config", "user.email", "t@example.org", cwd=self.B)
+        self.git("config", "user.name", "T", cwd=self.B)
+        self.labB = Lab(self.B / "lab", clock=ticking_clock())
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_agent_copy_anchors_and_merges(self):
+        self.labB.start_agent(self.ag)
+        self.labA.append("note", {"text": "main moves on"}, by=self.hum)
+        anchor_mod.anchor(self.labA)
+        pl = self.labB.append("plan", {"kind": "confirmatory", "hypotheses": [self.h], "design": "d",
+                                       "analysis": "a", "criterion": "c"}, by=self.ag)
+        anchor_mod.ensure_covered(self.labB, pl, self.ag)          # B is behind on lab.jsonl: allowed
+        rep = verify(self.labB, remote=True)
+        self.assertTrue(rep["ok"], rep["errors"])
+        self.assertTrue(any("behind" in n for n in rep["notes"]))
+        anchor_mod.anchor(self.labA)                               # A keeps B's agent log on the branch
+        branch_files = self.git("ls-tree", "-r", "--name-only", "claimset-lab", cwd=self.A)
+        self.assertIn("lab/agents/AC2.jsonl", branch_files)
+        # Bring B's work into A, as a git merge with `merge=union` for anchors.jsonl would.
+        (self.A / "lab" / "agents" / "AC2.jsonl").write_bytes((self.B / "lab" / "agents" / "AC2.jsonl").read_bytes())
+        a_lines = (self.A / "lab" / "anchors.jsonl").read_text().splitlines()
+        b_lines = (self.B / "lab" / "anchors.jsonl").read_text().splitlines()
+        (self.A / "lab" / "anchors.jsonl").write_text("\n".join(a_lines + [l for l in b_lines if l not in a_lines]) + "\n")
+        self.labA.merge(self.hum)
+        anchor_mod.anchor(self.labA)
+        rep = verify(self.labA, remote=True)
+        self.assertTrue(rep["ok"], rep["errors"])
+
+    def test_rewritten_branch_detected(self):
+        anchor_mod.anchor(self.labA)
+        first = anchor_mod.read_anchors(self.labA)[0]["receipt"]["commit"]
+        self.labA.append("note", {"text": "more"}, by=self.hum)
+        anchor_mod.anchor(self.labA)
+        orphan = self.git("commit-tree", self.git("rev-parse", first + "^{tree}", cwd=self.A), "-m", "x", cwd=self.A)
+        self.git("push", "-q", "-f", "origin", f"{orphan}:refs/heads/claimset-lab", cwd=self.A)
+        rep = verify(self.labA, remote=True)
+        self.assertTrue(any("not on" in e["message"] for e in rep["errors"]), rep["errors"])
+
+
 class TestAgentCli(TestCli):
     def test_two_agents_session(self):
         self.run_cli("lab", "init", "--title", "Study")

@@ -56,6 +56,7 @@ ENUM = {
 HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 ORCID_RE = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
 ID_RE = re.compile(r"^(?:(AC\d+)\.)?([A-Z]+)(\d+)$")
+AT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
 LOCK_STALE_SECONDS = 60
 LOCK_TIMEOUT_SECONDS = 10
 
@@ -85,6 +86,8 @@ def content_hash(body):
 
 
 def header_of(event):
+    if not isinstance(event, dict):
+        return event
     return {k: event.get(k) for k in HEADER_FIELDS}
 
 
@@ -126,6 +129,7 @@ class State:
         self.base = None
         self.agent_events = []
         self.merged = {}
+        self._last_merge = None
         self.events = []
         self.by_id = {}
         self.max_num = {}
@@ -164,6 +168,8 @@ class State:
     # -- update
     def apply(self, event):
         self.events.append(event)
+        if not (isinstance(event, dict) and isinstance(event.get("id"), str) and isinstance(event.get("type"), str)):
+            return
         eid = event["id"]
         self.by_id[eid] = event
         m = ID_RE.match(eid)
@@ -171,17 +177,33 @@ class State:
             key, n = (m.group(1), m.group(2)), int(m.group(3))
             self.max_num[key] = max(self.max_num.get(key, 0), n)
         sup = event.get("supersedes")
-        if sup:
+        if isinstance(sup, str) and sup:
             self.superseded_by[sup] = eid
             self.root_of[eid] = self.root(sup)
         if event["type"] == "actor":
             self.actors.add(eid)
-        if event["type"] == "merge" and not is_withheld(event):
-            for a in event["body"].get("agents") or []:
-                self.merged[a] = eid
+        body = event.get("body")
+        if event["type"] == "merge":
+            self._last_merge = eid
+            if isinstance(body, dict) and not is_withheld(event) and isinstance(body.get("agents"), list):
+                for a in body["agents"]:
+                    if isinstance(a, str):
+                        self.merged[a] = eid
+        if isinstance(event.get("origin"), dict) and m and m.group(1):
+            # A merged event marks its agent log as merged even if the merge event is unreadable.
+            self.merged.setdefault(m.group(1), self._last_merge or "an earlier merge")
 
     # -- checks for a new event (rules L6-L12 and body schemas)
     def check(self, etype, eid, by, body, supersedes):
+        self.check_header(etype, eid, by, supersedes)
+        if not isinstance(body, dict):
+            raise LabError("schema", "body must be an object")
+        checker = BODY_CHECKS.get(etype)
+        if checker:
+            checker(self, body, by, eid)
+
+    def check_header(self, etype, eid, by, supersedes):
+        """The checks that need only the header; they apply to withheld events too."""
         if etype not in PREFIX and etype != "init":
             raise LabError("L12", f"unknown event type '{etype}'")
         if self.owner is not None:
@@ -211,11 +233,6 @@ class State:
             if supersedes in self.superseded_by:
                 raise LabError("L11", f"{supersedes} is already superseded by {self.superseded_by[supersedes]}; "
                                       f"correct that one instead")
-        if not isinstance(body, dict):
-            raise LabError("schema", "body must be an object")
-        checker = BODY_CHECKS.get(etype)
-        if checker:
-            checker(self, body, by, eid)
 
 
 # ---------------------------------------------------------------- body checks
@@ -481,6 +498,8 @@ class Lab:
         lab.root.mkdir(parents=True, exist_ok=True)
         (lab.root / "runs").mkdir(exist_ok=True)
         (lab.root / "agents").mkdir(exist_ok=True)
+        # Receipts from several working copies are combined when their branches are merged (§7.1).
+        (lab.root / ".gitattributes").write_text("anchors.jsonl merge=union\n", encoding="utf-8")
         now = clock()
         lab.append("init", {"lab_spec_version": LAB_SPEC_VERSION, "working_title": title,
                             "repository": repository, "started_at": now}, by=None)
@@ -729,10 +748,13 @@ def verify_events(events, base=(), owner=None, log=None):
     group = None  # the merge being read: {"id", "agents", "left"}
 
     def close_group(seq):
-        if group and group["left"] > 0:
+        if not group:
+            return
+        if group["left"] > 0:
             errors.append({"seq": seq, "id": group["id"], "rule": "L10",
                            "message": f"{group['id']} announces {group['n']} merged events but "
                                       f"{group['n'] - group['left']} follow it"})
+        errors.extend(_merge_order_errors(group))
 
     for i, e in enumerate(events, start=1):
         if not isinstance(e, dict):
@@ -746,12 +768,24 @@ def verify_events(events, base=(), owner=None, log=None):
         missing = [k for k in HEADER_FIELDS + ("body",) if k not in e]
         if missing:
             err("L2", f"missing fields {missing}")
+            prev = header_hash(e)
             continue
         if e["seq"] != i:
             err("L2", f"seq is {e['seq']}, expected {i}: an event was removed, added or reordered")
         if e["prev"] != prev:
             err("L2", "prev does not match the previous event's header: the chain is broken here")
         prev = header_hash(e)
+        malformed = [k for k, ok in (
+            ("seq", isinstance(e["seq"], int) and not isinstance(e["seq"], bool)),
+            ("id", isinstance(eid, str)), ("type", isinstance(e["type"], str)),
+            ("at", isinstance(e["at"], str) and AT_RE.match(e["at"])),
+            ("by", e["by"] is None or isinstance(e["by"], str)),
+            ("supersedes", e["supersedes"] is None or isinstance(e["supersedes"], str)),
+            ("body", isinstance(e["body"], dict))) if not ok]
+        if malformed:
+            err("L2", f"malformed fields {malformed} (at is a UTC time like 2026-10-15T10:00:00Z)")
+            st.apply(e)
+            continue
         if is_withheld(e):
             withheld += 1
             b = e["body"]
@@ -795,7 +829,15 @@ def verify_events(events, base=(), owner=None, log=None):
                     err("L10", f"merged event '{eid}' does not belong to the merge before it")
                 else:
                     group["left"] -= 1
+                    group["items"].append((e, ns, origin.get("seq") if ok else None))
 
+        if etype == "merge" and is_withheld(e):
+            err("L10", "merge events are never withheld: they hold no content, only which logs were merged")
+        if is_withheld(e) and etype in PREFIX:
+            try:
+                st.check_header(etype, eid, e["by"], e["supersedes"])
+            except LabError as exc:
+                err(exc.rule, exc.message)
         if is_withheld(e) or etype not in IMPLEMENTED:
             if etype not in IMPLEMENTED and etype in PREFIX:
                 unchecked.add(etype)
@@ -807,7 +849,8 @@ def verify_events(events, base=(), owner=None, log=None):
             err(exc.rule, exc.message)
         if etype == "merge" and owner is None:
             n = e["body"].get("events_merged") if isinstance(e["body"].get("events_merged"), int) else 0
-            group = {"id": eid, "agents": set(e["body"].get("agents") or []), "left": n, "n": n}
+            agents = e["body"].get("agents") if isinstance(e["body"].get("agents"), list) else []
+            group = {"id": eid, "agents": {a for a in agents if isinstance(a, str)}, "left": n, "n": n, "items": []}
         st.apply(e)
     if owner is None:
         close_group(len(events))
@@ -816,6 +859,38 @@ def verify_events(events, base=(), owner=None, log=None):
             x["log"] = log
     return {"ok": not errors, "events": len(events), "withheld": withheld,
             "unchecked_types": sorted(unchecked), "errors": errors}
+
+
+def _actor_num(actor):
+    return int(actor[2:]) if re.match(r"^AC\d+$", str(actor)) else 0
+
+
+def _merge_order_key(e, actor, seq):
+    return (e.get("at") or "", _actor_num(actor), seq)
+
+
+def _merge_order_errors(group):
+    """The merged events of one merge: each log complete from seq 1 in its own order, interleaved as §3.1 says."""
+    items = group["items"]
+    if any(not isinstance(s, int) for _, _, s in items):
+        return []  # reported already as a malformed origin
+    errors, streams = [], {}
+    for e, actor, s in items:
+        streams.setdefault(actor, []).append((e, s))
+    for actor, xs in streams.items():
+        if [s for _, s in xs] != list(range(1, len(xs) + 1)):
+            errors.append({"seq": xs[0][0]["seq"], "id": group["id"], "rule": "L10",
+                           "message": f"{group['id']} does not merge the log of {actor} whole and in its own order"})
+    if errors:
+        return errors
+    expected = [e["id"] for _, _, _, e in heapq.merge(
+        *[[(*_merge_order_key(e, a, s), e) for e, s in xs] for a, xs in sorted(
+            streams.items(), key=lambda kv: _actor_num(kv[0]))], key=lambda t: t[:3])]
+    if expected != [e["id"] for e, _, _ in items]:
+        errors.append({"seq": items[0][0]["seq"], "id": group["id"], "rule": "L10",
+                       "message": f"the events merged by {group['id']} are not in the order of §3.1 "
+                                  f"(by time, each agent's own order kept)"})
+    return errors
 
 
 def verify_agent_log(main, actor, events, log=None):
@@ -841,7 +916,7 @@ def verify_agents(lab, main, check_files=True):
         if isinstance(o, dict):
             merged_events.setdefault(str(e.get("id")).split(".")[0], []).append(e)
     present = set(lab.agent_logs())
-    for actor in sorted(set(st.merged) - present, key=lambda a: int(a[2:]) if a[2:].isdigit() else 0):
+    for actor in sorted(set(st.merged) - present, key=_actor_num):
         errors.append({"seq": None, "id": None, "rule": "L10", "log": lab.agent_log_name(actor),
                        "message": f"the log of {actor} was merged by {st.merged[actor]} but is missing"})
     for actor in sorted(present, key=lambda a: int(a[2:])):
@@ -851,11 +926,22 @@ def verify_agents(lab, main, check_files=True):
         except LabError as exc:
             errors.append({"seq": None, "id": None, "rule": exc.rule, "log": log, "message": exc.message})
             continue
+        if actor not in st.actors:
+            errors.append({"seq": None, "id": None, "rule": "L10", "log": log,
+                           "message": f"{actor} is not a registered actor, so it cannot have an agent log"})
         errors += verify_agent_log(main, actor, events, log)
         if actor in st.merged:
             done = merged_events.get(actor, [])
+            merge_event = st.get(st.merged[actor])
+            base = agent_base(main, events) if events else None
+            if merge_event is not None and base is not None and merge_event.get("seq", 0) <= base:
+                errors.append({"seq": merge_event.get("seq"), "id": merge_event.get("id"), "rule": "L10",
+                               "message": f"{merge_event.get('id')} comes before the main-log event "
+                                          f"the log of {actor} started from"})
             for m in done:
                 o = m["origin"]
+                if not isinstance(o.get("seq"), int):
+                    continue  # reported by verify_events
                 a = events[o["seq"] - 1] if 1 <= o["seq"] <= len(events) else None
                 same = a is not None and header_hash(a) == o.get("header_hash") and all(
                     a.get(k) == m.get(k) for k in ("id", "type", "at", "by", "content_hash", "supersedes"))
@@ -877,10 +963,16 @@ def verify_run_files(lab, events):
     """Rule L13: each run directory holds exactly the files recorded in the run's outputs."""
     errors = []
     for e in events:
-        if e.get("type") != "run" or is_withheld(e):
+        if not isinstance(e, dict) or e.get("type") != "run" or is_withheld(e) or not isinstance(e.get("body"), dict):
             continue
+        if not isinstance(e.get("id"), str) or not ID_RE.match(e["id"]):
+            continue
+        outputs = e["body"].get("outputs")
+        if not isinstance(outputs, list) or not all(isinstance(o, dict) and isinstance(o.get("path"), str)
+                                                    for o in outputs):
+            continue  # reported by the run body check
         rdir = lab.root / "runs" / e["id"]
-        recorded = {o["path"]: o["hash"] for o in e["body"].get("outputs") or []}
+        recorded = {o["path"]: o.get("hash") for o in outputs}
         if not rdir.is_dir():
             if recorded:
                 errors.append({"seq": e["seq"], "id": e["id"], "rule": "L13",
@@ -932,7 +1024,10 @@ def verify(lab, check_files=True, remote=False):
             for x in verify_confirmatory_anchoring(lab, view.events, owner=a):
                 x["log"] = lab.agent_log_name(a)
                 rep["errors"].append(x)
+    rep["notes"] = []
     if remote:
-        rep["errors"] += verify_remote(lab)
+        r = verify_remote(lab)
+        rep["errors"] += r["errors"]
+        rep["notes"] += r["notes"]
     rep["ok"] = not rep["errors"]
     return rep
