@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from .core import Lab, LabError, file_hash, verify
+from .core import Lab, LabError, file_hash, plan_flags, verify
 from . import summary as _summary
 from .run import run_command
 from . import export as _export
@@ -172,11 +172,21 @@ def _decision_from_args(args):
 
 
 def cmd_plan(args):
+    from .run import code_version
+
     data = [{"description": d, "hash": file_hash(d)} if Path(d).is_file() else {"description": d}
             for d in args.data]
+    holdout = []
+    for h in args.holdout:
+        if not Path(h).is_file():
+            raise LabError("schema", f"--holdout {h}: no such file")
+        holdout.append({"path": h, "hash": file_hash(h)})
+    commit, dirty = code_version(os.getcwd(), _lab(args).root)
     return _write(args, "plan", {"kind": args.kind, "hypotheses": args.hypotheses, "design": args.design,
                                  "analysis": args.analysis, "decision": _decision_from_args(args),
-                                 "runs": args.runs, "criterion": args.criterion, "data": data})
+                                 "runs": args.runs, "criterion": args.criterion, "data": data,
+                                 "holdout": holdout, "code_version": commit,
+                                 "dirty": dirty if commit is not None else None})
 
 
 def cmd_verdict(args):
@@ -195,7 +205,8 @@ def cmd_verdict(args):
            "runs_needed": pv["body"].get("runs", 1), "supported": rule.get("supported"),
            "not_supported": rule.get("not_supported")}
     if d:
-        if rule.get("framework") in _decision.WITH_QUANTITIES:
+        out["flags"] = plan_flags(st, d[0], d[1])
+        if _decision.computed(rule):
             out.update(_decision.verdict(rule, [[x["body"] for x in st.results_of.get(r["id"], [])] for r in d[1]]))
         else:
             out["verdict"] = None
@@ -215,6 +226,8 @@ def cmd_verdict(args):
     for p in out.get("problems") or []:
         print(f"  problem: {p}")
     print(f"Verdict: {out['verdict']}" if out.get("verdict") else out["note"])
+    for f in out.get("flags") or []:
+        print(f"  flag: {f.replace('_', ' ')}")
     return 0
 
 
@@ -528,6 +541,8 @@ def add_parser(subparsers):
     p.add_argument("--not-supported", dest="not_supported", help="rule for not_supported (refuted)")
     p.add_argument("--runs", type=int, help="how many successful confirmatory runs decide the plan (default 1)")
     p.add_argument("--decision", metavar="FILE", help="the whole decision rule as a JSON file")
+    p.add_argument("--holdout", action="append", default=[], metavar="FILE",
+                   help="data kept for this test only (hashed); runs that use it elsewhere are flagged")
     p.add_argument("--criterion", help="records begun under lab record v0.4 or earlier only")
     p.add_argument("--data", action="append", default=[], metavar="FILE",
                    help="data file the plan uses (hashed); repeat for several")

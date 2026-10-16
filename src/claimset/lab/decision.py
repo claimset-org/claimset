@@ -1,7 +1,7 @@
 """Decision rules of confirmatory plans (lab record spec v0.5 §5.7.1–5.7.3).
 
-A rule is either text (frameworks `formal` and `qualitative`) or an expression
-over named results and numeric parameters. Expressions are parsed with Python's
+A rule is either text, judged by the writer, or an expression over named
+results and numeric parameters, which the tool evaluates. Expressions are parsed with Python's
 `ast` module and only a small, fixed set of node types is accepted, so a rule
 can compare and combine numbers and nothing else.
 """
@@ -12,7 +12,6 @@ import operator
 import re
 
 FRAMEWORKS = ("frequentist", "equivalence", "bayesian", "deterministic", "formal", "qualitative")
-WITH_QUANTITIES = {"frequentist", "equivalence", "bayesian", "deterministic"}
 REQUIRED = {
     "frequentist": ("alpha", "test", "sides", "correction", "sample"),
     "equivalence": ("alpha", "test", "lower_bound", "upper_bound", "sample"),
@@ -121,6 +120,12 @@ def _eval(node, env):
     raise RuleError(f"'{type(node).__name__}' is not allowed in a rule")
 
 
+def computed(decision):
+    """Whether the rule's verdict is computed from results (it has quantities) rather than judged."""
+    return isinstance(decision, dict) and isinstance(decision.get("quantities"), dict) \
+        and bool(decision["quantities"])
+
+
 def numeric_parameters(decision):
     params = decision.get("parameters") if isinstance(decision.get("parameters"), dict) else {}
     return {k: v for k, v in params.items() if isinstance(k, str) and NAME_RE.match(k) and _is_number(v)}
@@ -157,11 +162,10 @@ def problems(decision, runs=1):
         out.append("lower_bound must be below upper_bound")
 
     names = set(numeric_parameters(decision))
-    if fw in WITH_QUANTITIES:
-        q = decision.get("quantities")
-        if not isinstance(q, dict) or not q:
-            out.append(f"the {fw} framework needs quantities: the results the rules are evaluated on")
-            q = {}
+    q = decision.get("quantities")
+    if q is not None and not isinstance(q, dict):
+        out.append("quantities must be an object {name: {quantity, conditions, field, run}}")
+    elif q:
         for name, spec in q.items():
             if not NAME_RE.match(str(name)):
                 out.append(f"quantity name '{name}' must start with a letter and use only letters, digits and _")
@@ -240,7 +244,7 @@ def verdict(decision, results):
 
     Returns {"verdict", "values", "problems", "holds"}; "verdict" is None for text rules.
     """
-    if decision.get("framework") not in WITH_QUANTITIES:
+    if not computed(decision):
         return {"verdict": None, "values": {}, "problems": [], "holds": {}}
     values, probs = bind(decision, results)
     if probs:

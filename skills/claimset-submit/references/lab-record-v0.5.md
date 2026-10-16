@@ -4,14 +4,16 @@ Status: working draft · Date: 2026-10-16 · Supersedes v0.4 · Companion to the
 
 ## Changes since v0.4
 
-Strict hypothesis testing: every analysis choice that could be tuned after seeing the data is fixed in the plan, and the verdict follows from the plan's rule.
+Strict where it matters, light everywhere else. The path from a plan to a claim is strict: every analysis choice that could be tuned after seeing the data is fixed in the plan, each plan gets one attempt, and every planned test that ran is reported with the verdict its rule gives. Exploration is recorded where its results inform decisions, without further restrictions.
 
-- A confirmatory plan carries a **decision rule** instead of a free-text criterion: the inferential framework, its parameters (significance level, test, sidedness, correction for multiple tests, sample size and stopping rule, equivalence bounds, prior, thresholds), the results it will be decided on, and rules for both conclusive outcomes, `supported` and `not_supported`; anything else is `inconclusive` (§5.7.1–5.7.3).
+- A confirmatory plan carries a **decision rule** instead of a free-text criterion: the inferential framework, its parameters (significance level, test, sidedness, correction for multiple tests, sample size and stopping rule, equivalence bounds, prior, thresholds), and rules for both conclusive outcomes, `supported` and `not_supported`; anything else is `inconclusive`. Rules may be expressions over named results, in which case the tool computes the verdict, or text, in which case the writer states which rule was met (§5.7.1–5.7.3).
 - A plan states how many runs decide it. Every confirmatory run under it counts, whatever its exit status, and further confirmatory runs are refused (§5.7.2). Each run records the plan version in force when it was made (`plan_version`, §5.9).
-- A plan commits its hypotheses: until the test has run, their status can only be `testing` or `abandoned`, and a hypothesis abandoned after the plan was written is not tested. A verdict names the plan and must agree with its rule, computed by the tool from the recorded results where the rule is an expression. A tested hypothesis cannot be set aside, reworded or tested again (§5.5, §5.7.4).
+- A verdict names the plan and agrees with its rule. Every planned test that ran must have its verdict recorded before export, and each is exported as its own claim, with the hypothesis as it stood when the plan was written; a hypothesis may be tested again under a new plan (§5.5, §5.7.4, §9).
+- Exploration need not be recorded step by step (§2); hypotheses left open are counted as open rather than closed by force (§9).
 - Confirmatory runs in an agent log are made under plans written in that log (§3.1).
 - Result values are finite numbers (§5.10).
-- New rules L15–L18 (§6). Export refuses a record whose planned tests lack recorded verdicts, and carries each decision rule into the claimset (§9).
+- Plans record the commit they were written at and may declare held-out data; a test whose code changed after the plan, or whose held-out data was used elsewhere, is flagged rather than refused (§5.7.5).
+- New rules L15–L17 (§6).
 - Records begun under v0.4 or earlier keep their meaning: their plans have `criterion`, and L15–L17 do not apply to them (§5.1).
 
 ## Changes in v0.4 (since v0.3)
@@ -58,7 +60,7 @@ Version 0.1 targets computational research (simulation, analysis of existing dat
 1. **Append only.** Events are never edited or deleted. A correction is a new event that names the event it supersedes.
 2. **Recorded by the tool.** Events are written by the lab tool, which assigns sequence numbers, times and hashes. Agents do not write the log by hand.
 3. **Results come from code.** Numbers enter the record only from files written by the code that produced them, never typed by an agent.
-4. **Plan before run, or say it was exploratory.** A run is confirmatory only if a plan written earlier covers it; every other run is labelled exploratory. Exploration is legitimate; it is just labelled.
+4. **Plan before run, or say it was exploratory.** A run is confirmatory only if a plan written earlier covers it; every other run is labelled exploratory. Exploration is legitimate; it is just labelled. It is recorded where its results inform decisions (a run whose output is looked at to choose a direction, a setting or a hypothesis), not step by step, so the record's account of exploration is a lower bound. The rules are strict only on the path from a plan to a claim.
 5. **Every outcome is recorded.** Failed runs, crashed runs, null results, refuted and abandoned hypotheses are all events.
 6. **Exploration cannot confirm itself.** Evidence that suggested a hypothesis cannot also be the evidence that supports it.
 7. **Every change of mind has a reason.** Status changes, revisions and deviations from a plan carry a rationale and point at what prompted them.
@@ -193,12 +195,12 @@ A revised hypothesis is a new `H` event; the old one gets a `status` event with 
 - `rationale`: required, self-contained.
 - `evidence`: required for `supported`, `not_supported` and `inconclusive`: run and result IDs.
 - `revised_to`: required for `revised`.
-- `plan`: the confirmatory plan whose test this status reports. Required once a plan naming the hypothesis has its deciding runs (§5.7.2). Until then, while a confirmatory plan names the hypothesis, its status can only be `testing` or `abandoned` (§5.7.4).
-- `rule`: for plans whose rules are text (frameworks `formal` and `qualitative`): which rule the evidence met, `supported` · `not_supported` · `neither`.
+- `plan`: the decided confirmatory plan whose test this status reports (a **verdict**, §5.7.4).
+- `rule`: for plans whose rules are text: which rule the evidence met, `supported` · `not_supported` · `neither`.
 
 `abandoned` means dropped without a conclusive test; `not_supported` means tested and refuted under a rule stated in advance; `inconclusive` means tested without either rule being met.
 
-**Verdicts on planned tests (L17).** Once a confirmatory plan naming a hypothesis has its deciding runs, every later status of that hypothesis is a verdict under such a plan: it names the plan, cites the deciding runs or their results, and its `to` is the outcome the plan's rule gives: computed by the tool from the deciding runs' results for expression rules (§5.7.3), or `supported`, `not_supported` or `inconclusive` for a `rule` of `supported`, `not_supported` or `neither`. The hypothesis can no longer be set to `testing`, `revised` or `abandoned`: a planned test is reported, not set aside. To refine it, record a new hypothesis prompted by the result.
+**Verdicts on planned tests (L17).** A status that names a plan is a verdict: the plan is decided and names the hypothesis, the status cites the plan's deciding runs or their results, and its `to` is the outcome the plan's rule gives: computed by the tool from the deciding runs' results for expression rules (§5.7.3), or `supported`, `not_supported` or `inconclusive` for a `rule` of `supported`, `not_supported` or `neither`. A status that cites a decided plan's deciding runs or their results as evidence for a hypothesis that plan names is a verdict, and names the plan.
 
 ### 5.6 `assumption` (prefix `AS`)
 
@@ -206,7 +208,7 @@ A revised hypothesis is a new `H` event; the old one gets a `status` event with 
 
 ### 5.7 `plan` (prefix `PL`)
 
-`{kind, hypotheses, design, analysis, decision, runs, data}`
+`{kind, hypotheses, design, analysis, decision, runs, data, holdout, code_version, dirty}`
 
 - `kind`: `confirmatory` or `exploratory`. Required.
 - `hypotheses`: hypothesis IDs the plan tests. Required (at least one) for `confirmatory`.
@@ -215,6 +217,8 @@ A revised hypothesis is a new `H` event; the old one gets a `status` event with 
 - `decision`: the decision rule (§5.7.1). Required for `confirmatory`.
 - `runs`: how many successful confirmatory runs decide the plan (§5.7.2). A positive integer; default 1.
 - `data`: optional list of `{description, hash}` for data that exists when the plan is written.
+- `holdout`: optional list of `{path, hash}`: data kept for this test only (§5.7.5).
+- `code_version`, `dirty`: the commit of the repository when the plan was written, and whether it had uncommitted changes outside the lab directory; recorded by the tool, as for runs (§5.9).
 
 Plans are immutable. A changed plan is a new plan that supersedes the old one; runs already made under the old plan keep pointing at it. The decision rule that decides a plan is the one in the version its first deciding run names in `plan_version` (§5.9); corrections written after that do not change the verdict.
 
@@ -243,8 +247,8 @@ Everything that decides the outcome is fixed in the plan, before any run: the fr
 
 - `framework`: `frequentist` (a null-hypothesis significance test) · `equivalence` (an equivalence test against stated bounds) · `bayesian` · `deterministic` (a measured quantity compared with fixed thresholds, without sampling uncertainty, e.g. a benchmark or a simulation with fixed seeds) · `formal` (proof or counterexample) · `qualitative` (a stated pattern in qualitative data).
 - `parameters`: the parameters the framework requires (table below), and any others the analysis fixes in advance. Values are numbers or text. Numeric parameters can be used in rules by name.
-- `quantities`: required for `frequentist`, `equivalence`, `bayesian` and `deterministic`. Each name (letters, digits and `_`, starting with a letter) binds to exactly one result of the deciding runs: the result whose `quantity` equals the given text, whose `conditions` include every given key with the given value, read from `field`: `value` (default), `interval.lower` or `interval.upper`. When the plan has more than one deciding run, each quantity also names the run it comes from, `run` (1 for the first deciding run, and so on), and is bound among that run's results only.
-- `supported` and `not_supported`: the rules for the two conclusive outcomes. If neither rule holds, the outcome is `inconclusive`. For frameworks with quantities each rule is an expression (§5.7.3); for `formal` and `qualitative` it is self-contained text stating what observation decides (a proof of the statement, a counterexample; the pattern in the data that would confirm or disconfirm the hypothesis).
+- `quantities`: optional. When given, the rules are expressions over them and the tool computes the verdict (§5.7.3); when absent, the rules are text and the writer states which rule the evidence met. Computed verdicts are stronger, and recommended whenever the outcome can be computed from recorded results. Each name (letters, digits and `_`, starting with a letter) binds to exactly one result of the deciding runs: the result whose `quantity` equals the given text, whose `conditions` include every given key with the given value, read from `field`: `value` (default), `interval.lower` or `interval.upper`. When the plan has more than one deciding run, each quantity also names the run it comes from, `run` (1 for the first deciding run, and so on), and is bound among that run's results only.
+- `supported` and `not_supported`: the rules for the two conclusive outcomes. If neither rule holds, the outcome is `inconclusive`. With quantities each rule is an expression (§5.7.3); otherwise it is self-contained text stating what observation decides (a p-value below `alpha` with the effect in the predicted direction; a confidence interval within the equivalence bounds; a proof of the statement or a counterexample; the pattern in the data that would confirm or disconfirm the hypothesis).
 
 | Framework | Required parameters |
 |---|---|
@@ -265,13 +269,17 @@ A rule expression is at most 1,000 characters long and uses finite numbers, name
 
 The tool evaluates both rules on the results of the deciding runs. The verdict is `supported` if only the `supported` rule holds, `not_supported` if only the `not_supported` rule holds, and `inconclusive` if neither holds. If both hold, the rules overlap and the verdict is `inconclusive`. If a quantity cannot be bound (no result matches, or several do), no conclusive verdict can be computed, and only `inconclusive` can be recorded.
 
-#### 5.7.4 Commitment
+#### 5.7.4 Reporting
 
-A confirmatory plan commits the hypotheses it names to its test (L17, L18):
-- Until the plan is decided, each hypothesis it names can only be set to `testing` or `abandoned`. A verdict reached by other evidence in the meantime would pre-empt the test.
-- A confirmatory run is refused if a hypothesis the plan names was abandoned after the plan was written: an abandoned test is not run.
-- A hypothesis is tested once. A confirmatory plan cannot name a hypothesis that another plan has already run confirmatory runs for, and no confirmatory run is made under a second plan for it. To test it again (a replication, a larger sample), record a new hypothesis prompted by the first result.
-- A hypothesis that has been tested is not corrected: the verdict stays attached to the statement that was tested.
+Every planned test that ran is reported. Once a plan is decided, a verdict (§5.5) is recorded for each hypothesis it names; export refuses a record in which one is missing (§9). Statuses recorded before or after the verdict do not replace it: each verdict becomes a claim of its own.
+
+A hypothesis may be tested again under a new plan (a replication, a larger sample); each test gives its own verdict and claim, so a favourable test cannot hide an unfavourable one. A claim from a planned test states the hypothesis as it stood when the plan was written, so correcting the hypothesis afterwards does not move the verdict to a different statement.
+
+#### 5.7.5 Flags
+
+Two things weaken a planned test without making it invalid. The tool does not refuse them; it reports them as flags of the decided plan (in `verify`, in `verdict`, and in the exported claim's `test.flags`):
+- `code_changed_after_plan`: a deciding run used a different commit from the one recorded with the plan, or the code had uncommitted changes when the plan was written or a deciding run was made. The analysis was not fixed when the plan was. Commit the analysis code before writing the plan to avoid it.
+- `holdout_used_elsewhere`: a run other than the plan's deciding runs declared a held-out file of the plan (by hash) as input data. The data meant to test the hypothesis was also used to explore it. Only inputs declared to the tool (`run --data`) can be detected.
 
 ### 5.8 `approval` (prefix `AP`)
 
@@ -362,12 +370,11 @@ L11. A `supersedes` reference names an earlier event of the same type that has n
 L12. Every `id` has the prefix of its `type` and is unique in the log; every reference in a body names an event with a lower `seq`.
 L13. The files of a run directory match the hashes in the run's `outputs`. Run directories are never changed after the run.
 L14. Every entry in `anchors.jsonl` names a `seq` present in the log, and its `head_hash` equals the header hash of the event at that `seq`; the same holds for each agent log the entry names. A mismatch means the log was rewritten after it was anchored.
-L15. A confirmatory plan has a complete decision rule (§5.7.1): a framework, the parameters it requires, and both rules; for frameworks with quantities, every quantity is well formed (with `run` when there are several deciding runs) and every rule is a valid expression whose names are defined (§5.7.3); `runs` is a positive integer.
-L16. A confirmatory run is not made under a plan that already has its deciding runs (§5.7.2), under a plan one of whose hypotheses was abandoned after the plan was written (§5.7.4), or, in an agent log, under a plan written outside that log (§3.1).
-L17. While a confirmatory plan naming a hypothesis is not decided, the hypothesis's status can only be set to `testing` or `abandoned`. Once such a plan is decided, every later status of the hypothesis is a verdict that names a decided plan naming it, cites its deciding runs or their results, and has the outcome the plan's rule gives (§5.5).
-L18. A hypothesis is tested once: no confirmatory plan names, and no confirmatory run is made for, a hypothesis already named by another plan that has confirmatory runs; and a hypothesis with confirmatory runs is not corrected (§5.7.4).
+L15. A confirmatory plan has a complete decision rule (§5.7.1): a framework, the parameters it requires, and both rules; when quantities are given, every quantity is well formed (with `run` when there are several deciding runs) and every rule is a valid expression whose names are defined (§5.7.3); `runs` is a positive integer.
+L16. A confirmatory run is not made under a plan that already has its deciding runs (§5.7.2), or, in an agent log, under a plan written outside that log (§3.1).
+L17. A status that names a plan, or that cites a decided plan's deciding runs or their results for a hypothesis the plan names, is a verdict: the plan is decided and names the hypothesis, the deciding runs or their results are cited, and the outcome is the one the plan's rule gives (§5.5).
 
-The tool enforces L1–L5 and L8–L18 mechanically, and refuses L6 and L7 violations. L15–L18 apply to records begun under v0.5 or later, and to records whose `init` is withheld. Where a check depends on withheld content (a withheld run, result or plan), `verify` does not report it as a violation; withholding lowers verifiability instead (§8).
+The tool enforces L1–L5 and L8–L17 mechanically, and refuses L6 and L7 violations. L15–L17 apply to records begun under v0.5 or later, and to records whose `init` is withheld. Where a check depends on withheld content (a withheld run, result or plan), `verify` does not report it as a violation; withholding lowers verifiability instead (§8).
 
 ## 7. Timestamp anchoring
 
@@ -419,8 +426,9 @@ The header still carries the original `content_hash`, so the chain verifies and 
 **Preconditions.** `export` refuses, and says why, unless:
 - the record verifies (§6);
 - no agent log is unmerged (§3.1);
-- every hypothesis has a final status: `supported`, `not_supported`, `inconclusive`, `revised` or `abandoned`. A hypothesis still `proposed` or `testing` cannot be counted in `paper.exploration`, so it must be closed first, for example as `abandoned` with a rationale;
-- every decided plan has its verdict recorded: the final status of each hypothesis it names is a verdict naming a decided plan. A test that has run is reported.
+- every decided plan has a verdict recorded for each hypothesis it names (§5.7.4).
+
+Hypotheses without a final status are counted as open; they are not forced closed.
 
 **Mapping.** The latest correction of each event is used throughout. A hypothesis's **final status** is its last `status` event, a correction standing in its original's place: correcting an earlier status does not make it the latest. An actor's events are those written under its ID or any correction of it. Withheld content (§8) is never guessed: a withheld event is left out of the draft, or the fields it would supply are, and the completion list names it.
 
@@ -429,24 +437,20 @@ The header still carries the original `content_hash`, so the chain verifies and 
 | `init` | `paper.title` (the working title), `paper.origin: native` |
 | `actor`, agent | contributor of type `agent` with its models (each model defined once in `models`, `accessed` the date of the earliest event by an agent using it), `name`, `record_source`, `run_period` (dates of its first and last events) and `tools: [code_execution]` if it ran commands. Position `author` if it wrote any event other than `actor` and `check`; otherwise `contributor`, with AI task `review` |
 | `actor`, human or organisation | contributor with `name` and `orcid`, position `contributor`. Who is supervisor and guarantor is decided by people (completion list) |
-| `hypothesis` with final status `supported`, `not_supported` or `inconclusive` | claim, in the order of the hypotheses: `statement` from the hypothesis, `hypothesis: {lab_event, outcome}` (`lab_event` is the latest correction's ID), defaults `type: descriptive`, `role: supporting`, `novelty: new`, `provenance: author_stated` |
-| `hypothesis` with final status `revised` or `abandoned` | not a claim; counted in `paper.exploration` |
-| the runs behind a final status | one evidence object per claim, from the runs the final `status` names as evidence, directly or through their results: `lab_runs`, `results` (one per `result` event: `quantity`, `value`, `unit`, `interval`, `conditions`), `execution` (`code_version` when the runs share one), default `profile: quant`, `design: other`, `availability: public`. The claim's support is `empirical_quant` pointing to the evidence and its results |
-| `plan` | `planning`, `planned_at`, `planned_at_anchor` and `test` on the claims it tested (below). `test` is the plan's decision rule as written before the run: `framework`, `parameters`, `quantities`, `supported`, `not_supported`, `runs`, and `lab_plan`, the plan's ID |
+| a verdict on a planned test (§5.7.4) | a claim per decided plan and hypothesis it names, in the order of the hypotheses and then the plans: `statement` from the hypothesis as it stood when the plan was written, `hypothesis: {lab_event, outcome}` (`lab_event` is that version's ID, `outcome` the verdict), defaults `type: descriptive`, `role: supporting`, `novelty: new`, `provenance: author_stated` |
+| `hypothesis` named by no decided plan, with final status `supported`, `not_supported` or `inconclusive` | an exploratory claim, the same way, from the latest version of the hypothesis and its final status |
+| `hypothesis` otherwise | not a claim; counted in `paper.exploration` |
+| the runs behind a verdict or final status | one evidence object per claim, from the runs the status names as evidence, directly or through their results: `lab_runs`, `results` (one per `result` event: `quantity`, `value`, `unit`, `interval`, `conditions`), `execution` (`code_version` when the runs share one), default `profile: quant`, `design: other`, `availability: public`. The claim's support is `empirical_quant` pointing to the evidence and its results |
+| `plan` | `planning`, `planned_at`, `planned_at_anchor` and `test` on the claims of its verdicts (below). `test` is the plan's decision rule as written before the run: `framework`, `parameters`, `quantities`, `supported`, `not_supported`, `verdict` (`computed` when the rule has quantities, otherwise `judged`), `runs`, `lab_plan` (the plan's ID) and `flags` (§5.7.5) |
 | `deviation` | `planning: confirmatory_with_deviations`, and a limitation on the affected claim: `category: analytic_flexibility`, `impact: could_bias_magnitude`, `mitigation: none`, statement naming the run, the plan, what differed and why |
 | `assumption` | assumption claim with `assumption_category` and `check`; `check_evidence` when it names a run or result used in an evidence object |
 | `check` | a `checks` entry on the claim whose hypothesis, final status, or evidence run or result it targets. A check by an actor exported as an author is not exported (claimset rule 39) and is named in the completion list |
 | `artefact` | artefact with `kind`, `uri` (the path or URI), `version` (the hash), `licence`, `description` |
 | the whole record | artefact of kind `lab_record`: `uri` (the repository URI from `init` followed by the log's path, or the path alone), `version` (the hash of `lab.jsonl`), `availability: public`, `withheld_events`; referenced from `paper.exploration.lab_record` |
 
-**Planning label of an exported claim.** A run *tests* a claim's hypothesis under a plan when it is labelled `confirmatory`, is named in the final status's evidence (directly or through a result), and its plan, in the latest version its writer could see when the run was written, names the hypothesis (any version of it). For a run written directly to the main log, that is the latest version with a lower `seq`; for a run merged from an agent log, the latest version in the main log up to the agent log's base or earlier in the same agent log (§3.1).
-- `confirmatory`: some run tests the hypothesis under a plan, and no deviation is recorded for that plan and run.
-- `confirmatory_with_deviations`: every such run has a recorded deviation.
-- `exploratory`: every other case.
+**Planning label of an exported claim.** A claim from a verdict is `confirmatory`, or `confirmatory_with_deviations` if a deviation is recorded for the plan and one of its deciding runs. Its `planned_at` is the `at` of the plan version that decides the plan (the one its first deciding run names in `plan_version`), and `planned_at_anchor` is the service of the earliest anchor that covers that plan version and was made before the first deciding run started, or `none`. A claim from a hypothesis named by no decided plan is `exploratory`.
 
-For confirmatory labels, `planned_at` is the `at` of that plan version (of the earliest such run), and `planned_at_anchor` is the service of the earliest anchor that covers the plan version and was made before the run started, or `none`.
-
-**Exploration summary.** `questions` counts questions, each correction chain once; `hypotheses` counts hypotheses by final status, each correction chain once; `runs` counts all run events by label, and `failed` those whose exit status is not `success`.
+**Exploration summary.** `questions` counts questions, each correction chain once; `hypotheses` counts hypotheses by final status, each correction chain once, with `open` for those without one; `tests` counts verdicts, one per decided plan and hypothesis it names; `runs` counts all run events by label, and `failed` those whose exit status is not `success`.
 
 **Defaults the completion list always names:** `paper.licence` and the guarantor (asked of the responsible human), `paper.contributions` and principal roles, `paper.autonomy` (exported as `unknown`), claim types, statements of negative results (to say plainly what was not found), scopes, evidence profiles and descriptions, and links from claims to assumptions.
 

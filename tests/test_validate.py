@@ -376,11 +376,25 @@ class TestLabRules(Base):
         self.d["paper"]["exploration"]["hypotheses"]["total"] = 99
         self.assertRule(self.d, "45")
 
-    def test_46_more_outcomes_than_hypotheses(self):
+    def test_46_more_outcomes_than_tests(self):
+        t = self.d["paper"]["exploration"]["tests"]
+        t["not_supported"] = 0
+        t["total"] = t["supported"] + t["inconclusive"]
+        self.assertRule(self.d, "46")
+
+    def test_46_more_exploratory_outcomes_than_hypotheses(self):
+        c4 = claim(self.d, "C4")
+        for k in ("test", "planned_at", "planned_at_anchor"):
+            del c4[k]
+        c4["planning"] = "exploratory"
         h = self.d["paper"]["exploration"]["hypotheses"]
         h["not_supported"] = 0
         h["total"] = sum(v for k, v in h.items() if k != "total")
         self.assertRule(self.d, "46")
+
+    def test_45_tests_total(self):
+        self.d["paper"]["exploration"]["tests"]["total"] = 7
+        self.assertRule(self.d, "45")
 
     def test_47_confirmatory_without_test(self):
         del claim(self.d, "C2")["test"]
@@ -396,11 +410,21 @@ class TestLabRules(Base):
 
     def test_47_statistical_test_needs_quantities(self):
         del claim(self.d, "C4")["test"]["quantities"]
+        self.assertRule(self.d, "47")      # its verdict is computed
+
+    def test_47_text_rules_give_judged_verdicts(self):
+        claim(self.d, "C2")["test"] = {"framework": "formal", "supported": "A proof of the statement.",
+                                       "not_supported": "A counterexample.", "verdict": "judged"}
+        self.assertValid(self.d)
+
+    def test_47_verdict_source_required(self):
+        del claim(self.d, "C2")["test"]["verdict"]
         self.assertRule(self.d, "47")
 
-    def test_47_text_rules_for_formal_tests(self):
-        claim(self.d, "C2")["test"] = {"framework": "formal", "supported": "A proof of the statement.",
-                                       "not_supported": "A counterexample."}
+    def test_47_computed_verdict_needs_quantities(self):
+        del claim(self.d, "C2")["test"]["quantities"]
+        self.assertRule(self.d, "47")
+        claim(self.d, "C2")["test"]["verdict"] = "judged"
         self.assertValid(self.d)
 
     def test_agent_log_run_ids_accepted(self):

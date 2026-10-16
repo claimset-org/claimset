@@ -8,9 +8,11 @@ Claimset is the name of both the open format and the platform.
 
 Planned tests carry the decision rule they were planned with, so readers can check the verdict against a rule fixed before the data were seen.
 
-- New claim field `test`: the inferential framework, its parameters (significance level, test, sidedness, correction for multiple tests, sample size and stopping rule, equivalence bounds, prior, thresholds), the results the decision is made on, and the rules for `supported` and `not_supported` (§3.3.3).
+- New claim field `test`: the inferential framework, its parameters (significance level, test, sidedness, correction for multiple tests, sample size and stopping rule, equivalence bounds, prior, thresholds), the rules for `supported` and `not_supported`, and whether the verdict was computed from recorded results or judged (§3.3.3).
 - `not_supported` now means refuted under a rule stated in advance; a test that met neither rule is `inconclusive` (§3.3.3).
-- New rule 47 (§10). Earlier rules are unchanged.
+- A hypothesis tested more than once gives one claim per test, so no test goes unreported (§3.3.3).
+- `exploration` gains `hypotheses.open` (hypotheses never closed) and `tests` (planned tests and their verdicts); its counts are lower bounds of the exploration (§3.1.1).
+- New rule 47; rules 45 and 46 revised for the new counts (§10).
 
 ## Changes in v0.11 (since v0.10)
 
@@ -182,12 +184,17 @@ Contributors are listed in the top-level `contributors` list (§3.11), not in th
 "exploration": {
   "lab_record": "A10",
   "questions": 2,
-  "hypotheses": {"total": 9, "supported": 3, "not_supported": 2, "inconclusive": 1, "revised": 2, "abandoned": 1},
+  "hypotheses": {"total": 10, "supported": 3, "not_supported": 2, "inconclusive": 1, "revised": 2, "abandoned": 1, "open": 1},
+  "tests": {"total": 5, "supported": 2, "not_supported": 2, "inconclusive": 1},
   "runs": {"total": 214, "confirmatory": 18, "exploratory": 196, "failed": 11}
 }
 ```
 
-`hypotheses.total` is the sum of the other hypothesis counts; `runs.total` is the sum of `confirmatory` and `exploratory`; `failed` counts runs of either kind whose exit status was not `success`.
+- `hypotheses` counts recorded hypotheses by their final status; `open` counts those never closed. `total` is the sum of the other hypothesis counts.
+- `tests` counts planned tests that have run, by verdict: one per plan and hypothesis it names. `total` is the sum of the three verdicts.
+- `runs.total` is the sum of `confirmatory` and `exploratory`; `failed` counts runs of either kind whose exit status was not `success`.
+
+The counts cover what was recorded. Exploration is recorded where its results informed decisions, not step by step, so the counts are lower bounds of the exploration; the counts of planned tests are complete.
 
 Retracted papers are never deleted. All their claims inherit the retraction status for readers and the platform. A converted claimset whose source is retracted is shown with the source's retraction, whatever its own status.
 
@@ -257,6 +264,8 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
 
 **Outcomes.** `supported` and `not_supported` are conclusive: each means that the rule stated for it in advance was met. A test that met neither rule is `inconclusive`. In particular, failing to reject a null hypothesis is `inconclusive`, not `not_supported`, unless the plan stated a rule for refutation (for example equivalence bounds).
 
+**One claim per planned test.** A hypothesis tested under several plans (a replication, a larger sample) gives one claim per test, each with its own outcome and `test`, so every planned test that ran is reported. The statement of each is the hypothesis as it stood when its plan was written.
+
 **Decision rule (`test`).** A confirmatory claim records the rule it was planned with, as fixed before the data were seen:
 
 ```json
@@ -268,6 +277,7 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
                  "d_upper": {"quantity": "mean MAE difference", "field": "interval.upper"}},
   "supported": "p < alpha",
   "not_supported": "d_upper < 0.01",
+  "verdict": "computed",
   "runs": 1,
   "lab_plan": "PL2",
   "registration": null
@@ -276,9 +286,11 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
 
 - `framework`: `frequentist` · `equivalence` · `bayesian` · `deterministic` · `formal` · `qualitative`, as defined in the lab record specification §5.7.1.
 - `parameters`: required per framework: `frequentist`: `alpha`, `test`, `sides`, `correction`, `sample`; `equivalence`: `alpha`, `test`, `lower_bound`, `upper_bound`, `sample`; `bayesian`: `prior`, `threshold`, `sample`.
-- `quantities`: for frameworks other than `formal` and `qualitative`: the results the rules are evaluated on, each `{quantity, conditions, field}`; they correspond to results in the claim's evidence.
-- `supported`, `not_supported`: the two rules; expressions over quantities and numeric parameters (lab record §5.7.3), or text for `formal` and `qualitative`.
+- `quantities`: when the rules are expressions, the results they are evaluated on, each `{quantity, conditions, field, run}`; they correspond to results in the claim's evidence.
+- `supported`, `not_supported`: the two rules: expressions over quantities and numeric parameters (lab record §5.7.3), or text saying what observation decides.
+- `verdict`: `computed` (the rules are expressions and the outcome was computed from the recorded results by the lab tool) · `judged` (the rules are text and the outcome was stated by the writer, who said which rule the evidence met).
 - `runs`: how many runs decided the test. `lab_plan`: the plan's lab-record ID, when there is one. `registration`: the URI of an external pre-registration, when there is one.
+- `flags`: optional list of weaknesses of the test, from the lab record (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs).
 
 `planned_at_anchor` says how far `planned_at` can be trusted (lab record §7): from strongest, `platform` (receipt from the Claimset platform), `rfc3161` (trusted timestamp authority), `git_remote` (pushed commit), to `none`.
 
@@ -631,12 +643,12 @@ The platform mints a DOI for every published claimset. The file records identifi
 42. `hypothesis` present ⇒ `hypothesis.lab_event` and `hypothesis.outcome` present, and `planning` present.
 43. `planning` is `confirmatory` or `confirmatory_with_deviations` ⇒ `planned_at` and `planned_at_anchor` present.
 44. Any claim has `hypothesis` ⇒ `paper.exploration` present, and `exploration.lab_record` is an artefact of kind `lab_record`.
-45. `exploration` counts are non-negative integers; `hypotheses.total` equals the sum of the other hypothesis counts; `runs.total` equals `confirmatory` + `exploratory`; `failed` ≤ `total`.
-46. For each outcome (`supported`, `not_supported`, `inconclusive`), the number of distinct `hypothesis.lab_event` values reporting it does not exceed the corresponding `exploration.hypotheses` count.
+45. (Revised in v0.12.) `exploration` counts are non-negative integers; `hypotheses.total` equals the sum of the other hypothesis counts (`open` included, 0 if absent); `tests.total`, if `tests` is present, equals the sum of its verdict counts; `runs.total` equals `confirmatory` + `exploratory`; `failed` ≤ `total`.
+46. (Revised in v0.12.) For each outcome (`supported`, `not_supported`, `inconclusive`): the number of claims with `test` reporting it does not exceed the corresponding `exploration.tests` count, and the number of distinct `hypothesis.lab_event` values among claims without `test` reporting it does not exceed the corresponding `exploration.hypotheses` count.
 
 ### 10.8 Rules added in v0.12 (errors: file rejected)
 
-47. `planning` is `confirmatory` or `confirmatory_with_deviations` ⇒ `test` present, with a `framework` from the list, non-empty `supported` and `not_supported` rules, and the parameters its framework requires; frameworks other than `formal` and `qualitative` have `quantities`.
+47. `planning` is `confirmatory` or `confirmatory_with_deviations` ⇒ `test` present, with a `framework` from the list, non-empty `supported` and `not_supported` rules, the parameters its framework requires, and `verdict` (`computed` or `judged`); `verdict: computed` ⇒ `quantities` present; `flags`, if present, are from the list in §3.3.3.
 
 ### 10.4 Warnings (file accepted, warning recorded)
 

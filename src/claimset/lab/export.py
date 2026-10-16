@@ -11,7 +11,8 @@ from pathlib import Path
 
 from .. import SPEC_VERSION
 from .anchor import covers, read_anchors
-from .core import LabError, State, agent_base, file_hash, final_statuses, is_withheld, verify
+from . import decision as _decision
+from .core import LabError, State, agent_base, file_hash, final_statuses, is_withheld, plan_flags, verify
 
 FINAL = {"supported", "not_supported", "inconclusive", "revised", "abandoned"}
 OUTCOMES = ("supported", "not_supported", "inconclusive")
@@ -52,26 +53,26 @@ class _Exporter:
         self.roots = [e for e in st.events if e["id"] == st.root(e["id"])]
         self.hyps = [e for e in self.roots if e["type"] == "hypothesis"]
         self.statuses = final_statuses(st)
-        for h in (self.hyps if st.strict else []):
-            decided = st.decided_plans_for(h["id"])
-            final = self.statuses.get(h["id"])
-            if decided and (final is None or final["body"].get("plan") is None
-                            or st.root(final["body"]["plan"]) not in decided):
-                plans = ", ".join(sorted(decided))
-                raise LabError("export", f"the planned test of {h['id']} under {plans} has run but its verdict is not "
-                                         f"recorded; see `claimset lab verdict {sorted(decided)[0]}` and record it "
-                                         f"with `claimset lab status {h['id']} … --plan`")
-        open_ = [h["id"] for h in self.hyps
-                 if h["id"] not in self.statuses or self.statuses[h["id"]]["body"].get("to") not in FINAL]
-        pending = [h for h in open_ if st.strict and st.committed_plans(h)]
-        if pending:
-            raise LabError("export", f"hypotheses {', '.join(pending)} are committed to planned tests that have not "
-                                     f"run ({', '.join(sorted({p for h in pending for p in st.committed_plans(h)}))}); "
-                                     f"run them, or record the hypotheses as abandoned")
-        if open_:
-            raise LabError("export", f"hypotheses {', '.join(open_)} have no final status (supported, not_supported, "
-                                     f"inconclusive, revised or abandoned); record one with `claimset lab status`, "
-                                     f"for example abandoned with a rationale")
+        # Verdicts: the latest status naming each (hypothesis, plan), corrections in their original's place.
+        self.verdicts = {}
+        for e in st.events:
+            b = e.get("body") if isinstance(e.get("body"), dict) else {}
+            if e["type"] != "status" or is_withheld(e) or e["id"] in st.superseded_by \
+                    or not isinstance(b.get("plan"), str) or not isinstance(b.get("target"), str):
+                continue
+            key = (st.root(b["target"]), st.root(b["plan"]))
+            place = st.pos[st.root(e["id"])]
+            if key not in self.verdicts or place > self.verdicts[key][0]:
+                self.verdicts[key] = (place, e)
+        self.verdicts = {k: v[1] for k, v in self.verdicts.items()}
+        missing = [(h["id"], root) for h in (self.hyps if st.strict else [])
+                   for root in st.decided_plans_for(h["id"]) if (h["id"], root) not in self.verdicts]
+        if missing and not st.has_withheld:
+            h, root = missing[0]
+            raise LabError("export", f"the planned test of {h} under {root} has run but its verdict is not recorded; "
+                                     f"see `claimset lab verdict {root}` and record it with "
+                                     f"`claimset lab status {h} … --plan {root}`. Every planned test that ran is "
+                                     f"reported")
         self.anchors = read_anchors(lab)
         # Where each merged agent log started in the main log (§3.1), to know what its agent saw.
         self.bases = {}
@@ -246,6 +247,75 @@ class _Exporter:
                                      f"make its description self-contained")
         return eid, refs
 
+    def hypothesis_at(self, hypothesis_id, pos):
+        """The latest version of a hypothesis written before position `pos` (not withheld), or None."""
+        found = None
+        for v in self.versions(hypothesis_id):
+            e = self.st.get(v)
+            if self.st.pos[v] < pos and not is_withheld(e):
+                found = e
+        return found
+
+    def claim_from(self, version, status, outcome, extra_runs=()):
+        """A claim for a hypothesis version, with the evidence its status cites. Returns (claim, cited runs)."""
+        st = self.st
+        cid = f"C{len(self.claims) + 1}"
+        self.mapping[cid] = version["id"]
+        claim = {"id": cid, "type": "descriptive", "role": "supporting", "novelty": "new", "support": [],
+                 "provenance": "author_stated", "hypothesis": {"lab_event": version["id"], "outcome": outcome}}
+        if is_withheld(version):
+            self.todo(f"claims.{cid}.statement", f"hypothesis {version['id']} is withheld; write the statement of {cid}")
+        else:
+            claim = dict({"id": cid, "statement": version["body"].get("statement")}, **{k: v for k, v in claim.items()
+                                                                                       if k != "id"})
+        cited_runs, cited_results, other = [], [], []
+        for ref in list(status["body"].get("evidence") or []):
+            ev = st.get(ref)
+            if ev is not None and ev["type"] == "run":
+                if ev["id"] not in cited_runs:
+                    cited_runs.append(ev["id"])
+            elif ev is not None and ev["type"] == "result" and not is_withheld(ev):
+                cited_results.append(ev["id"])
+                if ev["body"].get("run") not in cited_runs:
+                    cited_runs.append(ev["body"]["run"])
+            else:
+                other.append(ref + (" (withheld)" if ev is not None and is_withheld(ev) else ""))
+        for r in extra_runs:
+            if r not in cited_runs:
+                cited_runs.append(r)
+        if other:
+            self.todo(f"claims.{cid}.support", f"status {status['id']} also cites {', '.join(other)}, which are not "
+                                               f"exported as evidence")
+        if cited_runs:
+            eid, refs = self.make_evidence(cited_runs)
+            support = {"kind": "empirical_quant", "evidence": eid}
+            cited = [refs[x] for x in cited_results if x in refs]
+            if cited or refs:
+                support["results"] = cited or list(refs.values())
+            claim["support"].append(support)
+        else:
+            self.todo(f"claims.{cid}.support", f"no run lies behind status {status['id']}; give {cid} its support")
+        claim["_targets"] = set(self.versions(version["id"])) | set(self.versions(status["id"])) | set(cited_runs) | {
+            x["id"] for r in cited_runs for x in self.results_of.get(r, [])}
+        if outcome == "not_supported":
+            self.todo(f"claims.{cid}.statement", f"{cid} is a negative result: rewrite the statement of "
+                                                 f"{version['id']} to say plainly what was not found, and under what "
+                                                 f"conditions")
+        self.todo(f"claims.{cid}", f"confirm the type (exported as descriptive), role and novelty of {cid}, and "
+                                   f"give its scope")
+        return claim, cited_runs
+
+    def add_deviation_limitation(self, claim, run, plan_version, dv):
+        lid = f"L{len(self.limitations) + 1}"
+        self.limitations.append({
+            "id": lid, "category": "analytic_flexibility",
+            "statement": f"Lab run {run['id']} deviated from plan {plan_version['id']}: {dv['body'].get('text')} "
+                         f"Reason: {dv['body'].get('reason')}",
+            "affects": [claim["id"]], "impact": "could_bias_magnitude", "mitigation": "none"})
+        claim.setdefault("limitations", []).append(lid)
+        self.todo(f"limitations.{lid}", f"review the category, impact and wording of {lid}, exported from "
+                                        f"deviation {dv['id']}")
+
     def export_hypotheses(self):
         st = self.st
         deviations, self.withheld_deviations = {}, []
@@ -257,98 +327,79 @@ class _Exporter:
                 self.withheld_deviations.append(cur["id"])
             elif cur["body"].get("plan") and cur["body"].get("run"):
                 deviations[(st.root(cur["body"]["plan"]), cur["body"]["run"])] = cur
+        self.test_counts = {o: 0 for o in OUTCOMES}
         for h in self.hyps:
-            status = self.statuses[h["id"]]
-            outcome = status["body"]["to"]
-            if outcome not in OUTCOMES:
-                continue
-            cid = f"C{len(self.claims) + 1}"
-            cur = st.latest(h["id"])
-            hyp_ids = set(self.versions(h["id"]))
-            self.mapping[cid] = cur["id"]
-            claim = {"id": cid, "statement": self.body(h["id"]).get("statement"), "type": "descriptive",
-                     "role": "supporting", "novelty": "new", "support": [], "provenance": "author_stated",
-                     "hypothesis": {"lab_event": cur["id"], "outcome": outcome}}
-            if claim["statement"] is None:
-                del claim["statement"]
-                self.todo(f"claims.{cid}.statement", f"hypothesis {cur['id']} is withheld; write the statement of {cid}")
-
-            cited_runs, cited_results, other = [], [], []
-            for ref in status["body"].get("evidence") or []:
-                ev = st.get(ref)
-                if ev is not None and ev["type"] == "run":
-                    cited_runs.append(ev["id"])
-                elif ev is not None and ev["type"] == "result" and not is_withheld(ev):
-                    cited_results.append(ev["id"])
-                    if ev["body"].get("run") not in cited_runs:
-                        cited_runs.append(ev["body"]["run"])
-                else:
-                    other.append(ref + (" (withheld)" if ev is not None and is_withheld(ev) else ""))
-            if other:
-                self.todo(f"claims.{cid}.support", f"the final status {status['id']} of {h['id']} also cites "
-                                                   f"{', '.join(other)}, which are not exported as evidence")
-            if cited_runs:
-                eid, refs = self.make_evidence(cited_runs)
-                support = {"kind": "empirical_quant", "evidence": eid}
-                cited = [refs[x] for x in cited_results if x in refs]
-                if cited or refs:
-                    support["results"] = cited or list(refs.values())
-                claim["support"].append(support)
-            else:
-                self.todo(f"claims.{cid}.support", f"no run lies behind the final status {status['id']} of "
-                                                   f"{h['id']}; give {cid} its support")
-
-            # planning (§9: a run tests the hypothesis under a plan)
-            tests = []
-            for r in sorted((st.get(x) for x in cited_runs), key=lambda e: e["seq"]):
-                if is_withheld(r) or r["body"].get("label") != "confirmatory" or not r["body"].get("plan"):
+            decided = st.decided_plans_for(h["id"]) if st.strict else {}
+            for root, (pv, runs) in sorted(decided.items(), key=lambda kv: st.pos[kv[1][1][0]["id"]]):
+                verdict = self.verdicts.get((h["id"], root))
+                if verdict is None:
+                    self.todo("claims", f"the verdict of {root} on {h['id']} is not readable (withheld); add its claim")
                     continue
-                pv = self.version_before(r["body"]["plan"], r)
-                if pv and hyp_ids & set(pv["body"].get("hypotheses") or []):
-                    tests.append((r, pv, deviations.get((st.root(pv["id"]), r["id"]))))
-            clean = [t for t in tests if t[2] is None]
-            chosen = clean[0] if clean else (tests[0] if tests else None)
-            claim["planning"] = ("confirmatory" if clean else "confirmatory_with_deviations") if tests else "exploratory"
-            if chosen:
-                r, pv, _ = chosen
+                outcome = verdict["body"]["to"]
+                self.test_counts[outcome] += 1
+                version = self.hypothesis_at(h["id"], st.pos[pv["id"]]) or st.latest(h["id"])
+                claim, _ = self.claim_from(version, verdict, outcome, [r["id"] for r in runs])
+                devs = [(r, deviations[(root, r["id"])]) for r in runs if (root, r["id"]) in deviations]
+                claim["planning"] = "confirmatory_with_deviations" if devs else "confirmatory"
                 claim["planned_at"] = pv["at"]
-                rule = pv["body"].get("decision")
-                if isinstance(rule, dict):
-                    claim["test"] = {k: rule[k] for k in ("framework", "parameters", "quantities", "supported",
-                                                          "not_supported") if rule.get(k) is not None}
-                    claim["test"].update({"runs": pv["body"].get("runs", 1), "lab_plan": pv["id"]})
-                else:
-                    self.todo(f"claims.{cid}.test", f"plan {pv['id']} has no decision rule (it was written under lab "
-                                                    f"record v0.4 with the criterion: {pv['body'].get('criterion')}); "
-                                                    f"state the rule in {cid}.test as it was fixed before the run")
-                started = r["body"].get("started_at") or r["at"]
+                started = runs[0]["body"].get("started_at") or runs[0]["at"]
                 usable = sorted((a for a in self.anchors if isinstance(a, dict) and covers(a, pv)
                                  and isinstance(a.get("at"), str) and a["at"] <= started), key=lambda a: a["at"])
                 claim["planned_at_anchor"] = usable[0].get("service", "none") if usable else "none"
-            for r, pv, dv in tests:
-                if dv is None:
-                    continue
-                lid = f"L{len(self.limitations) + 1}"
-                self.limitations.append({
-                    "id": lid, "category": "analytic_flexibility",
-                    "statement": f"Lab run {r['id']} deviated from plan {pv['id']}: {dv['body'].get('text')} "
-                                 f"Reason: {dv['body'].get('reason')}",
-                    "affects": [cid], "impact": "could_bias_magnitude", "mitigation": "none"})
-                claim.setdefault("limitations", []).append(lid)
-                self.todo(f"limitations.{lid}", f"review the category, impact and wording of {lid}, exported from "
-                                                f"deviation {dv['id']}")
-            claim["_targets"] = hyp_ids | set(self.versions(status["id"])) | set(cited_runs) | {
-                x["id"] for r in cited_runs for x in self.results_of.get(r, [])}
-            if outcome == "not_supported":
-                self.todo(f"claims.{cid}.statement", f"{cid} is a negative result: rewrite the statement of "
-                                                     f"{cur['id']} to say plainly what was not found, and under what "
-                                                     f"conditions")
-            self.todo(f"claims.{cid}", f"confirm the type (exported as descriptive), role and novelty of {cid}, and "
-                                       f"give its scope")
+                rule = pv["body"].get("decision") or {}
+                claim["test"] = {k: rule[k] for k in ("framework", "parameters", "quantities", "supported",
+                                                      "not_supported") if rule.get(k) is not None}
+                claim["test"].update({"verdict": "computed" if _decision.computed(rule) else "judged",
+                                      "runs": pv["body"].get("runs", 1), "lab_plan": pv["id"]})
+                flags = plan_flags(st, pv, runs)
+                if flags:
+                    claim["test"]["flags"] = flags
+                for r, dv in devs:
+                    self.add_deviation_limitation(claim, r, pv, dv)
+                self.claims.append(claim)
+            if decided:
+                continue
+            status = self.statuses.get(h["id"])
+            if status is None or status["body"].get("to") not in OUTCOMES:
+                continue
+            claim, cited_runs = self.claim_from(st.latest(h["id"]), status, status["body"]["to"])
+            claim["planning"] = "exploratory"
+            if not st.strict:
+                self.legacy_planning(claim, h, cited_runs, deviations)
             self.claims.append(claim)
         if self.withheld_deviations:
             self.todo("claims[].planning", f"deviations {', '.join(self.withheld_deviations)} are withheld, so the "
                                            f"planning labels do not take them into account; check them")
+
+    def legacy_planning(self, claim, h, cited_runs, deviations):
+        """Planning labels for records begun under v0.4: a confirmatory run in the status's evidence under a plan
+        naming the hypothesis."""
+        st = self.st
+        hyp_ids = set(self.versions(h["id"]))
+        tests = []
+        for r in sorted((st.get(x) for x in cited_runs), key=lambda e: e["seq"]):
+            if is_withheld(r) or r["body"].get("label") != "confirmatory" or not r["body"].get("plan"):
+                continue
+            pv = self.version_before(r["body"]["plan"], r)
+            if pv and hyp_ids & set(pv["body"].get("hypotheses") or []):
+                tests.append((r, pv, deviations.get((st.root(pv["id"]), r["id"]))))
+        clean = [t for t in tests if t[2] is None]
+        chosen = clean[0] if clean else (tests[0] if tests else None)
+        if not chosen:
+            return
+        claim["planning"] = "confirmatory" if clean else "confirmatory_with_deviations"
+        r, pv, _ = chosen
+        claim["planned_at"] = pv["at"]
+        self.todo(f"claims.{claim['id']}.test", f"plan {pv['id']} has no decision rule (it was written under lab "
+                                                f"record v0.4 with the criterion: {pv['body'].get('criterion')}); "
+                                                f"state the rule in {claim['id']}.test as it was fixed before the run")
+        started = r["body"].get("started_at") or r["at"]
+        usable = sorted((a for a in self.anchors if isinstance(a, dict) and covers(a, pv)
+                         and isinstance(a.get("at"), str) and a["at"] <= started), key=lambda a: a["at"])
+        claim["planned_at_anchor"] = usable[0].get("service", "none") if usable else "none"
+        for r, pv, dv in tests:
+            if dv is not None:
+                self.add_deviation_limitation(claim, r, pv, dv)
 
     def export_checks(self):
         st = self.st
@@ -460,9 +511,11 @@ class _Exporter:
         return lab_aid
 
     def export_paper(self, lab_aid):
-        counts = {k: 0 for k in ("supported", "not_supported", "inconclusive", "revised", "abandoned")}
+        counts = {k: 0 for k in ("supported", "not_supported", "inconclusive", "revised", "abandoned", "open")}
         for h in self.hyps:
-            counts[self.statuses[h["id"]]["body"]["to"]] += 1
+            final = self.statuses.get(h["id"])
+            to = final["body"].get("to") if final else None
+            counts[to if to in FINAL else "open"] += 1
         runs = [e for e in self.st.events if e["type"] == "run"]
         visible = [r for r in runs if not is_withheld(r)]
         confirmatory = sum(r["body"].get("label") == "confirmatory" for r in visible)
@@ -473,6 +526,7 @@ class _Exporter:
             "lab_record": lab_aid,
             "questions": sum(1 for e in self.roots if e["type"] == "question"),
             "hypotheses": dict({"total": sum(counts.values())}, **counts),
+            "tests": dict({"total": sum(self.test_counts.values())}, **self.test_counts),
             "runs": {"total": len(runs), "confirmatory": confirmatory, "exploratory": len(runs) - confirmatory,
                      "failed": sum(r["body"].get("exit_status") != "success" for r in visible)},
         }

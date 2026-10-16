@@ -227,9 +227,6 @@ class State:
                 out[root] = d
         return out
 
-    def tested_by(self, hypothesis_id):
-        """Plan roots naming the hypothesis that already have confirmatory runs."""
-        return [r for r in self.committed_plans(hypothesis_id) if self.plan_runs.get(r)]
 
     def type_of(self, eid):
         e = self.by_id.get(eid)
@@ -328,9 +325,6 @@ class State:
             if supersedes in self.superseded_by:
                 raise LabError("L11", f"{supersedes} is already superseded by {self.superseded_by[supersedes]}; "
                                       f"correct that one instead")
-            if self.strict and etype == "hypothesis" and self.tested_by(supersedes):
-                raise LabError("L18", f"{supersedes} has been tested under {', '.join(self.tested_by(supersedes))}; "
-                                      f"a tested hypothesis is not reworded. Record a new hypothesis instead")
 
 
 def final_statuses(st):
@@ -465,66 +459,85 @@ def check_status(state, body, by, eid):
 
 
 def _check_confirmatory_run(state, plan_id, plan):
-    """Rules L16 and L18 for a new confirmatory run under a plan."""
+    """Rule L16 for a new confirmatory run under a plan."""
     if state.owner is not None and not state.root(plan_id).startswith(state.owner + "."):
         raise LabError("L16", f"run: a confirmatory run in the agent log of {state.owner} is made under a plan "
                               f"written in that log; {plan_id} is not")
     d = state.deciding_runs(plan_id)
     if d:
         raise LabError("L16", f"run: plan {plan_id} already has its deciding runs "
-                              f"({', '.join(r['id'] for r in d[1])}); a new test needs a new hypothesis and "
-                              f"plan, or run it as exploratory")
-    pv = state.plan_rule_version(plan_id) or plan
-    root = state.root(plan_id)
-    for h in pv["body"].get("hypotheses") or []:
-        if not isinstance(h, str):
-            continue
-        earlier = [r for r in state.tested_by(h) if r != root]
-        if earlier:
-            raise LabError("L18", f"run: {h} has already been tested under {', '.join(earlier)}")
-        plan_pos = min(state.pos.get(v, 0) for v in _chain(state, root))
+                              f"({', '.join(r['id'] for r in d[1])}); to test again, write a new plan, or "
+                              f"run it as exploratory")
+
+
+FLAGS = ("code_changed_after_plan", "holdout_used_elsewhere")
+
+
+def plan_flags(state, plan_version, runs):
+    """Warnings about a decided plan's test (§5.7.5): they do not refuse anything, they are reported."""
+    flags = []
+    b = plan_version["body"]
+    commit = b.get("code_version")
+    visible = [r for r in runs if not is_withheld(r)]
+    if commit is not None and any(r["body"].get("code_version") != commit or r["body"].get("dirty") for r in visible) \
+            or b.get("dirty"):
+        flags.append("code_changed_after_plan")
+    sealed = {d.get("hash") for d in b.get("holdout") or [] if isinstance(d, dict)}
+    deciding = {r["id"] for r in runs}
+    if sealed:
         for e in state.events:
-            b = e.get("body") if isinstance(e, dict) else None
-            if e.get("type") == "status" and isinstance(b, dict) and b.get("to") == "abandoned" \
-                    and isinstance(b.get("target"), str) and state.root(b["target"]) == state.root(h) \
-                    and state.pos.get(e["id"], -1) > plan_pos and e["id"] not in state.superseded_by:
-                raise LabError("L16", f"run: {h} was abandoned after plan {plan_id} was written; its test is "
-                                      f"not run")
+            body = e.get("body") if isinstance(e, dict) and isinstance(e.get("body"), dict) else {}
+            if e.get("type") == "run" and e.get("id") not in deciding and not is_withheld(e) and \
+                    sealed & {d.get("hash") for d in body.get("data") or [] if isinstance(d, dict)}:
+                flags.append("holdout_used_elsewhere")
+                break
+    return flags
+
+
+def _cited_runs(state, evidence):
+    """Run IDs cited as evidence, directly or through their results."""
+    out = set()
+    for ref in evidence:
+        e = state.get(ref) if isinstance(ref, str) else None
+        if e is None or is_withheld(e):
+            continue
+        if e["type"] == "run":
+            out.add(e["id"])
+        elif e["type"] == "result" and isinstance(e["body"].get("run"), str):
+            out.add(e["body"]["run"])
+    return out
 
 
 def _check_verdict(state, body, target, to, evidence):
-    """Rule L17: once a planned test of the hypothesis has run, statuses report its verdict."""
-    decided = state.decided_plans_for(target)
+    """Rule L17: a status reporting a planned test agrees with the plan's rule."""
     named = body.get("plan")
-    if not decided:
+    decided = state.decided_plans_for(target)
+    cited = _cited_runs(state, evidence)
+    if named is None:
+        for root, (pv, runs) in sorted(decided.items()):
+            if cited & {r["id"] for r in runs}:
+                raise LabError("L17", f"status: {', '.join(sorted(cited & {r['id'] for r in runs}))} decided "
+                                      f"plan {root}; this status is its verdict, so name the plan (--plan {root})")
+        return
+    if state.root(named) not in decided:
         if state.has_withheld:
             return  # withheld runs may decide plans this check cannot see (§8)
-        if named is not None and state.latest(named)["body"].get("kind") == "confirmatory" \
-                and not is_withheld(state.latest(named)):
-            raise LabError("L17", f"status: plan {named} has not had its deciding runs yet")
-        pending = sorted(state.committed_plans(target))
-        if pending and to not in ("testing", "abandoned"):
-            raise LabError("L17", f"status: {target} is committed to the test of {', '.join(pending)}; until it "
-                                  f"has run, its status can only be testing or abandoned")
-        return
-    plans = ", ".join(sorted(decided))
+        pv = state.plan_rule_version(named)
+        if pv is not None and not state.names(pv, target):
+            raise LabError("L17", f"status: plan {named} does not name {target}")
+        raise LabError("L17", f"status: plan {named} has not had its deciding runs yet")
     if to not in _decision.OUTCOMES:
-        raise LabError("L17", f"status: the planned test of {target} under {plans} has run; report its verdict "
-                              f"(supported, not_supported or inconclusive) with --plan. A planned test is reported, "
-                              f"not set aside; to refine the hypothesis, record a new one prompted by the result")
-    if named is None or state.root(named) not in decided:
-        raise LabError("L17", f"status: name the plan whose test decided {target} (--plan {plans})")
+        raise LabError("L17", f"status: a verdict on plan {named} is supported, not_supported or inconclusive")
     pv, runs = decided[state.root(named)]
-    cited = set(evidence)
     for r in runs:
-        if r["id"] not in cited and not any(x["id"] in cited for x in state.results_of.get(r["id"], [])):
+        if r["id"] not in cited:
             raise LabError("L17", f"status: cite the deciding run {r['id']} of {named}, or its results")
     rule = pv["body"].get("decision")
     if not isinstance(rule, dict) or _decision.problems(rule, pv["body"].get("runs", 1)):
         return  # the plan itself breaks L15, which is reported on the plan
-    if state.has_withheld:
-        return  # the verdict may rest on withheld results (§8)
-    if rule.get("framework") in _decision.WITH_QUANTITIES:
+    if _decision.computed(rule):
+        if state.has_withheld:
+            return  # the verdict may rest on withheld results (§8)
         out = _decision.verdict(rule, [[x["body"] for x in state.results_of.get(r["id"], [])] for r in runs])
         if to != out["verdict"]:
             shown = ", ".join(f"{k} = {v}" for k, v in out["values"].items())
@@ -609,13 +622,6 @@ def check_plan(state, body, by, eid):
             probs = _decision.problems(body["decision"], runs)
             if probs:
                 raise LabError("L15", "plan: " + "; ".join(probs))
-            own = state.root(state.checking.get("supersedes") or state.checking.get("id") or "")
-            for h in hyps:
-                earlier = [r for r in state.tested_by(h) if r != own]
-                if earlier:
-                    raise LabError("L18", f"plan: {h} has already been tested under {', '.join(earlier)}; a "
-                                          f"hypothesis is tested once. To test it again, record a new hypothesis "
-                                          f"(e.g. a replication) prompted by that result")
         else:
             _req(body, "criterion", "plan")
     for d in body.get("data") or []:
@@ -623,6 +629,13 @@ def check_plan(state, body, by, eid):
             raise LabError("schema", "plan: each data entry needs a description")
         if d.get("hash") and not HASH_RE.match(str(d["hash"])):
             raise LabError("schema", "plan: data hash must be sha256: followed by 64 hex digits")
+    holdout = body.get("holdout")
+    if holdout is not None:
+        if not isinstance(holdout, list):
+            raise LabError("schema", "plan: holdout must be a list of {path, hash}")
+        for d in holdout:
+            if not isinstance(d, dict) or not d.get("path") or not HASH_RE.match(str(d.get("hash", ""))):
+                raise LabError("schema", "plan: each holdout entry needs a path and a sha256 hash")
 
 
 def check_approval(state, body, by, eid):
@@ -1255,6 +1268,14 @@ def verify(lab, check_files=True, remote=False):
                 x["log"] = lab.agent_log_name(a)
                 rep["errors"].append(x)
     rep["notes"] = []
+    st = State()
+    for e in events:
+        st.apply(e)
+    for root in st.plan_roots:
+        d = st.deciding_runs(root)
+        if d:
+            for f in plan_flags(st, d[0], d[1]):
+                rep["notes"].append(f"plan {root}: {f.replace('_', ' ')}")
     if remote:
         r = verify_remote(lab)
         rep["errors"] += r["errors"]

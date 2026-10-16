@@ -18,12 +18,19 @@
       "lab_record": "A3",
       "questions": 1,
       "hypotheses": {
-        "total": 4,
+        "total": 5,
         "supported": 1,
         "not_supported": 1,
         "inconclusive": 0,
         "revised": 1,
-        "abandoned": 1
+        "abandoned": 1,
+        "open": 1
+      },
+      "tests": {
+        "total": 2,
+        "supported": 1,
+        "not_supported": 1,
+        "inconclusive": 0
       },
       "runs": {
         "total": 37,
@@ -216,6 +223,7 @@
         },
         "supported": "lower > 0",
         "not_supported": "upper < 0.02",
+        "verdict": "computed",
         "runs": 1,
         "lab_plan": "PL3"
       }
@@ -285,6 +293,7 @@
         },
         "supported": "lower >= upper_bound",
         "not_supported": "lower_bound < lower and upper < upper_bound",
+        "verdict": "computed",
         "runs": 1,
         "lab_plan": "PL4"
       }

@@ -43,6 +43,8 @@ ENUM = {
     "planning": {"confirmatory", "confirmatory_with_deviations", "exploratory"},
     "anchor": {"platform", "rfc3161", "git_remote", "none"},
     "framework": {"frequentist", "equivalence", "bayesian", "deterministic", "formal", "qualitative"},
+    "verdict": {"computed", "judged"},
+    "test_flag": {"code_changed_after_plan", "holdout_used_elsewhere"},
     "assumption_category": {"theoretical", "statistical", "methodological", "data", "axiom",
                             "theorem_condition", "paradigmatic"},
     "check": {"tested", "sensitivity_analysed", "unchecked", "untestable"},
@@ -440,10 +442,20 @@ def validate(doc, published=False):
         def nonneg(v):
             return isinstance(v, int) and not isinstance(v, bool) and v >= 0
         hy, rn = as_dict(exp.get("hypotheses")), as_dict(exp.get("runs"))
-        hkeys = ("supported", "not_supported", "inconclusive", "revised", "abandoned")
+        hy = dict(hy, open=hy.get("open", 0))
+        hkeys = ("supported", "not_supported", "inconclusive", "revised", "abandoned", "open")
         for k in ("total",) + hkeys:
             if not nonneg(hy.get(k)):
                 r.err("45", f"paper.exploration.hypotheses.{k}", "must be a non-negative integer")
+        ts = exp.get("tests")
+        tkeys = ("supported", "not_supported", "inconclusive")
+        if ts is not None:
+            ts = as_dict(ts)
+            for k in ("total",) + tkeys:
+                if not nonneg(ts.get(k)):
+                    r.err("45", f"paper.exploration.tests.{k}", "must be a non-negative integer")
+            if all(nonneg(ts.get(k)) for k in ("total",) + tkeys) and ts["total"] != sum(ts[k] for k in tkeys):
+                r.err("45", "paper.exploration.tests.total", "must equal the sum of the verdict counts")
         for k in ("total", "confirmatory", "exploratory", "failed"):
             if not nonneg(rn.get(k)):
                 r.err("45", f"paper.exploration.runs.{k}", "must be a non-negative integer")
@@ -456,9 +468,16 @@ def validate(doc, published=False):
                 r.err("45", "paper.exploration.runs.failed", "cannot exceed total")
         for oc in ("supported", "not_supported", "inconclusive"):
             n = len({as_dict(c["hypothesis"]).get("lab_event") for c in hyp_claims
-                     if as_dict(c["hypothesis"]).get("outcome") == oc})
+                     if as_dict(c["hypothesis"]).get("outcome") == oc and not c.get("test")})
             if nonneg(hy.get(oc)) and n > hy[oc]:
-                r.err("46", "paper.exploration.hypotheses", f"{n} distinct hypotheses reported as {oc}, but the count is {hy[oc]}")
+                r.err("46", "paper.exploration.hypotheses", f"{n} distinct hypotheses reported as {oc} outside "
+                                                            f"planned tests, but the count is {hy[oc]}")
+            nt = sum(1 for c in hyp_claims if c.get("test") and as_dict(c["hypothesis"]).get("outcome") == oc)
+            limit = as_dict(ts).get(oc) if ts is not None else None
+            if nt and not nonneg(limit):
+                r.err("46", "paper.exploration.tests", f"{nt} planned tests reported as {oc}, but exploration has no tests counts")
+            elif nt and nt > limit:
+                r.err("46", "paper.exploration.tests", f"{nt} planned tests reported as {oc}, but the count is {limit}")
 
     # ---------- Contributors ----------
     validate_contributors(r, coll["contributors"], paper, ref, converted)
@@ -587,8 +606,11 @@ def check_test(r, test, w):
     for key in TEST_PARAMETERS.get(fw, ()):
         if params.get(key) in (None, ""):
             r.err("47", f"{w}.parameters.{key}", f"required by the {fw} framework")
-    if fw in ("frequentist", "equivalence", "bayesian", "deterministic") and not test.get("quantities"):
-        r.err("47", f"{w}.quantities", f"required by the {fw} framework: the results the rules are evaluated on")
+    check_enum(r, "47", f"{w}.verdict", test.get("verdict"), "verdict", required=True)
+    for i, f in enumerate(as_list(test.get("flags"))):
+        check_enum(r, "47", f"{w}.flags[{i}]", f, "test_flag", required=True)
+    if test.get("verdict") == "computed" and not test.get("quantities"):
+        r.err("47", f"{w}.quantities", "a computed verdict needs the quantities the rules were evaluated on")
 
 
 def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozenset()):

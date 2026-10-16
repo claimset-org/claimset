@@ -72,22 +72,23 @@ Record events as the work happens, not afterwards from memory.
   - frequentist: `alpha`, `test`, `sides` (`two_sided`, `greater` or `less`), `correction` (for several tests in one plan: `none`, `bonferroni`, `holm`, `fdr_bh`), `sample` (sample size and stopping rule);
   - equivalence: `alpha`, `test`, `lower_bound`, `upper_bound` (the smallest effect that would matter), `sample`;
   - bayesian: `prior`, `threshold`, `sample`.
-- `--quantity name="quantity text"`: the results your script will write that the decision uses, by the exact `quantity` text. Add conditions or an interval bound with JSON: `--quantity 'd_up={"quantity": "mean MAE difference", "conditions": {"ratio": 1}, "field": "interval.upper"}'`. Each name must match exactly one result of the deciding runs.
-- `--supported "…"` and `--not-supported "…"`: the rule for each conclusive outcome, as an expression over quantities and numeric parameters (`p < alpha and d > 0`, `abs(d) < 0.01`; only numbers, names, `+ - * /`, `abs()`, comparisons, `and`, `or`, `not`). For `formal` and `qualitative` plans, the rules are text saying what observation decides.
+- `--supported "…"` and `--not-supported "…"`: the rule for each conclusive outcome.
+- Recommended: `--quantity name="quantity text"` for each result your script will write that the decision uses (by its exact `quantity` text), so the rules can be expressions over them (`p < alpha and d > 0`, `abs(d) < 0.01`; only numbers, names, `+ - * /`, `abs()`, comparisons, `and`, `or`, `not`). The tool then computes the verdict. Add conditions or an interval bound with JSON: `--quantity 'd_up={"quantity": "mean MAE difference", "conditions": {"ratio": 1}, "field": "interval.upper"}'`. Each name must match exactly one result of the deciding runs. Without quantities the rules are text, and you state which one the evidence met: the claim then says the verdict was judged rather than computed.
 - `--runs N` if more than one run decides the plan (default 1); each quantity then says which run it comes from (`"run": 2`). `--decision rule.json` takes the whole rule from a file.
 
 Write the **not supported** rule as carefully as the supported one. Failing to reach significance is not a negative result: it is `inconclusive`. A hypothesis is refuted only by what the plan says in advance would refute it, for example a confidence interval lying entirely below the smallest effect that would matter (an equivalence bound), or a significant effect in the opposite direction. Work out the sample size so that a conclusive outcome is likely, and say how in `sample`.
 
-Use `formal` or `qualitative` only when the outcome genuinely cannot be computed from numbers: their verdicts are your judgement, and readers see which framework decided.
+Use computed rules whenever the outcome can be computed from numbers; text rules are for proofs, qualitative patterns and the like.
 
-The tool checks that the rule is complete (L15). After that:
-- **Every confirmatory run counts**, including one that fails. Once the plan has its deciding runs, further confirmatory runs under it are refused (L16), so a test cannot be repeated until it comes out favourably. Make sure the script works first, with exploratory runs on other data.
-- **The plan commits its hypotheses.** Until the test has run, their status can only be `testing` or `abandoned` (L17). A hypothesis abandoned after its plan was written is not tested.
-- **A hypothesis is tested once and not reworded afterwards** (L18). To test it again (a replication, a larger sample), record a new hypothesis prompted by the first result, with its own plan.
+The tool checks that the rule is complete (L15). After that, only two things are strict:
+- **One attempt per plan.** Every confirmatory run counts, including one that fails. Once the plan has its deciding runs, further confirmatory runs under it are refused (L16), so a test cannot be repeated until it comes out favourably. Make sure the script works first, with exploratory runs on other data.
+- **Every planned test that ran is reported.** Record its verdict (see below); export refuses until you have. Other statuses, before or after, do not replace it. To test a hypothesis again (a replication, a larger sample), write a new plan; each test becomes its own claim, so both results are published.
+
+Two things are flagged, not refused, and readers see the flags: analysis code that changed after the plan was written (commit the analysis code first: the plan records the commit), and held-out data used by other runs (declare it with `--holdout FILE`, and pass inputs to runs with `--data`).
 
 Approvals are optional: when the human is available, ask them to approve confirmatory plans; when not, proceed. The record shows which plans were approved.
 
-**Runs.** `claimset lab run` records the command, code commit (and whether the working tree had uncommitted changes), environment, seeds, parameters, input-file hashes, exit status, stdout, stderr and every output file. Commit your code before confirmatory runs, so the recorded commit is the code that ran; put generated files (`__pycache__/`, outputs written outside the run directory) in `.gitignore`, because any uncommitted or untracked file outside `lab/` marks the run as dirty. Keep `lab/` in the repository with the code and commit it with your work. Without `--plan`, or with `--exploratory`, a run is exploratory; it is confirmatory only under a confirmatory plan. Failed runs are recorded too; that is intended. Checking that a script starts at all, on toy input, may happen outside the tool; any run whose output you look at to form a hypothesis, choose a setting or decide anything goes through `claimset lab run`.
+**Runs.** `claimset lab run` records the command, code commit (and whether the working tree had uncommitted changes), environment, seeds, parameters, input-file hashes, exit status, stdout, stderr and every output file. Commit your code before confirmatory runs, so the recorded commit is the code that ran; put generated files (`__pycache__/`, outputs written outside the run directory) in `.gitignore`, because any uncommitted or untracked file outside `lab/` marks the run as dirty. Keep `lab/` in the repository with the code and commit it with your work. Without `--plan`, or with `--exploratory`, a run is exploratory; it is confirmatory only under a confirmatory plan. Failed runs are recorded too; that is intended. Exploration does not need to be recorded step by step. Checking that a script starts at all, on toy input, may happen outside the tool; any run whose output you look at to form a hypothesis, choose a setting or decide anything goes through `claimset lab run`. When the direction changes, a short `note` or `decide` saying why is enough.
 
 Options that take IDs take several at once (`--hypotheses H1 H2`, `--evidence RS4 RS5`, `--refers-to`, `--prompted-by`, `--affects`). `--seed N`, `--param name=value` (the value is read as JSON when it parses, e.g. `--param grid=[0.1,0.5]`) and `--data FILE` can be repeated.
 
@@ -109,7 +110,7 @@ In R: `jsonlite::write_json(results, Sys.getenv("CLAIMSET_RESULTS"), auto_unbox 
 
 **Statuses.** `testing` when work on a hypothesis starts; `supported`, `not_supported` or `inconclusive` with `--evidence` (the result or run IDs) and `--why`; `revised` with `--revised-to` the new hypothesis; `abandoned` with `--why`. Every status needs a rationale.
 
-**Verdicts.** Once a plan's deciding runs exist, `claimset lab verdict PL1` shows the value bound to each quantity and the verdict the rule gives. Record exactly that verdict, with `--plan PL1` and the deciding runs' results as evidence; the tool refuses any other outcome (L17). For `formal` and `qualitative` plans, judge which rule the evidence met and add `--rule supported`, `not_supported` or `neither`. A hypothesis whose planned test has run cannot be set aside as `testing`, `revised` or `abandoned`: report the verdict, and if the result suggests a better hypothesis, record it as a new one `--from-exploration --prompted-by` the result.
+**Verdicts.** Once a plan's deciding runs exist, `claimset lab verdict PL1` shows the value bound to each quantity, the verdict the rule gives and any flags. Record exactly that verdict, with `--plan PL1` and the deciding runs' results as evidence; the tool refuses any other outcome (L17). For plans with text rules, judge which rule the evidence met and add `--rule supported`, `not_supported` or `neither`. If the result suggests a better hypothesis, record it as a new one `--from-exploration --prompted-by` the result.
 
 ## Example: from exploration to a confirmatory test
 
@@ -171,15 +172,14 @@ The message names the rule. The usual cases:
 | L11 | Correction of a different type, or of an event already corrected | Correct the latest version, with the same type |
 | L12 | Reference to an event that does not exist (yet), or that your agent log cannot see | Check the ID with `claimset lab list` |
 | L15 | The plan's decision rule is incomplete or not a valid expression | Add what the message names: a parameter, a quantity, a rule |
-| L16 | The plan already has its deciding runs; or its hypothesis was abandoned after it was written; or, in an agent log, the plan is not that log's own | Report the verdict; a new test needs a new hypothesis and plan |
-| L17 | A status other than `testing` or `abandoned` while the planned test is pending; or a status that does not match the verdict, does not name the plan or its deciding runs, or sets a tested hypothesis aside | Run the test, then `claimset lab verdict PL…` and record that verdict |
-| L18 | The hypothesis has already been tested | Record a new hypothesis prompted by the result, with its own plan |
+| L16 | The plan already has its deciding runs; or, in an agent log, the plan is not that log's own | Record the verdict; to test again, write a new plan |
+| L17 | A verdict that does not match the plan's rule, does not name the plan, or does not cite its deciding runs | Run `claimset lab verdict PL…` and record that verdict with `--plan` |
 
 Never work around a refusal by editing files or by writing as another actor.
 
 ## Finishing
 
-1. Give every hypothesis a final status (`supported`, `not_supported`, `inconclusive`, `revised` or `abandoned`), and record the verdict of every planned test that has run. Export refuses while any is open.
+1. Record the verdict of every planned test that has run; export refuses while one is missing. Give hypotheses you decided something about a final status (`supported`, `not_supported`, `inconclusive`, `revised` or `abandoned`); the rest are counted as open, which is fine.
 2. Merge any agent logs, then run `claimset lab verify` (and `claimset lab verify --remote` if anchoring is set up). Fix nothing by hand. If verification fails, tell the human exactly what it reports.
 3. `claimset lab export -o claimset.json` writes the draft claimset and prints the completion list. Continue with the `claimset-submit` skill. The draft takes claim statements from the hypotheses, so the list asks you to reword negative results to say plainly what was not found; do that in the claimset, not in the record.
 4. Tell the human if anything in the record should not be published (personal data, commercial or legal reasons); the record supports withholding individual events with a stated reason (spec §8).

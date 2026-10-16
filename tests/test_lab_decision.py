@@ -101,7 +101,8 @@ class TestRuleChecks(unittest.TestCase):
 
     def test_quantities_and_text_rules_checked(self):
         no_q = {k: v for k, v in FREQ.items() if k != "quantities"}
-        self.assertIn("needs quantities", " ".join(dec.problems(no_q)))
+        self.assertEqual(dec.problems(no_q), [])            # text rules, judged verdict
+        self.assertFalse(dec.computed(no_q))
         clash = dict(FREQ, quantities=dict(FREQ["quantities"], alpha={"quantity": "x"}))
         self.assertIn("both a quantity and a parameter", " ".join(dec.problems(clash)))
         bad_field = dict(FREQ, quantities={"p": {"quantity": "p-value", "field": "interval.middle"}})
@@ -157,7 +158,7 @@ class TestDecidingRuns(RuleCase):
         pl = self.plan()
         self.run_(plan=pl)                          # deciding run
         msg = self.refused("L16", self.run_, plan=pl)
-        self.assertIn("new hypothesis and plan", msg)
+        self.assertIn("new plan", msg)
         self.run_(plan=pl, exploratory=True)        # still allowed as exploratory
         self.assertTrue(verify(self.lab)["ok"])
 
@@ -188,35 +189,72 @@ class TestDecidingRuns(RuleCase):
         self.verdict_status("not_supported", rs, pl)
 
 
-class TestCommitment(RuleCase):
-    """A plan commits its hypotheses to its test; a hypothesis is tested once (L16-L18)."""
+class TestReporting(RuleCase):
+    """Every planned test that ran is reported with its verdict (§5.7.4); exploration is not restricted."""
 
-    def test_no_verdict_before_the_test_runs(self):
+    def claims(self):
+        return export(self.lab)["draft"]["claims"]
+
+    def test_statuses_before_the_test_do_not_replace_its_verdict(self):
         pl = self.plan()
-        rn, rs = self.run_()                                          # exploratory
-        msg = self.refused("L17", self.add, "status", {"target": self.h, "to": "supported", "rationale": "r",
-                                                       "evidence": rs})
-        self.assertIn("committed to the test", msg)
-        self.add("status", {"target": self.h, "to": "testing", "rationale": "r"})
+        rn, rs = self.run_()                                         # exploratory, favourable
+        self.add("status", {"target": self.h, "to": "supported", "rationale": "r", "evidence": rs})
+        crn, crs = self.run_(d=-0.1, lo=-0.2, hi=-0.05, p=0.9, plan=pl)   # the planned test: refuted
+        with self.assertRaises(LabError) as cm:
+            export(self.lab)
+        self.assertIn("verdict is not recorded", cm.exception.message)
+        self.verdict_status("not_supported", crs, pl)
+        [claim] = self.claims()
+        self.assertEqual((claim["hypothesis"]["outcome"], claim["planning"]), ("not_supported", "confirmatory"))
 
-    def test_abandoned_before_run_cannot_be_run(self):
+    def test_abandoning_does_not_hide_a_test_that_ran(self):
         pl = self.plan()
         self.add("status", {"target": self.h, "to": "abandoned", "rationale": "r"})
-        self.refused("L16", self.run_, plan=pl)
-
-    def test_hypothesis_tested_once(self):
-        pl = self.plan()
         rn, rs = self.run_(d=-0.1, lo=-0.2, hi=-0.05, p=0.9, plan=pl)
+        self.refused("export", export, self.lab)
         self.verdict_status("not_supported", rs, pl)
-        self.refused("L18", self.plan)
-        self.refused("L18", self.add, "hypothesis", {"statement": "Reworded.", "question": self.q,
-                                                     "origin": "a_priori"}, supersedes=self.h)
+        self.add("status", {"target": self.h, "to": "abandoned", "rationale": "dropped after the test"})
+        out = export(self.lab)
+        self.assertEqual([c["hypothesis"]["outcome"] for c in out["draft"]["claims"]], ["not_supported"])
+        self.assertEqual(out["draft"]["paper"]["exploration"]["hypotheses"]["abandoned"], 1)
+        self.assertEqual(out["draft"]["paper"]["exploration"]["tests"]["not_supported"], 1)
 
-    def test_two_plans_written_before_running(self):
+    def test_retest_reports_both_verdicts(self):
         pl1 = self.plan()
-        pl2 = self.plan()
-        self.run_(plan=pl1)
-        self.refused("L18", self.run_, plan=pl2)
+        rn1, rs1 = self.run_(d=0.2, lo=-0.1, hi=0.5, p=0.2, plan=pl1)
+        self.verdict_status("inconclusive", rs1, pl1)
+        pl2 = self.plan(design="larger sample")
+        rn2, rs2 = self.run_(plan=pl2)
+        self.verdict_status("supported", rs2, pl2)
+        claims = self.claims()
+        self.assertEqual([(c["hypothesis"]["outcome"], c["test"]["lab_plan"]) for c in claims],
+                         [("inconclusive", pl1), ("supported", pl2)])
+        out = export(self.lab)
+        self.assertEqual(out["draft"]["paper"]["exploration"]["tests"],
+                         {"total": 2, "supported": 1, "not_supported": 0, "inconclusive": 1})
+        self.assertFalse([e for e in validate(out["draft"]).errors if e["rule"] in ("45", "46", "47")])
+
+    def test_rewording_after_the_test_does_not_move_the_verdict(self):
+        pl = self.plan()
+        rn, rs = self.run_(plan=pl)
+        self.verdict_status("supported", rs, pl)
+        self.add("hypothesis", {"statement": "A broader claim.", "question": self.q, "origin": "a_priori"},
+                 supersedes=self.h)
+        [claim] = self.claims()
+        self.assertEqual(claim["statement"], "X improves Y.")
+        self.assertEqual(claim["hypothesis"]["lab_event"], self.h)
+
+    def test_citing_deciding_run_needs_plan(self):
+        pl = self.plan()
+        rn, rs = self.run_(plan=pl)
+        msg = self.refused("L17", self.add, "status", {"target": self.h, "to": "supported", "rationale": "r",
+                                                       "evidence": rs})
+        self.assertIn("--plan", msg)
+
+    def test_open_hypotheses_are_counted(self):
+        self.hyp("Never tested.")
+        out = export(self.lab)
+        self.assertEqual(out["draft"]["paper"]["exploration"]["hypotheses"]["open"], 2)
 
     def test_agent_runs_only_its_own_plans(self):
         pl = self.plan()
@@ -225,6 +263,17 @@ class TestCommitment(RuleCase):
         own = self.add("plan", {"kind": "confirmatory", "hypotheses": [self.h], "design": "d", "analysis": "a",
                                 "decision": FREQ})
         self.run_(plan=own)
+
+    def test_text_rules_give_judged_verdicts(self):
+        rule = {k: v for k, v in FREQ.items() if k != "quantities"}
+        rule.update(supported="p-value below alpha with a positive mean difference",
+                    not_supported="upper 95% bound of the mean difference below 0.01")
+        pl = self.plan(rule=rule)
+        rn, rs = self.run_(plan=pl)
+        self.refused("L17", self.verdict_status, "supported", rs, pl)
+        self.verdict_status("supported", rs, pl, rule="supported")
+        [claim] = self.claims()
+        self.assertEqual(claim["test"]["verdict"], "judged")
 
 
 class TestVerdicts(RuleCase):
@@ -246,18 +295,6 @@ class TestVerdicts(RuleCase):
         other_rn, other_rs = self.run_()
         self.refused("L17", self.verdict_status, "supported", other_rs, pl)
         self.verdict_status("supported", rs, pl)
-
-    def test_planned_test_cannot_be_set_aside(self):
-        pl = self.plan()
-        rn, rs = self.run_(d=-0.1, lo=-0.2, hi=-0.05, p=0.9, plan=pl)
-        for to in ("abandoned", "testing"):
-            msg = self.refused("L17", self.add, "status", {"target": self.h, "to": to, "rationale": "r"})
-            self.assertIn("not set aside", msg)
-        new = self.add("hypothesis", {"statement": "Y.", "question": self.q, "origin": "a_priori"})
-        self.refused("L17", self.add, "status", {"target": self.h, "to": "revised", "rationale": "r",
-                                                 "revised_to": new})
-        self.verdict_status("not_supported", rs, pl)
-        self.refused("L17", self.add, "status", {"target": self.h, "to": "abandoned", "rationale": "r"})
 
     def test_undecided_plan_cannot_be_named(self):
         pl = self.plan()
@@ -307,6 +344,58 @@ class TestWithheldAndMalformed(RuleCase):
         out = run_command(self.lab, self.agent, [sys.executable, str(script)], echo=False, cwd=self.tmp.name)
         self.assertEqual(out["results"], [])
         self.assertIn("finite", out["problems"][0])
+
+
+class TestFlags(RuleCase):
+    """Warnings, not refusals: code changed after the plan, held-out data used elsewhere (§5.7.5)."""
+
+    def git(self, *args):
+        import subprocess
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=self.tmp.name, check=True,
+                       capture_output=True)
+
+    def flags_of(self, pl):
+        st = self.lab.state()
+        from claimset.lab.core import plan_flags
+        pv, runs = st.deciding_runs(pl)
+        return plan_flags(st, pv, runs)
+
+    def test_clean_test_has_no_flags(self):
+        self.git("init", "-q")
+        self.git("add", "exp.py")
+        self.git("commit", "-qm", "code")
+        from claimset.lab.run import code_version
+        commit, dirty = code_version(self.tmp.name, self.lab.root)
+        pl = self.plan(code_version=commit, dirty=dirty)
+        rn, rs = self.run_(plan=pl)
+        self.assertEqual(self.flags_of(pl), [])
+
+    def test_code_changed_after_plan(self):
+        self.git("init", "-q")
+        self.git("add", "exp.py")
+        self.git("commit", "-qm", "code")
+        from claimset.lab.run import code_version
+        commit, dirty = code_version(self.tmp.name, self.lab.root)
+        pl = self.plan(code_version=commit, dirty=dirty)
+        self.script.write_text(SCRIPT + "\n# tuned after the plan\n")
+        rn, rs = self.run_(plan=pl)
+        self.assertEqual(self.flags_of(pl), ["code_changed_after_plan"])
+        self.verdict_status("supported", rs, pl)
+        out = export(self.lab)
+        self.assertEqual(out["draft"]["claims"][0]["test"]["flags"], ["code_changed_after_plan"])
+        self.assertFalse([e for e in validate(out["draft"]).errors if e["rule"] == "47"])
+        self.assertTrue(verify(self.lab)["ok"])
+        self.assertTrue(any("code changed" in n for n in verify(self.lab)["notes"]))
+
+    def test_holdout_used_in_exploration(self):
+        data = Path(self.tmp.name) / "holdout.csv"
+        data.write_text("1,2\n")
+        from claimset.lab.core import file_hash
+        pl = self.plan(holdout=[{"path": "holdout.csv", "hash": file_hash(data)}])
+        run_command(self.lab, self.agent, [sys.executable, str(self.script), "0.1", "0", "0.2", "0.5"],
+                    data=[str(data)], echo=False, cwd=self.tmp.name)
+        rn, rs = self.run_(plan=pl)
+        self.assertEqual(self.flags_of(pl), ["holdout_used_elsewhere"])
 
 
 class TestOlderRecords(LabCase):

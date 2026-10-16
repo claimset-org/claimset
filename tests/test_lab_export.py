@@ -61,11 +61,10 @@ class ExportCase(PlanRunCase):
 
 
 class TestPreconditions(ExportCase):
-    def test_open_hypothesis_refused(self):
-        with self.assertRaises(LabError) as cm:
-            export(self.lab)
-        self.assertIn(self.h, cm.exception.message)
-        self.assertIn("abandoned", cm.exception.message)
+    def test_open_hypothesis_counted(self):
+        out = export(self.lab)
+        self.assertEqual(out["draft"]["paper"]["exploration"]["hypotheses"]["open"], 1)
+        self.assertEqual(out["draft"]["claims"], [])
 
     def test_unverifiable_record_refused(self):
         self.status(self.h, "abandoned")
@@ -142,7 +141,8 @@ class TestMapping(ExportCase):
     def test_exploration_counts(self):
         ex = self.out["draft"]["paper"]["exploration"]
         self.assertEqual(ex["hypotheses"], {"total": 6, "supported": 1, "not_supported": 1, "inconclusive": 1,
-                                            "revised": 1, "abandoned": 2})
+                                            "revised": 1, "abandoned": 2, "open": 0})
+        self.assertEqual(ex["tests"], {"total": 2, "supported": 1, "not_supported": 1, "inconclusive": 0})
         self.assertEqual(ex["runs"], {"total": 4, "confirmatory": 2, "exploratory": 2, "failed": 1})
         self.assertEqual(ex["questions"], 1)
         lab_art = next(a for a in self.out["draft"]["artefacts"] if a["id"] == ex["lab_record"])
