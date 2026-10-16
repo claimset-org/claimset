@@ -8,6 +8,11 @@ from pathlib import Path
 
 from .core import Lab, LabError, file_hash, verify
 from . import summary as _summary
+from .run import run_command
+from . import export as _export
+from . import anchor as _anchor
+from . import guard as _guard
+from . import protect as _protect
 
 
 def _lab(args):
@@ -32,11 +37,25 @@ def _emit(args, event):
         print(event["id"])
 
 
+def _auto_anchor(lab, event):
+    """Anchor after a plan (or after every event, if configured); warn instead of failing."""
+    cfg = _anchor.anchoring(lab)
+    if not cfg:
+        return
+    if event["type"] == "plan" or cfg.get("every") == "event":
+        try:
+            entry = _anchor.anchor(lab)
+            print(f"claimset: anchored seq {entry['seq']} at {entry['receipt']['commit'][:12]}", file=sys.stderr)
+        except LabError as exc:
+            print(f"claimset: WARNING {event['id']} was written but not anchored: {exc.message}", file=sys.stderr)
+
+
 def _write(args, etype, body, by=None):
     lab = _lab(args)
     by = _actor(args) if by is None else by
     event = lab.append(etype, _clean(body), by=by, supersedes=getattr(args, "supersedes", None))
     _emit(args, event)
+    _auto_anchor(lab, event)
     return 0
 
 
@@ -115,8 +134,66 @@ def cmd_artefact(args):
                                      "licence": args.licence, "description": args.description})
 
 
+def cmd_plan(args):
+    data = [{"description": d, "hash": file_hash(d)} if Path(d).is_file() else {"description": d}
+            for d in args.data]
+    return _write(args, "plan", {"kind": args.kind, "hypotheses": args.hypotheses, "design": args.design,
+                                 "analysis": args.analysis, "criterion": args.criterion, "data": data})
+
+
+def cmd_approve(args):
+    return _write(args, "approval", {"target": args.target, "comment": args.comment})
+
+
+def cmd_deviate(args):
+    return _write(args, "deviation", {"plan": args.plan, "run": args.run, "text": args.text,
+                                      "reason": args.reason})
+
+
+def _parse_param(p):
+    if "=" not in p:
+        raise LabError("schema", f"--param '{p}': use name=value")
+    k, v = p.split("=", 1)
+    try:
+        v = json.loads(v)
+    except json.JSONDecodeError:
+        pass
+    return k, v
+
+
+def cmd_run(args):
+    argv = list(args.command)
+    if argv and argv[0] == "--":
+        argv = argv[1:]
+    lab = _lab(args)
+    out = run_command(lab, _actor(args), argv, plan=args.plan, exploratory=args.exploratory,
+                      parameters=dict(_parse_param(p) for p in args.param) or None,
+                      seeds=args.seed or None, data=args.data or None)
+    run = out["run"]
+    if args.json:
+        print(json.dumps({"run": run, "results": out["results"], "problems": out["problems"]},
+                         ensure_ascii=False, indent=2))
+    msg = (f"claimset: recorded {run['id']} ({run['body']['label']}, {run['body']['exit_status']}, "
+           f"exit code {out['exit_code']})")
+    if out["results"]:
+        msg += "; results " + " ".join(r["id"] for r in out["results"])
+    print(msg, file=sys.stderr)
+    for p in out["problems"]:
+        print(f"claimset: results.json {p}", file=sys.stderr)
+    cfg = _anchor.anchoring(lab)
+    if cfg and cfg.get("every") == "event":
+        _auto_anchor(lab, out["results"][-1] if out["results"] else run)
+    code = out["exit_code"]
+    return 1 if code is None else (code if code >= 0 else 1)
+
+
+def _view(args):
+    """The state the current actor sees: its open agent log on top of the main log, or the main log."""
+    return _lab(args).view(_actor(args, required=False))
+
+
 def cmd_show(args):
-    st = _lab(args).state()
+    st = _view(args)
     e = st.get(args.id)
     if e is None:
         raise LabError("L12", f"no event '{args.id}'")
@@ -133,7 +210,7 @@ def cmd_show(args):
 
 
 def cmd_list(args):
-    events = _lab(args).read()
+    events = _view(args).events
     if args.type:
         events = [e for e in events if e["type"] == args.type]
     if args.last:
@@ -146,22 +223,122 @@ def cmd_list(args):
     return 0
 
 
+def cmd_anchor(args):
+    lab = _lab(args)
+    cfg = _anchor.load_config(lab)
+    if args.git or args.remote or args.branch or args.every:
+        current = cfg.get("anchor") or {}
+        cfg["anchor"] = {"service": "git_remote",
+                         "remote": args.remote or current.get("remote", "origin"),
+                         "branch": args.branch or current.get("branch", _anchor.DEFAULT_BRANCH),
+                         "every": args.every or current.get("every", "plan")}
+        _anchor.save_config(lab, cfg)
+    entry = _anchor.anchor(lab)
+    if args.json:
+        print(json.dumps(entry, indent=2))
+    else:
+        r = entry["receipt"]
+        print(f"anchored seq {entry['seq']} at {r['remote']}/{r['branch']} {r['commit'][:12]}")
+    return 0
+
+
+def cmd_guard(args):
+    if args.print_config:
+        print(json.dumps(_guard.claude_code_config(), indent=2))
+        return 0
+    return _guard.main_hook(sys.stdin, sys.stderr)
+
+
+def cmd_protect(args):
+    out = _protect.protect(_lab(args), undo=args.undo)
+    for line in out["messages"]:
+        print(line)
+    return 0 if out["ok"] else 1
+
+
+def cmd_start(args):
+    lab = _lab(args)
+    by = _actor(args)
+    path = lab.start_agent(by)
+    print(f"{by} now writes to {path} until `claimset lab merge {by}`")
+    return 0
+
+
+def cmd_merge(args):
+    lab = _lab(args)
+    event = lab.merge(_actor(args), args.actors or None)
+    if args.json:
+        print(json.dumps(event, ensure_ascii=False, indent=2))
+    else:
+        b = event["body"]
+        print(f"{event['id']}: merged {b['events_merged']} events from {', '.join(b['agents'])}")
+    _auto_anchor(lab, event)
+    return 0
+
+
+def cmd_export(args):
+    from ..validate import validate
+
+    out_path = Path(args.output)
+    if out_path.exists() and not args.force:
+        raise LabError("export", f"{out_path} exists; choose another --output or add --force")
+    out = _export.export(_lab(args))
+    try:
+        out_path.write_text(json.dumps(out["draft"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        raise LabError("export", f"could not write {out_path}: {exc.strerror or exc}") from None
+    rep = validate(out["draft"])
+    if args.json:
+        print(json.dumps({"output": str(out_path), "mapping": out["mapping"], "completion": out["completion"],
+                          "validation": {"errors": rep.errors, "warnings": rep.warnings}},
+                         ensure_ascii=False, indent=2))
+        return 0
+    draft = out["draft"]
+    print(f"Wrote {out_path}: {len(draft['claims'])} claims, {len(draft['evidence'])} evidence, "
+          f"{len(draft['contributors'])} contributors, {len(draft['artefacts'])} artefacts.")
+    for k, v in out["mapping"].items():
+        if k.startswith("C"):
+            c = next(x for x in draft["claims"] if x["id"] == k)
+            label = (f"{c['hypothesis']['outcome']}, {c.get('planning')}" if "hypothesis" in c else "assumption")
+            print(f"  {k} <- {v} ({label})")
+    print("To complete before submission:")
+    for item in out["completion"]:
+        print(f"  - {item['where']}: {item['what']}")
+    print(f"Validator: {len(rep.errors)} error(s), {len(rep.warnings)} warning(s) in the draft; "
+          f"`claimset validate {out_path}` lists them.")
+    return 0
+
+
 def cmd_verify(args):
-    rep = verify(_lab(args))
+    rep = verify(_lab(args), check_files=not args.no_files, remote=args.remote)
     if args.json:
         print(json.dumps(rep, indent=2))
     else:
         state = "OK" if rep["ok"] else "FAILED"
         print(f"{state}: {rep['events']} events, {len(rep['errors'])} error(s), {rep['withheld']} withheld")
         for e in rep["errors"]:
-            print(f"  ERROR [{e['rule']}] seq {e['seq']} {e['id'] or ''}: {e['message']}")
+            where = f"{e['log']} " if e.get("log") else ""
+            print(f"  ERROR [{e['rule']}] {where}seq {e['seq']} {e['id'] or ''}: {e['message']}")
+        for a, x in (rep.get("agents") or {}).items():
+            state = f"merged by {x['merged_by']}" if x["merged_by"] else "open"
+            print(f"  agent log {a}: {x['events']} events, {state}")
+        for n in rep.get("notes") or []:
+            print(f"  NOTE {n}")
         if rep["unchecked_types"]:
             print("  Not yet checked by this version: " + ", ".join(rep["unchecked_types"]))
     return 0 if rep["ok"] else 1
 
 
 def cmd_summary(args):
-    s = _summary.build(_lab(args).read())
+    lab = _lab(args)
+    main = lab.read()
+    st = lab.view(_actor(args, required=False), main)
+    s = _summary.build(st.events)
+    if st.owner:
+        s["view"] = {"actor": st.owner, "own_events": len(st.agent_events), "base": st.base,
+                     "newer_main_events": len(main) - st.base}
+    merged = lab.view(main=main).merged
+    s["agent_logs"] = {a: {"events": len(lab.read_agent(a)), "merged_by": merged.get(a)} for a in lab.agent_logs()}
     if args.json:
         print(json.dumps(s, ensure_ascii=False, indent=2))
     else:
@@ -251,15 +428,73 @@ def add_parser(subparsers):
     p.add_argument("--licence")
     p.add_argument("--hash")
 
-    p = cmd("show", cmd_show, "show one event, with corrections resolved", parents=(common,))
+    p = cmd("plan", cmd_plan, "record a plan before running it")
+    p.add_argument("--kind", required=True, choices=["confirmatory", "exploratory"])
+    p.add_argument("--hypotheses", nargs="+", default=[], metavar="ID",
+                   help="hypotheses the plan tests (required for confirmatory)")
+    p.add_argument("--design", required=True, help="what will be run, on what, with which settings")
+    p.add_argument("--analysis", required=True, help="what will be computed from the outputs")
+    p.add_argument("--criterion", help="how the outcome will be judged (required for confirmatory)")
+    p.add_argument("--data", action="append", default=[], metavar="FILE",
+                   help="data file the plan uses (hashed); repeat for several")
+
+    p = cmd("approve", cmd_approve, "approve a plan or other event (human actors only)")
+    p.add_argument("target")
+    p.add_argument("--comment")
+
+    p = cmd("run", cmd_run, "run a command and record its run and results",
+            parents=(common,))
+    p.add_argument("--by", help="actor ID of the writer (default: $CLAIMSET_ACTOR)")
+    p.add_argument("--plan", metavar="ID", help="plan this run carries out")
+    p.add_argument("--exploratory", action="store_true", help="label the run exploratory even under a plan")
+    p.add_argument("--param", action="append", default=[], metavar="NAME=VALUE")
+    p.add_argument("--seed", action="append", type=int, default=[])
+    p.add_argument("--data", action="append", default=[], metavar="FILE", help="input file (hashed)")
+    p.add_argument("command", nargs=argparse.REMAINDER, help="-- command and arguments")
+
+    p = cmd("deviate", cmd_deviate, "record that a run departed from its plan")
+    p.add_argument("--plan", required=True)
+    p.add_argument("--run", required=True)
+    p.add_argument("--text", required=True, help="what differed")
+    p.add_argument("--reason", required=True, help="why")
+
+    p = cmd("start", cmd_start, "start an agent log: this actor's events go there until it is merged")
+
+    p = cmd("merge", cmd_merge, "merge finished agent logs into the main log")
+    p.add_argument("actors", nargs="*", metavar="ACTOR", help="agent logs to merge (default: all open ones)")
+
+    viewer = argparse.ArgumentParser(add_help=False, parents=[common])
+    viewer.add_argument("--by", help="read as this actor: its open agent log included (default: $CLAIMSET_ACTOR)")
+
+    p = cmd("show", cmd_show, "show one event, with corrections resolved", parents=(viewer,))
     p.add_argument("id")
 
-    p = cmd("list", cmd_list, "list events, one per line", parents=(common,))
+    p = cmd("list", cmd_list, "list events, one per line", parents=(viewer,))
     p.add_argument("--type")
     p.add_argument("--last", type=int)
 
-    cmd("verify", cmd_verify, "check the hash chain and the rules", parents=(common,))
-    cmd("summary", cmd_summary, "current state of the research", parents=(common,))
+    p = cmd("verify", cmd_verify, "check the hash chain, the rules and the run files", parents=(common,))
+    p.add_argument("--no-files", action="store_true", help="skip checking run directories against their hashes")
+    p.add_argument("--remote", action="store_true", help="also check the log against the anchor branch on the remote")
+
+    p = cmd("export", cmd_export, "draft a claimset submission from the record", parents=(common,))
+    p.add_argument("-o", "--output", default="claimset.draft.json", help="draft file (default claimset.draft.json)")
+    p.add_argument("--force", action="store_true", help="overwrite the draft file")
+
+    p = cmd("anchor", cmd_anchor, "record the head of the log outside the agent's reach", parents=(common,))
+    p.add_argument("--git", action="store_true", help="use git anchoring (records the configuration)")
+    p.add_argument("--remote", help="git remote (default origin)")
+    p.add_argument("--branch", help=f"anchor branch (default {_anchor.DEFAULT_BRANCH})")
+    p.add_argument("--every", choices=["plan", "event"], help="anchor after every plan (default) or every event")
+
+    p = lab_sub.add_parser("guard", help="hook for agent harnesses: refuse tool calls that would modify the lab")
+    p.add_argument("--print-config", action="store_true", help="print the Claude Code hook configuration")
+    p.set_defaults(func=cmd_guard)
+
+    p = cmd("protect", cmd_protect, "make the log files append-only at the operating-system level",
+            parents=(common,))
+    p.add_argument("--undo", action="store_true", help="remove the append-only attribute")
+    cmd("summary", cmd_summary, "current state of the research", parents=(viewer,))
 
     def lab_help(args):
         lab.print_help()

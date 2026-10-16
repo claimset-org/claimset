@@ -43,8 +43,9 @@ If the human cannot be asked (unattended run), stop after building and validatin
 
 ### 2a. If the research has a lab record
 
-If the work was done with a lab record (`lab/lab.jsonl`, specified in `references/lab-record-v0.3.md`), start from it rather than from a manuscript:
-- Run `claimset lab export` if the tool is available; otherwise build the claims from the record by hand, following the mapping in lab record §9.
+If the work was done with a lab record (`lab/lab.jsonl`, specified in `references/lab-record-v0.4.md`), start from it rather than from a manuscript:
+- Run `claimset lab export -o claimset.json` if the tool is available. It writes a draft that holds everything the record states and prints a **completion list**: the decisions and wording still needed (licence, guarantor, principal claims, claim types, scopes, evidence profiles and descriptions, statements of negative results). Work through that list; do not change what the record states, such as `hypothesis`, `planning`, `planned_at`, `lab_runs` or the exploration counts. If export refuses (an open hypothesis, an unmerged agent log, a record that does not verify), fix the record with `claimset lab` commands, never by editing it.
+- Without the tool, build the claims from the record by hand, following the mapping in lab record §9.
 - Every hypothesis that reached `supported`, `not_supported` or `inconclusive` becomes a claim with `hypothesis: {lab_event, outcome}`, `planning`, and for planned tests `planned_at` and `planned_at_anchor` copied from the record. Never upgrade `exploratory` to `confirmatory`.
 - **Negative results are claims too**, in this claimset: state plainly what was not found, with scope and evidence (see `examples/submission-from-lab.json`, claim C4).
 - Fill `paper.exploration` with the counts from the record, and list the record as an artefact of kind `lab_record`, with any `withheld_events` and their reasons.

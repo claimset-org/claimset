@@ -1,4 +1,4 @@
-"""Tests for the lab record core (lab record spec v0.3)."""
+"""Tests for the lab record core (lab record spec v0.4)."""
 
 import contextlib
 import io
@@ -14,6 +14,13 @@ from claimset import cli
 from claimset.lab import core
 from claimset.lab.core import GENESIS_PREV, Lab, LabError, header_hash, verify
 from claimset.lab.summary import build
+
+
+def run_body(**extra):
+    body = {"label": "exploratory", "command": ["python3", "x.py"], "exit_status": "success",
+            "outputs": [{"path": "results.json", "hash": "sha256:" + "0" * 64}]}
+    body.update(extra)
+    return body
 
 
 def ticking_clock():
@@ -178,15 +185,15 @@ class TestRules(LabCase):
         self.assertRefused("L6", "status", {"target": h, "to": "supported", "rationale": "r", "evidence": [n]})
 
     def test_l6_results_of_prompting_run_cannot_confirm(self):
-        run = self.add("run", {"label": "exploratory", "exit_status": "success"})
-        res = self.add("result", {"run": run, "quantity": "q", "value": 1.0})
+        run = self.add("run", run_body())
+        res = self.add("result", {"run": run, "quantity": "q", "value": 1.0, "source": "results.json"})
         h = self.hyp(origin="from_exploration", prompted_by=[run])
         self.assertRefused("L6", "status", {"target": h, "to": "supported", "rationale": "r", "evidence": [res]})
 
     def test_l6_new_evidence_can_confirm(self):
         n = self.add("note", {"text": "pilot"})
         h = self.hyp(origin="from_exploration", prompted_by=[n])
-        run = self.add("run", {"label": "confirmatory", "exit_status": "success"})
+        run = self.add("run", run_body())
         self.add("status", {"target": h, "to": "supported", "rationale": "new run", "evidence": [run]})
 
     def test_l6_not_supported_may_use_prompting_evidence(self):
@@ -361,3 +368,173 @@ class TestCli(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------- plans and runs
+
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+
+from claimset.lab.run import run_command  # noqa: E402
+
+SCRIPT = """
+import json, os, sys
+open(os.path.join(os.environ["CLAIMSET_RUN_DIR"], "out.txt"), "w").write("data")
+json.dump([{"quantity": "q", "value": 0.5, "conditions": {"k": 1}}, {"quantity": "no value"}],
+          open(os.environ["CLAIMSET_RESULTS"], "w"))
+print("done")
+sys.exit(int(sys.argv[1]) if len(sys.argv) > 1 else 0)
+"""
+
+
+class PlanRunCase(LabCase):
+    def setUp(self):
+        super().setUp()
+        self.h = self.hyp()
+        self.script = Path(self.tmp.name) / "exp.py"
+        self.script.write_text(SCRIPT)
+
+    def plan(self, kind="confirmatory", **extra):
+        body = {"kind": kind, "hypotheses": [self.h], "design": "d", "analysis": "a", "criterion": "c"}
+        body.update(extra)
+        return self.add("plan", body)
+
+    def execute(self, *args, **kw):
+        return run_command(self.lab, self.agent, [sys.executable, str(self.script)] + list(args),
+                           echo=False, cwd=self.tmp.name, **kw)
+
+
+class TestPlansAndApprovals(PlanRunCase):
+    def test_confirmatory_plan_needs_hypotheses(self):
+        self.assertRefused("schema", "plan", {"kind": "confirmatory", "design": "d", "analysis": "a",
+                                              "criterion": "c"})
+
+    def test_confirmatory_plan_needs_criterion(self):
+        self.assertRefused("schema", "plan", {"kind": "confirmatory", "hypotheses": [self.h],
+                                              "design": "d", "analysis": "a"})
+
+    def test_exploratory_plan_needs_no_criterion(self):
+        self.plan(kind="exploratory", hypotheses=[], criterion=None)
+
+    def test_approval_by_human_only(self):
+        pl = self.plan()
+        self.assertRefused("schema", "approval", {"target": pl})
+        self.add("approval", {"target": pl, "comment": "ok"}, by=self.human)
+
+    def test_deviation_needs_reason(self):
+        pl = self.plan()
+        rn = self.add("run", run_body(plan=pl, label="confirmatory"))
+        self.assertRefused("L7", "deviation", {"plan": pl, "run": rn, "text": "t"})
+
+
+class TestRunRules(PlanRunCase):
+    def test_l5_confirmatory_needs_plan(self):
+        self.assertRefused("L5", "run", run_body(label="confirmatory"))
+
+    def test_l5_exploratory_plan_cannot_confirm(self):
+        pl = self.plan(kind="exploratory", criterion=None)
+        self.assertRefused("L5", "run", run_body(plan=pl, label="confirmatory"))
+
+    def test_run_needs_command(self):
+        self.assertRefused("schema", "run", run_body(command=[]))
+
+    def test_l4_result_source_must_be_output(self):
+        rn = self.add("run", run_body())
+        self.assertRefused("L4", "result", {"run": rn, "quantity": "q", "value": 1, "source": "other.json"})
+
+    def test_result_value_is_number(self):
+        rn = self.add("run", run_body())
+        self.assertRefused("schema", "result", {"run": rn, "quantity": "q", "value": "1",
+                                                "source": "results.json"})
+
+
+class TestRunCommand(PlanRunCase):
+    def test_exploratory_run_with_results(self):
+        out = self.execute()
+        run = out["run"]
+        self.assertEqual(run["body"]["label"], "exploratory")
+        self.assertEqual(run["body"]["exit_status"], "success")
+        self.assertEqual(out["exit_code"], 0)
+        self.assertEqual([r["body"]["value"] for r in out["results"]], [0.5])
+        self.assertEqual(len(out["problems"]), 1)
+        rdir = self.dir / "runs" / run["id"]
+        self.assertEqual(sorted(p.name for p in rdir.iterdir()),
+                         ["out.txt", "results.json", "stderr.txt", "stdout.txt"])
+        self.assertEqual((rdir / "stdout.txt").read_text().strip(), "done")
+        self.assertTrue(verify(self.lab)["ok"])
+
+    def test_confirmatory_under_confirmatory_plan(self):
+        pl = self.plan()
+        self.assertEqual(self.execute(plan=pl)["run"]["body"]["label"], "confirmatory")
+
+    def test_exploratory_override(self):
+        pl = self.plan()
+        self.assertEqual(self.execute(plan=pl, exploratory=True)["run"]["body"]["label"], "exploratory")
+
+    def test_failed_run_is_recorded(self):
+        out = self.execute("3")
+        self.assertEqual(out["run"]["body"]["exit_status"], "failed")
+        self.assertEqual(out["exit_code"], 3)
+
+    def test_unstartable_command_is_recorded(self):
+        out = run_command(self.lab, self.agent, ["no-such-command-claimset"], echo=False, cwd=self.tmp.name)
+        self.assertEqual(out["run"]["body"]["exit_status"], "crashed")
+        rdir = self.dir / "runs" / out["run"]["id"]
+        self.assertIn("could not start", (rdir / "stderr.txt").read_text())
+
+    def test_parameters_seeds_and_data(self):
+        data = Path(self.tmp.name) / "in.csv"
+        data.write_text("1,2\n")
+        body = self.execute(parameters={"n": 10}, seeds=[7], data=[str(data)])["run"]["body"]
+        self.assertEqual(body["parameters"], {"n": 10})
+        self.assertEqual(body["seeds"], [7])
+        self.assertTrue(body["data"][0]["hash"].startswith("sha256:"))
+
+    def test_l13_changed_added_and_missing_files(self):
+        run = self.execute()["run"]
+        rdir = self.dir / "runs" / run["id"]
+        (rdir / "out.txt").write_text("changed")
+        (rdir / "extra.txt").write_text("x")
+        msgs = [e["message"] for e in verify(self.lab)["errors"]]
+        self.assertTrue(any("changed after the run" in m for m in msgs))
+        self.assertTrue(any("added to the run directory" in m for m in msgs))
+        for f in rdir.iterdir():
+            f.unlink()
+        rdir.rmdir()
+        self.assertIn("missing", verify(self.lab)["errors"][0]["message"])
+        self.assertTrue(verify(self.lab, check_files=False)["ok"])
+
+    def test_code_version_recorded_and_lab_excluded_from_dirty(self):
+        repo = Path(self.tmp.name)
+        git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.run(git + ["init", "-q"], cwd=repo, check=True)
+        subprocess.run(git + ["add", "exp.py"], cwd=repo, check=True)
+        subprocess.run(git + ["commit", "-qm", "init"], cwd=repo, check=True)
+        body = self.execute()["run"]["body"]
+        self.assertEqual(len(body["code_version"]), 40)
+        self.assertFalse(body["dirty"])
+        self.script.write_text(SCRIPT + "\n# edit\n")
+        self.assertTrue(self.execute()["run"]["body"]["dirty"])
+
+    def test_summary_plans_and_runs(self):
+        pl = self.plan()
+        self.add("approval", {"target": pl}, by=self.human)
+        self.execute(plan=pl)
+        self.execute("2")
+        s = build(self.lab.read())
+        self.assertEqual(s["plans"][0]["approved"], True)
+        self.assertEqual(s["pending_plans"], [])
+        self.assertEqual(s["runs"], {"total": 2, "confirmatory": 1, "exploratory": 1, "failed": 1})
+        self.assertEqual(len(s["recent_results"]), 2)
+
+
+class TestRunCli(TestCli):
+    def test_run_returns_command_exit_code(self):
+        self.run_cli("lab", "init", "--title", "Study")
+        self.run_cli("lab", "actor", "--kind", "human", "--name", "R")
+        script = Path(self.tmp.name) / "e.py"
+        script.write_text("import sys; sys.exit(4)")
+        code, _, err = self.run_cli("lab", "run", "--by", "AC1", "--", sys.executable, str(script))
+        self.assertEqual(code, 4)
+        self.assertIn("recorded RN1", err)
+        self.assertIn("failed", err)
