@@ -244,7 +244,7 @@ def cmd_anchor(args):
 
 def cmd_guard(args):
     if args.print_config:
-        print(json.dumps(_guard.claude_code_config(), indent=2))
+        print(json.dumps(_guard.claude_code_config(_guard.guard_command()), indent=2))
         return 0
     return _guard.main_hook(sys.stdin, sys.stderr)
 

@@ -164,6 +164,8 @@ class TestGuard(unittest.TestCase):
     def tearDown(self):
         if self.old is not None:
             os.environ["CLAIMSET_LAB"] = self.old
+        else:
+            os.environ.pop("CLAIMSET_LAB", None)
         self.tmp.cleanup()
 
     def decide(self, tool, **inp):

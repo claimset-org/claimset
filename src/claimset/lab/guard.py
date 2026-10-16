@@ -58,6 +58,11 @@ def _lab_subcommand(command):
         return None
     while tokens and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]):
         tokens = tokens[1:]
+    # `python3 path/to/claimset lab ...` (the copy bundled with the skill) or `python3 -m claimset lab ...`
+    if tokens and re.match(r"^python(\d+(\.\d+)?)?$", Path(tokens[0]).name):
+        tokens = tokens[1:]
+        if tokens[:1] == ["-m"]:
+            tokens = tokens[1:]
     if len(tokens) < 2 or Path(tokens[0]).name != "claimset" or tokens[1] != "lab":
         return None
     return (tokens[2] if len(tokens) > 2 else ""), tokens[3:]
@@ -144,10 +149,24 @@ def main_hook(stdin, stderr):
     return 0
 
 
-def claude_code_config():
+def guard_command(argv0=None, installed=None):
+    """How the hook should call the guard: the installed command, or the script that is running now."""
+    import shutil
+    import sys
+
+    installed = shutil.which("claimset") if installed is None else installed
+    if installed:
+        return "claimset lab guard"
+    argv0 = Path(argv0 or sys.argv[0])
+    if argv0.is_file() and argv0.name not in ("__main__.py", "-c"):
+        return f"{shlex.quote(sys.executable)} {shlex.quote(str(argv0.resolve()))} lab guard"
+    return f"{shlex.quote(sys.executable)} -m claimset lab guard"
+
+
+def claude_code_config(command="claimset lab guard"):
     """Settings snippet installing the guard as a Claude Code PreToolUse hook."""
     return {"hooks": {"PreToolUse": [{
         "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
-        "hooks": [{"type": "command", "command": "claimset lab guard"}],
+        "hooks": [{"type": "command", "command": command}],
     }]}}
 
