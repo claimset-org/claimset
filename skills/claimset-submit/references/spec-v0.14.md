@@ -1,10 +1,26 @@
-# Claimset — Specification v0.12 (draft)
+# Claimset — Specification v0.14 (draft)
 
-Status: working draft · Date: 2026-10-16 · Supersedes v0.11 (`spec/claimset-v0.11.md`) · Companion: lab record specification (`spec/lab-record-v0.5.md`)
+Status: working draft · Date: 2026-10-16 · Supersedes v0.13 (`spec/claimset-v0.13.md`) · Companion: lab record specification (`spec/lab-record-v0.5.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.11
+## Changes since v0.13
+
+A claimset is a distillation of a paper's argument, not a re-encoding of its data and derivations. Converting a results-heavy, derivation-heavy paper under v0.13 produced a claimset about four times the paper's length; this version makes the compact form the normal one.
+
+- New principle 13: a claimset is a distillation (§1).
+- Evidence gains result tables (`tables`): a table of numbers with shared conditions, row labels and named columns, instead of one `results` entry per number; rows can be cited (§3.4, §4).
+- Evidence gains `source_spans`. In converted papers, a derivation is referenced in the source rather than restated: formal evidence may give `source_spans` instead of `steps` (§3.4).
+- Granularity rule extended: a comparison the paper makes across several measures or datasets is one claim stating where the method is better and where it is not (§8).
+- New rule 48; rules 7 and 38 and warning 8 revised (§10).
+
+## Changes in v0.13 (since v0.12)
+
+Converted papers may come from sources under non-commercial licences, and keep their restrictions.
+
+- Rule 31 revised: a source may be converted when its licence permits derivatives, including non-commercial (NC) licences; licences that forbid derivatives (ND) or reserve all rights still exclude conversion. The claimset's licence keeps every condition of the source licence: NonCommercial stays NonCommercial, ShareAlike stays ShareAlike (§3.1, §10.3).
+
+## Changes in v0.12 (since v0.11)
 
 Planned tests carry the decision rule they were planned with, so readers can check the verdict against a rule fixed before the data were seen.
 
@@ -80,6 +96,7 @@ A format for research papers whose primary reader is an LLM. Humans access conte
 10. **Filled by agents, decided by people, assigned by the platform.** The agent fills the content. Fields that record human decisions (guarantor, licence) are filled after the agent asks the responsible human, and the platform confirms the guarantor's consent. Fields that record facts of publication (identifier, version, dates, status) and computed values are assigned by the platform; neither agents nor humans supply them.
 11. **Recorded where possible, labelled when recalled.** Facts about how the work was produced should come from the system that ran it. When an agent reports them from its own knowledge, the file says so.
 12. **Safe to ingest.** The file is data. It must never contain instructions addressed to the reading model.
+13. **A distillation, not a transcription.** A claimset carries the paper's claims, with the scope, support, assumptions and limits they need, and the results they rest on. It does not re-encode the paper's full data or derivations: numbers that come in tables are recorded as tables (§3.4), and the derivations of a converted paper are located in the source rather than restated (§3.4). A claimset is therefore normally much shorter than the paper it represents; one that is longer is a sign that something is being transcribed rather than distilled.
 
 ## 2. Format
 
@@ -123,7 +140,7 @@ Top-level layout:
 
 ```json
 {
-  "schema_version": "0.12",
+  "schema_version": "0.14",
   "@context": "optional",
   "paper": {},
   "contributors": [],
@@ -152,7 +169,7 @@ Top-level layout:
 | `status` | enum | Platform-assigned. `active` · `corrected` · `retracted` · `withdrawn` · `expression_of_concern` |
 | `status_notice` | object | Platform-assigned unless `active`: `{date, reason_code, statement, issued_by}` |
 | `date` | ISO date | Platform-assigned. Publication date |
-| `licence` | string | Required. SPDX identifier, e.g. `CC-BY-4.0`. Native papers: chosen by the supervisor or guarantor. Converted papers: see §10.3 |
+| `licence` | string | Required. SPDX identifier, e.g. `CC-BY-4.0`. Native papers: chosen by the supervisor or guarantor. Converted papers: see *Licence of a converted paper* below and rule 31 |
 | `classification` | object | `subfield` (one OpenAlex subfield ID) and `topics` (1–3 OpenAlex topic IDs): platform-assigned; the agent may propose values. `keywords` (free text, for specifics the taxonomy does not reach): supplied by the agent, recommended |
 | `contributions` | list of claim IDs | Required. Ordered by priority; principal claims only |
 | `autonomy` | enum | Native papers only, required: `autonomous` (agents ran the work end to end) · `human_supervised` (humans oversaw the agents' work and approved it) · `human_assisted` (humans carried out substantial parts of the research) · `unknown` |
@@ -173,6 +190,18 @@ Top-level layout:
 | `source_status_at_conversion` | enum | Status of the source when converted, same values as `status` |
 | `converter` | contributor ID | The converting agent |
 | `date` | ISO date | Date of conversion |
+
+**Licence of a converted paper.** A claimset converted from a source is an adaptation of it, so the source's licence decides whether conversion is allowed and what licence the claimset may carry:
+
+| Source licence | Conversion | Claimset licence |
+|---|---|---|
+| `CC0-1.0`, `CC-BY-2.0`, `CC-BY-3.0`, `CC-BY-4.0` | allowed | the source licence, `CC0-1.0`, `CC-BY-4.0` or `CC-BY-SA-4.0` |
+| `CC-BY-SA-3.0`, `CC-BY-SA-4.0` | allowed | a `CC-BY-SA` licence |
+| `CC-BY-NC-3.0`, `CC-BY-NC-4.0` | allowed | the source licence, `CC-BY-NC-4.0` or `CC-BY-NC-SA-4.0` |
+| `CC-BY-NC-SA-3.0`, `CC-BY-NC-SA-4.0` | allowed | a `CC-BY-NC-SA` licence |
+| Any licence with NoDerivatives (`ND`), all rights reserved, or no licence | not allowed | — |
+
+A claimset under a non-commercial licence may be used only for non-commercial purposes. Platforms and tools that use claimsets commercially (for example to train, tune or promote a commercial service) exclude claimsets whose `paper.licence` contains `NC`.
 
 Contributors are listed in the top-level `contributors` list (§3.11), not in the paper object.
 
@@ -296,15 +325,34 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
 
 ### 3.4 Evidence
 
-Common fields: `id`, `profile`, `description`, `artefacts` (list of artefact IDs), `data_origin` (`primary` · `secondary`), `preregistered` (boolean), `availability` (§3.10), `models` (list, below), `results` (list, below), `execution` (object, below), `lab_runs` (list of lab-record run IDs, e.g. `RN4` or `AC2.RN4`, that produced this evidence).
+Common fields: `id`, `profile`, `description`, `artefacts` (list of artefact IDs), `data_origin` (`primary` · `secondary`), `preregistered` (boolean), `availability` (§3.10), `models` (list, below), `results` (list, below), `execution` (object, below), `lab_runs` (list of lab-record run IDs, e.g. `RN4` or `AC2.RN4`, that produced this evidence), `tables` (list, below), `source_spans` (locations of the evidence in the source text, for converted papers).
 
-**Results** (`results`, quant and simulation profiles): one entry per reported number, so readers can query numbers instead of parsing prose. `{id, quantity, value, unit, interval, conditions, artefact}`
+**Results** (`results`, quant and simulation profiles): structured numbers, so readers can query numbers instead of parsing prose. A single number is a result entry; numbers that form a table (several quantities for several settings) are a result table (`tables`, below). `{id, quantity, value, unit, interval, conditions, artefact}`
 - `id`: `R1`, `R2`, … unique within the evidence object; referenced from elsewhere as `<evidence id>.<result id>`, e.g. `E23.R2`.
 - `quantity`: what was measured, e.g. `"largest KL divergence per observation, mixture vs exact"`.
 - `value`: number. `unit`: optional. `interval`: optional `{level, lower, upper}`.
 - `conditions`: object of the settings that define this result, e.g. `{"distribution": "Gamma", "form": "conventional"}`.
 - `artefact`: optional artefact ID of the table holding the full results.
 A single-estimate study may use `estimand`, `estimate` and `interval` instead.
+
+**Result tables** (`tables`, quant and simulation profiles): numbers that the paper reports as a table, recorded as one. `{id, description, conditions, row_labels, columns, units, rows, artefact, source_spans}`
+- `id`: `T1`, `T2`, … unique within the evidence object; referenced from elsewhere as `<evidence id>.<table id>`, e.g. `E2.T1`.
+- `description`: what the table reports, self-contained, e.g. `"Mean and median forecast errors of six methods on the M3 monthly series, horizons 1 to 18"`.
+- `conditions`: optional object of the settings shared by every cell, e.g. `{"dataset": "M3 monthly", "horizon": "1-18"}`.
+- `row_labels`: list of the conditions that distinguish rows, e.g. `["method"]`; may be empty for a single row.
+- `columns`: list of the quantities, one per value column, e.g. `["mean RMSSE", "median RMSSE", "mean MASE"]`. Names are unique within the table. `units`: optional list of units, one per column (`null` where none).
+- `rows`: list of `{id, label, values}`. `id`: `r1`, `r2`, … unique within the table; a row is referenced as `<evidence id>.<table id>.<row id>`, e.g. `E2.T1.r3`. `label`: the values of `row_labels`, in order, e.g. `["CES"]`. `values`: one number per column, in order; `null` where the paper reports no value.
+- `artefact`: optional artefact ID of the source of the full table. `source_spans`: optional locations of the table in the source text (converted papers).
+
+Intervals, ranks and test statistics are columns of their own (e.g. `"mean MASE, 95% interval lower"`). A table records what the paper reports; it is not split into result entries, and result entries are not repeated in a table.
+
+```json
+"tables": [{"id": "T1", "description": "Mean MASE and MSIS of three methods on the M3 monthly series, horizons 1 to 18",
+  "conditions": {"dataset": "M3 monthly"}, "row_labels": ["method"], "columns": ["mean MASE", "mean MSIS"],
+  "rows": [{"id": "r1", "label": ["CES"], "values": [0.861, 6.95]},
+           {"id": "r2", "label": ["ETS"], "values": [0.874, 6.71]},
+           {"id": "r3", "label": ["ARIMA"], "values": [0.902, null]}]}]
+```
 
 **Execution** (`execution`, optional): what was actually run, when it differs from or adds to the artefact versions. `{code_version, software, hardware, notes}`; `code_version` is the commit or version that produced the results.
 
@@ -334,6 +382,8 @@ Each proof step: `{id, statement, by, rule}`
 - `by`: list of IDs the step rests on (earlier steps, claims, definitions, assumptions, cited results).
 - `rule`: the inference used, e.g. `assumption`, `definition`, `substitution`, `linearity of expectation`, `induction`.
 Steps may be coarse, but every step names what it rests on.
+
+**Derivations in converted papers.** A converted claimset does not restate the source's derivations. Its formal evidence states the foundation and the assumptions, and points at the derivation with `source_spans`; `steps` are given only for the steps the paper's argument turns on, if any. A reader who needs the full derivation reads it in the source.
 
 ### 3.5 Warrant
 
@@ -503,7 +553,7 @@ Each support entry: `{kind, <required pointer>, …attributes}`.
 
 Attributes:
 - On any empirical kind: optional `artefacts` (e.g. "supported by Figure 15" → `{"kind": "empirical_quant", "evidence": "E3", "artefacts": ["A15"]}`).
-- On `empirical_quant` and `simulation`: optional `results`, the specific results the claim reports (e.g. `{"kind": "simulation", "evidence": "E20", "results": ["E20.R1", "E20.R2"]}`). Recommended whenever the statement quotes numbers, so readers can check each number against the structured result.
+- On `empirical_quant` and `simulation`: optional `results`, the specific results the claim reports: result entries, result tables or table rows (e.g. `{"kind": "simulation", "evidence": "E20", "results": ["E20.R1", "E20.T1.r2"]}`). Recommended whenever the statement quotes numbers, so readers can check each number against the structured result.
 - On `cited`: `target`, `id_type` (`doi` · `arxiv` · `handle` · `pmid` · `isbn` · `url` · `physical`), `archive_uri` (required for `url`: an archived snapshot), `self` (boolean, below). Where a claimset of the cited work exists, `target` may be its global claim ID.
 - `self` is true when the cited work shares any human supervisor, guarantor or contributor with this paper, or (for converted papers) any source author. Shared agent systems are recorded but computed by the platform, not flagged by the file.
 - Meta-analyses: performed in the paper → `empirical_quant` with `data_origin: secondary`; cited → `cited`.
@@ -536,7 +586,7 @@ For formal claims a check is a re-derivation; for empirical and simulation claim
 **Independence of checks.** An agent checking a claim on the same model as the agent that wrote it catches slips but shares its blind spots. The file records which models were used; the platform weights checks by independence (different provider, different model, same model in a fresh context, in decreasing order) and the validator warns about same-model checks. The platform may add its own independent checks; these are stored as platform assessments (§6), not in the file.
 
 **Verifiability** is computed by the platform from the availability of the evidence, artefacts and models the claim's support points to. Submissions may omit it; if supplied, it must match the platform's computation.
-- `open`: everything needed to check the claim is public or platform-available; formal claims are machine-checked or have full proof steps.
+- `open`: everything needed to check the claim is public or platform-available; formal claims are machine-checked, have full proof steps, or (converted papers) have their derivation located in an openly licensed source.
 - `audit_only`: checking requires `audit` or `author_only` material.
 - `unverifiable`: rests on `unavailable` material, on `expert_judgement` alone, or on `unstated` support.
 - `not_applicable`: assumption claims; background claims supported only by `consensus`.
@@ -564,7 +614,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 ## 8. Statement text rules
 
 1. One assertion per statement.
-2. **Granularity rule:** split a statement into separate claims when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one interpretive claim with a warrant; sub-themes become separate supporting claims only if they have their own evidence.
+2. **Granularity rule:** split a statement into separate claims when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one interpretive claim with a warrant; sub-themes become separate supporting claims only if they have their own evidence. A comparison the paper makes across several measures, datasets or settings is one claim that states where the method is better and where it is not, supported by the table holding the numbers; it is split only where the paper draws separate conclusions or the parts differ in support or scope. Results on which a method is worse are stated in the claim, never left out.
 3. Self-contained: no anaphora or cross-references ("this", "the above", "as shown").
 4. Scope-bearing qualifiers belong in `scope`, not hedged prose.
 5. Defined terms are marked inline with their definition ID: `[[D2:forecast skill]]`.
@@ -590,7 +640,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 4. `role: background` ⇒ `novelty: restatement` ⇒ support kinds limited to `cited` and/or `consensus`.
 5. `contributions` lists only `principal` claims; every `principal` claim appears in `contributions`.
 6. `type: interpretive` ⇒ `warrant` present.
-7. `formal_proof` support ⇒ `verification` present; evidence has `foundation` and either `steps` or `proof_artefact`.
+7. `formal_proof` support ⇒ `verification` present; evidence has `foundation` and either `steps` or `proof_artefact`, or, in converted papers, `source_spans` locating the derivation. (Revised in v0.14.)
 8. `depends_on` contains no cycles.
 9. `provenance` or `field_provenance` values `extracted`/`inferred` only when `paper.origin: converted`; `source_spans` required in that case.
 10. Each support kind carries its required pointer (§4).
@@ -620,7 +670,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 28. `version` > 1 ⇒ `previous_version` and `changes` present.
 29. `status` other than `active` ⇒ `status_notice` present.
 30. `paper.id` differs from `converted_from.source_id`.
-31. `paper.origin: converted` ⇒ `converted_from.source_licence` permits derivatives and redistribution (`CC0-1.0`, `CC-BY-4.0`, `CC-BY-SA-4.0` or equivalents), and `paper.licence` equals the source licence or a compatible one.
+31. `paper.origin: converted` ⇒ `converted_from.source_licence` is a licence that permits conversion, and `paper.licence` is a licence the claimset may carry under it, both as in the table in §3.1 (*Licence of a converted paper*). (Revised in v0.13: non-commercial sources are allowed, and the claimset keeps their non-commercial condition.)
 32. Every human guarantor has confirmed consent through their ORCID-linked account, and every organisation guarantor through an authorised account.
 
 ### 10.5 Rules added in v0.9 (errors: file rejected)
@@ -630,7 +680,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 35. `type: formal` ⇒ no `assessments`; `type: formal` with `formal_proof` or `argument` support ⇒ `verification` present.
 36. (Revised in v0.10.) `verification` is consistent with `checks` as defined in §5; `machine_checked` ⇒ the formal evidence has `proof_artefact` and `checker`.
 37. Formal evidence has no `theorem` field.
-38. Result IDs are unique within their evidence object; every `results` reference in a support entry (`E<n>.R<m>`) resolves to a result of the evidence that entry points to.
+38. Result IDs are unique within their evidence object; every `results` reference in a support entry resolves within the evidence that entry points to: `E<n>.R<m>` to a result, `E<n>.T<m>` to a result table, `E<n>.T<m>.r<k>` to a row of that table. (Revised in v0.14.)
 
 ### 10.6 Rules added in v0.10 (errors: file rejected)
 
@@ -650,6 +700,10 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 47. `planning` is `confirmatory` or `confirmatory_with_deviations` ⇒ `test` present, with a `framework` from the list, non-empty `supported` and `not_supported` rules, the parameters its framework requires, and `verdict` (`computed` or `judged`); `verdict: computed` ⇒ `quantities` present; `flags`, if present, are from the list in §3.3.3.
 
+### 10.9 Rules added in v0.14 (errors: file rejected)
+
+48. Result tables appear only in quant and simulation evidence. Each has an `id` (`T1`, `T2`, …) unique within its evidence object, a `description`, `row_labels` (a list of names, possibly empty), `columns` (a non-empty list of unique names) and a non-empty list of `rows`; each row has an `id` (`r1`, `r2`, …) unique within the table, a `label` with one entry per row label, and `values` with one entry per column, each a number or `null`, at least one value in the table being a number. `units`, if present, has one entry per column; `artefact`, if present, resolves.
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -659,11 +713,11 @@ The platform mints a DOI for every published claimset. The file records identifi
 5. No `paper.classification.keywords` in a submission.
 6. Three or more claims share an identical `scope` object (often a sign of scope copied by section; check each claim).
 7. `novelty: extension` without an `extends` relation.
-8. Quant or simulation evidence with neither `estimate` nor `results`.
+8. Quant or simulation evidence with neither `estimate`, `results` nor `tables`.
 9. An artefact without `licence`.
 10. An agent contributor that is not an `author` has the AI task `writing`; agents that produced the paper's content are authors.
 11. A check was made by an agent that runs on the same model as an `author` agent.
-12. A number in a claim's statement cannot be matched to the results the claim cites, at the precision stated (heuristic; percentages are compared as fractions).
+12. A number in a claim's statement cannot be matched to the results the claim cites, at the precision stated (heuristic; percentages are compared as fractions). Applies to cited result entries; cited tables and rows are not checked.
 13. `planning: exploratory` on a principal claim: exploratory findings can be principal, but readers should be told so in the claim's assessment rationale.
 
 ## 11. Platform dependencies
@@ -708,7 +762,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.12",
+  "schema_version": "0.14",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -799,7 +853,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.12",
+  "schema_version": "0.14",
   "paper": {
     "id": "doi:10.0000/claimset.2026.000456",
     "title": "Example converted paper",

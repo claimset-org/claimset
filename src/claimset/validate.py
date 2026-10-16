@@ -18,10 +18,11 @@ Implements the rules in spec section 10, plus computed verifiability (section 5)
 and heuristic checks of statement text (section 8). Standard library only.
 """
 import json
+import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.13"
+SCHEMA_VERSION = "0.14"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -318,7 +319,7 @@ def validate(doc, published=False):
                 r.err("1", f"{w}.lab_runs", f"'{lr}' is not a lab-record run ID (RN1, RN2, …)")
         if e.get("profile") in ("quant", "simulation"):
             res = as_list(e.get("results"))
-            if e.get("estimate") is None and not res:
+            if e.get("estimate") is None and not res and not as_list(e.get("tables")):
                 r.warn("W8", w, "no estimate and no results: add a structured results list for the numbers this evidence produced")
             seen_r = set()
             for i, rs in enumerate(res):
@@ -337,8 +338,14 @@ def validate(doc, published=False):
                     r.err("38", rw, "value must be a number")
                 if rs.get("artefact"):
                     ref("38", f"{rw}.artefact", rs["artefact"], "artefacts")
+            check_tables(r, w, e, ref)
         elif e.get("results"):
             r.err("38", w, "results are used only in quant and simulation evidence")
+        if e.get("profile") not in ("quant", "simulation") and e.get("tables"):
+            r.err("48", w, "result tables are used only in quant and simulation evidence")
+        if "source_spans" in e and not (isinstance(e["source_spans"], list)
+                                        and all(isinstance(x, str) and x for x in e["source_spans"])):
+            r.err("1", f"{w}.source_spans", "must be a list of non-empty strings")
         if e.get("profile") == "formal":
             if "theorem" in e:
                 r.err("37", f"{w}.theorem", "removed in v0.9: the formal claim's statement is the theorem")
@@ -622,6 +629,104 @@ def check_test(r, test, w):
         r.err("47", f"{w}.quantities", "a computed verdict needs the quantities the rules were evaluated on")
 
 
+def _is_number(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
+def check_tables(r, w, e, ref):
+    """Rule 48: result tables (spec §3.4)."""
+    tables = e.get("tables")
+    if tables is None:
+        return
+    if not isinstance(tables, list):
+        r.err("48", f"{w}.tables", "must be a list")
+        return
+    seen = set()
+    for i, t in enumerate(tables):
+        tw = f"{w}.tables[{i}]"
+        if not isinstance(t, dict):
+            r.err("48", tw, "must be an object")
+            continue
+        tid = t.get("id")
+        if not isinstance(tid, str) or not re.match(r"^T\d+$", tid):
+            r.err("48", tw, "table id must look like T1, T2, …")
+        elif tid in seen:
+            r.err("48", tw, f"duplicate table id {tid}")
+        else:
+            seen.add(tid)
+        if not isinstance(t.get("description"), str) or not t.get("description").strip():
+            r.err("48", tw, "missing description")
+        if "conditions" in t and not isinstance(t["conditions"], dict):
+            r.err("48", f"{tw}.conditions", "must be an object")
+        labels, cols = t.get("row_labels"), t.get("columns")
+        if not isinstance(labels, list) or not all(isinstance(x, str) and x for x in labels):
+            r.err("48", f"{tw}.row_labels", "must be a list of names (possibly empty)")
+            labels = None
+        if not isinstance(cols, list) or not cols or not all(isinstance(x, str) and x for x in cols):
+            r.err("48", f"{tw}.columns", "must be a non-empty list of names")
+            cols = None
+        elif len(set(cols)) != len(cols):
+            r.err("48", f"{tw}.columns", "column names must be unique")
+        if cols is not None and "units" in t:
+            u = t["units"]
+            if not isinstance(u, list) or len(u) != len(cols) or not all(x is None or isinstance(x, str) for x in u):
+                r.err("48", f"{tw}.units", "must have one unit (or null) per column")
+        rows = t.get("rows")
+        if not isinstance(rows, list) or not rows:
+            r.err("48", f"{tw}.rows", "must be a non-empty list")
+            rows = []
+        seen_rows, any_number = set(), False
+        for j, row in enumerate(rows):
+            rw = f"{tw}.rows[{j}]"
+            if not isinstance(row, dict):
+                r.err("48", rw, "must be an object")
+                continue
+            rid = row.get("id")
+            if not isinstance(rid, str) or not re.match(r"^r\d+$", rid):
+                r.err("48", rw, "row id must look like r1, r2, …")
+            elif rid in seen_rows:
+                r.err("48", rw, f"duplicate row id {rid}")
+            else:
+                seen_rows.add(rid)
+            lab = row.get("label")
+            if labels is not None and (not isinstance(lab, list) or len(lab) != len(labels)
+                                       or not all(isinstance(x, (str, int, float)) and not isinstance(x, bool) for x in lab)):
+                r.err("48", f"{rw}.label", f"must have one entry per row label ({len(labels)})")
+            vals = row.get("values")
+            if cols is not None and (not isinstance(vals, list) or len(vals) != len(cols)):
+                r.err("48", f"{rw}.values", f"must have one value per column ({len(cols)})")
+            elif isinstance(vals, list):
+                for v in vals:
+                    if v is None:
+                        continue
+                    if _is_number(v):
+                        any_number = True
+                    else:
+                        r.err("48", f"{rw}.values", f"'{v}' is not a number or null")
+        if rows and not any_number:
+            r.err("48", tw, "the table has no numeric value")
+        if t.get("artefact"):
+            ref("48", f"{tw}.artefact", t["artefact"], "artefacts")
+        if "source_spans" in t and not (isinstance(t["source_spans"], list)
+                                        and all(isinstance(x, str) and x for x in t["source_spans"])):
+            r.err("48", f"{tw}.source_spans", "must be a list of non-empty strings")
+
+
+def result_ref_resolves(ref_id, evidence_id, e):
+    """Rule 38: E<n>.R<m>, E<n>.T<m> or E<n>.T<m>.r<k> within the evidence a support entry points to."""
+    if e is None:
+        return False
+    m = re.match(r"^(E\d+)\.(R\d+|T\d+)(?:\.(r\d+))?$", ref_id)
+    if not m or m.group(1) != evidence_id:
+        return False
+    if m.group(2).startswith("R"):
+        return m.group(3) is None and m.group(2) in {as_dict(x).get("id") for x in as_list(e.get("results"))}
+    table = next((t for t in as_list(e.get("tables")) if isinstance(t, dict) and t.get("id") == m.group(2)), None)
+    if table is None:
+        return False
+    return m.group(3) is None or m.group(3) in {as_dict(x).get("id") for x in as_list(table.get("rows"))}
+
+
 def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozenset()):
     w = f"claims:{cid}"
     statement_checks(r, f"{w}.statement", c.get("statement"))
@@ -659,11 +764,9 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
             if s.get("results"):
                 if k not in ("empirical_quant", "simulation"):
                     r.err("38", f"{sw}.results", "results references only on empirical_quant and simulation support")
-                rids = {as_dict(x).get("id") for x in as_list(e.get("results"))} if e is not None else set()
                 for ref_id in as_list(s.get("results")):
-                    m = re.match(r"^(E\d+)\.(R\d+)$", str(ref_id))
-                    if not m or m.group(1) != s.get("evidence") or m.group(2) not in rids:
-                        r.err("38", f"{sw}.results", f"'{ref_id}' does not resolve to a result of {s.get('evidence')}")
+                    if not result_ref_resolves(str(ref_id), s.get("evidence"), e):
+                        r.err("38", f"{sw}.results", f"'{ref_id}' does not resolve to a result, table or table row of {s.get('evidence')}")
         elif k == "demonstration":
             if not as_list(s.get("artefacts")):
                 r.err("10", sw, "demonstration support requires artefacts")
@@ -719,8 +822,9 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
                 if e is not None:
                     if not e.get("foundation"):
                         r.err("7", f"evidence:{e.get('id')}", "formal evidence requires foundation")
-                    if not (e.get("steps") or e.get("proof_artefact")):
-                        r.err("7", f"evidence:{e.get('id')}", "formal evidence requires steps or proof_artefact")
+                    if not (e.get("steps") or e.get("proof_artefact") or (converted and e.get("source_spans"))):
+                        r.err("7", f"evidence:{e.get('id')}", "formal evidence requires steps or proof_artefact"
+                              + (", or source_spans locating the derivation in the source" if converted else ""))
 
     for aid in as_list(c.get("assumptions")):
         a = ref("1", f"{w}.assumptions", aid, "claims")

@@ -1,13 +1,13 @@
 ---
 name: claimset-submit
-description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.13 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
+description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.14 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
 ---
 
 # Preparing a Claimset submission
 
 A claimset is a research paper written for LLM readers: a flat JSON file of atomic, self-contained claims plus the definitions, evidence, assumptions, limitations, warrants and artefacts that support, condition and limit them. You write every field. A human decides two things (guarantor and licence), and you ask them before you finish.
 
-The normative rules are in `references/spec-v0.13.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
+The normative rules are in `references/spec-v0.14.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
 
 You produce a **submission**. The platform turns it into the published file: it mints the DOI and assigns version, publication date, status, the OpenAlex classification IDs and each claim's verifiability. You never supply these, and you never ask the human for them.
 
@@ -129,6 +129,17 @@ One evidence object per analysis, reused by every claim it supports. Write `desc
 "results": [{"id": "R1", "quantity": "speed-up of low-rank over full covariance filter", "value": 10.55,
              "conditions": {"missing_values": 1, "data": "ETS(A,N,A)"}, "artefact": "A8"}]
 ```
+
+Numbers that form a table (several quantities for several methods, datasets or settings) go into a result table instead, one per table, not one entry per number:
+
+```json
+"tables": [{"id": "T1", "description": "Mean MASE and MSIS of three methods on the M3 monthly series, horizons 1 to 18",
+            "conditions": {"dataset": "M3 monthly"}, "row_labels": ["method"], "columns": ["mean MASE", "mean MSIS"],
+            "rows": [{"id": "r1", "label": ["CES"], "values": [0.861, 6.95]},
+                     {"id": "r2", "label": ["ETS"], "values": [0.874, 6.71]}]}]
+```
+
+Claims cite a table (`E2.T1`) or a row (`E2.T1.r1`) in their support's `results`. A claimset distils the argument; it does not re-encode every table of the research, so record the tables the claims rest on.
 
 Copy values from the result tables, never retype them from prose. If the code that produced the results differs from the archived artefact version, record it in `execution`: `{"code_version": "<commit>", "notes": "…"}`.
 
