@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.11",
+  "schema_version": "0.12",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -18,12 +18,19 @@
       "lab_record": "A3",
       "questions": 1,
       "hypotheses": {
-        "total": 4,
+        "total": 5,
         "supported": 1,
         "not_supported": 1,
         "inconclusive": 0,
         "revised": 1,
-        "abandoned": 1
+        "abandoned": 1,
+        "open": 1
+      },
+      "tests": {
+        "total": 2,
+        "supported": 1,
+        "not_supported": 1,
+        "inconclusive": 0
       },
       "runs": {
         "total": 37,
@@ -188,11 +195,42 @@
       },
       "planning": "confirmatory",
       "planned_at": "2026-10-02T09:14:05Z",
-      "planned_at_anchor": "git_remote"
+      "planned_at_anchor": "git_remote",
+      "test": {
+        "framework": "frequentist",
+        "parameters": {
+          "alpha": 0.05,
+          "test": "one-sided test of mean relative MASE reduction, 95% interval from a paired bootstrap over series",
+          "sides": "greater",
+          "correction": "none",
+          "sample": "1,200 monthly series, the full collection, fixed in advance"
+        },
+        "quantities": {
+          "lower": {
+            "quantity": "mean relative MASE reduction, method M vs seasonal naive",
+            "conditions": {
+              "frequency": "monthly"
+            },
+            "field": "interval.lower"
+          },
+          "upper": {
+            "quantity": "mean relative MASE reduction, method M vs seasonal naive",
+            "conditions": {
+              "frequency": "monthly"
+            },
+            "field": "interval.upper"
+          }
+        },
+        "supported": "lower > 0",
+        "not_supported": "upper < 0.02",
+        "verdict": "computed",
+        "runs": 1,
+        "lab_plan": "PL3"
+      }
     },
     {
       "id": "C4",
-      "statement": "Method M does not reduce the mean absolute scaled error of the seasonal naive benchmark on weekly retail sales series: the mean relative reduction is -0.004.",
+      "statement": "Method M does not reduce the mean absolute scaled error of the seasonal naive benchmark on weekly retail sales series by 0.02 or more: the mean relative reduction is -0.004.",
       "type": "descriptive",
       "role": "supporting",
       "novelty": "new",
@@ -227,7 +265,38 @@
       "planning": "confirmatory",
       "planned_at": "2026-10-02T09:20:41Z",
       "planned_at_anchor": "none",
-      "provenance": "author_stated"
+      "provenance": "author_stated",
+      "test": {
+        "framework": "equivalence",
+        "parameters": {
+          "alpha": 0.05,
+          "test": "two one-sided tests on mean relative MASE reduction, 90% interval from a paired bootstrap",
+          "lower_bound": -0.02,
+          "upper_bound": 0.02,
+          "sample": "900 weekly series, the full collection, fixed in advance"
+        },
+        "quantities": {
+          "lower": {
+            "quantity": "mean relative MASE reduction, method M vs seasonal naive",
+            "conditions": {
+              "frequency": "weekly"
+            },
+            "field": "interval.lower"
+          },
+          "upper": {
+            "quantity": "mean relative MASE reduction, method M vs seasonal naive",
+            "conditions": {
+              "frequency": "weekly"
+            },
+            "field": "interval.upper"
+          }
+        },
+        "supported": "lower >= upper_bound",
+        "not_supported": "lower_bound < lower and upper < upper_bound",
+        "verdict": "computed",
+        "runs": 1,
+        "lab_plan": "PL4"
+      }
     }
   ],
   "evidence": [
@@ -296,9 +365,9 @@
           "quantity": "mean relative MASE reduction, method M vs seasonal naive",
           "value": -0.004,
           "interval": {
-            "level": 0.95,
-            "lower": -0.02,
-            "upper": 0.012
+            "level": 0.9,
+            "lower": -0.016,
+            "upper": 0.008
           },
           "conditions": {
             "frequency": "weekly"

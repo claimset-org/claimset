@@ -147,7 +147,8 @@ class TestAnchorCli(TestCli):
         self.run_cli("lab", "question", "Q?")
         self.run_cli("lab", "hypothesis", "H.", "--question", "Q1")
         code, _, err = self.run_cli("lab", "plan", "--kind", "confirmatory", "--hypotheses", "H1",
-                                    "--design", "d", "--analysis", "a", "--criterion", "c")
+                                    "--design", "d", "--analysis", "a", "--framework", "deterministic",
+                                    "--quantity", "q=q", "--supported", "q > 0", "--not-supported", "q < 0")
         self.assertEqual(code, 0, err)
         self.assertIn("anchored seq 5", err)
         code, out, _ = self.run_cli("lab", "verify", "--remote")

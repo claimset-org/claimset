@@ -1,13 +1,13 @@
 ---
 name: claimset-submit
-description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.11 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
+description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.12 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
 ---
 
 # Preparing a Claimset submission
 
 A claimset is a research paper written for LLM readers: a flat JSON file of atomic, self-contained claims plus the definitions, evidence, assumptions, limitations, warrants and artefacts that support, condition and limit them. You write every field. A human decides two things (guarantor and licence), and you ask them before you finish.
 
-The normative rules are in `references/spec-v0.11.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
+The normative rules are in `references/spec-v0.12.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
 
 You produce a **submission**. The platform turns it into the published file: it mints the DOI and assigns version, publication date, status, the OpenAlex classification IDs and each claim's verifiability. You never supply these, and you never ask the human for them.
 
@@ -43,15 +43,17 @@ If the human cannot be asked (unattended run), stop after building and validatin
 
 ### 2a. If the research has a lab record
 
-If the work was done with a lab record (`lab/lab.jsonl`, specified in `references/lab-record-v0.4.md`), start from it rather than from a manuscript:
+If the work was done with a lab record (`lab/lab.jsonl`, specified in `references/lab-record-v0.5.md`), start from it rather than from a manuscript:
 - Run `claimset lab export -o claimset.json` if the tool is available. It writes a draft that holds everything the record states and prints a **completion list**: the decisions and wording still needed (licence, guarantor, principal claims, claim types, scopes, evidence profiles and descriptions, statements of negative results). Work through that list; do not change what the record states, such as `hypothesis`, `planning`, `planned_at`, `lab_runs` or the exploration counts. If export refuses (an open hypothesis, an unmerged agent log, a record that does not verify), fix the record with `claimset lab` commands, never by editing it.
 - Without the tool, build the claims from the record by hand, following the mapping in lab record §9.
-- Every hypothesis that reached `supported`, `not_supported` or `inconclusive` becomes a claim with `hypothesis: {lab_event, outcome}`, `planning`, and for planned tests `planned_at` and `planned_at_anchor` copied from the record. Never upgrade `exploratory` to `confirmatory`.
+- Every hypothesis that reached `supported`, `not_supported` or `inconclusive` becomes a claim with `hypothesis: {lab_event, outcome}`, `planning`, and for planned tests `planned_at`, `planned_at_anchor` and `test` (the decision rule) copied from the record. Never upgrade `exploratory` to `confirmatory`, and never change a `test`: it is what the plan fixed before the data were seen.
 - **Negative results are claims too**, in this claimset: state plainly what was not found, with scope and evidence (see `examples/submission-from-lab.json`, claim C4).
 - Fill `paper.exploration` with the counts from the record, and list the record as an artefact of kind `lab_record`, with any `withheld_events` and their reasons.
 - Give evidence objects the `lab_runs` they came from, and take `results` from the record's result events.
 
 Then continue with the steps below to choose principal claims, review wording and scope, and ask the human.
+
+**Planned tests without a lab record.** If a claim was tested under a plan registered before the data were seen (for example a pre-registration), set `planning: confirmatory` (or `confirmatory_with_deviations`), `planned_at`, `planned_at_anchor`, and `test`: the framework, its parameters (for a significance test: `alpha`, `test`, `sides`, `correction`, `sample`), the `quantities` the rules use and the rules for `supported` and `not_supported`, exactly as registered, with the registration's URI in `registration`. `not_supported` means the registered refutation rule was met; otherwise a test that was not significant is `inconclusive`.
 
 ### 3. Write the claims first
 

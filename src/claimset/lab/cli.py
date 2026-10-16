@@ -6,10 +6,11 @@ import os
 import sys
 from pathlib import Path
 
-from .core import Lab, LabError, file_hash, verify
+from .core import Lab, LabError, file_hash, plan_flags, verify
 from . import summary as _summary
 from .run import run_command
 from . import export as _export
+from . import decision as _decision
 from . import anchor as _anchor
 from . import guard as _guard
 from . import protect as _protect
@@ -117,7 +118,8 @@ def cmd_decide(args):
 
 def cmd_status(args):
     return _write(args, "status", {"target": args.target, "to": args.to, "rationale": args.why,
-                                   "evidence": args.evidence, "revised_to": args.revised_to})
+                                   "evidence": args.evidence, "revised_to": args.revised_to,
+                                   "plan": args.plan, "rule": args.rule})
 
 
 def cmd_check(args):
@@ -134,11 +136,99 @@ def cmd_artefact(args):
                                      "licence": args.licence, "description": args.description})
 
 
+def _json_or_text(v):
+    try:
+        return json.loads(v)
+    except json.JSONDecodeError:
+        return v
+
+
+def _decision_from_args(args):
+    """The decision rule from --decision FILE, overridden by the individual options."""
+    d = {}
+    if args.decision:
+        try:
+            d = json.loads(Path(args.decision).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise LabError("schema", f"--decision {args.decision}: {exc}") from None
+        if not isinstance(d, dict):
+            raise LabError("schema", f"--decision {args.decision} must hold a JSON object")
+    if args.framework:
+        d["framework"] = args.framework
+    for p in args.parameter:
+        k, v = _parse_param(p)
+        d.setdefault("parameters", {})[k] = v
+    for q in args.quantity:
+        if "=" not in q:
+            raise LabError("schema", f"--quantity '{q}': use name=\"quantity text\" or name='{{json}}'")
+        name, spec = q.split("=", 1)
+        spec = _json_or_text(spec)
+        d.setdefault("quantities", {})[name] = spec if isinstance(spec, dict) else {"quantity": str(spec)}
+    if args.supported is not None:
+        d["supported"] = args.supported
+    if args.not_supported is not None:
+        d["not_supported"] = args.not_supported
+    return d or None
+
+
 def cmd_plan(args):
+    from .run import code_version
+
     data = [{"description": d, "hash": file_hash(d)} if Path(d).is_file() else {"description": d}
             for d in args.data]
+    holdout = []
+    for h in args.holdout:
+        if not Path(h).is_file():
+            raise LabError("schema", f"--holdout {h}: no such file")
+        holdout.append({"path": h, "hash": file_hash(h)})
+    commit, dirty = code_version(os.getcwd(), _lab(args).root)
     return _write(args, "plan", {"kind": args.kind, "hypotheses": args.hypotheses, "design": args.design,
-                                 "analysis": args.analysis, "criterion": args.criterion, "data": data})
+                                 "analysis": args.analysis, "decision": _decision_from_args(args),
+                                 "runs": args.runs, "criterion": args.criterion, "data": data,
+                                 "holdout": holdout, "code_version": commit,
+                                 "dirty": dirty if commit is not None else None})
+
+
+def cmd_verdict(args):
+    st = _view(args)
+    plan = st.get(args.plan)
+    if plan is None or plan["type"] != "plan":
+        raise LabError("L12", f"no plan '{args.plan}'")
+    d = st.deciding_runs(args.plan)
+    pv = st.plan_rule_version(args.plan)
+    if pv is None or "decision" not in pv["body"]:
+        raise LabError("schema", f"{args.plan} has no decision rule")
+    rule = pv["body"]["decision"]
+    runs = st.plan_runs.get(st.root(args.plan), [])
+    out = {"plan": pv["id"], "framework": rule.get("framework"), "decided": bool(d),
+           "deciding_runs": [r["id"] for r in d[1]] if d else [r["id"] for r in runs],
+           "runs_needed": pv["body"].get("runs", 1), "supported": rule.get("supported"),
+           "not_supported": rule.get("not_supported")}
+    if d:
+        out["flags"] = plan_flags(st, d[0], d[1])
+        if _decision.computed(rule):
+            out.update(_decision.verdict(rule, [[x["body"] for x in st.results_of.get(r["id"], [])] for r in d[1]]))
+        else:
+            out["verdict"] = None
+            out["note"] = "text rules: judge which rule the evidence meets and record it with --rule"
+    if args.json:
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        return 0
+    print(f"{out['plan']} ({out['framework']}): supported if {out['supported']}; "
+          f"not_supported if {out['not_supported']}; otherwise inconclusive")
+    if not d:
+        print(f"Not decided yet: {len(runs)} of {out['runs_needed']} deciding runs "
+              f"({', '.join(out['deciding_runs']) or 'none'}).")
+        return 0
+    print(f"Deciding runs: {', '.join(out['deciding_runs'])}")
+    for k, v in (out.get("values") or {}).items():
+        print(f"  {k} = {v}")
+    for p in out.get("problems") or []:
+        print(f"  problem: {p}")
+    print(f"Verdict: {out['verdict']}" if out.get("verdict") else out["note"])
+    for f in out.get("flags") or []:
+        print(f"  flag: {f.replace('_', ' ')}")
+    return 0
 
 
 def cmd_approve(args):
@@ -360,6 +450,9 @@ def add_parser(subparsers):
     writer.add_argument("--by", help="actor ID of the writer (default: $CLAIMSET_ACTOR)")
     writer.add_argument("--supersedes", metavar="ID", help="write this event as a correction of ID")
 
+    viewer = argparse.ArgumentParser(add_help=False, parents=[common])
+    viewer.add_argument("--by", help="read as this actor: its open agent log included (default: $CLAIMSET_ACTOR)")
+
     def cmd(name, func, help_, parents=(writer,)):
         p = lab_sub.add_parser(name, help=help_, parents=list(parents))
         p.set_defaults(func=func)
@@ -411,6 +504,9 @@ def add_parser(subparsers):
     p.add_argument("--why", required=True, help="rationale")
     p.add_argument("--evidence", nargs="+", default=[], metavar="ID")
     p.add_argument("--revised-to", metavar="ID")
+    p.add_argument("--plan", metavar="ID", help="the decided plan whose verdict this status reports")
+    p.add_argument("--rule", choices=["supported", "not_supported", "neither"],
+                   help="for plans with text rules: which rule the evidence met")
 
     p = cmd("check", cmd_check, "record an independent check of an event")
     p.add_argument("target")
@@ -434,9 +530,25 @@ def add_parser(subparsers):
                    help="hypotheses the plan tests (required for confirmatory)")
     p.add_argument("--design", required=True, help="what will be run, on what, with which settings")
     p.add_argument("--analysis", required=True, help="what will be computed from the outputs")
-    p.add_argument("--criterion", help="how the outcome will be judged (required for confirmatory)")
+    p.add_argument("--framework", choices=list(_decision.FRAMEWORKS), help="how the outcome will be decided")
+    p.add_argument("--parameter", action="append", default=[], metavar="NAME=VALUE",
+                   help="a parameter fixed in advance, e.g. alpha=0.05, sides=greater; repeat for several")
+    p.add_argument("--quantity", action="append", default=[], metavar="NAME=QUANTITY",
+                   help="a result the rules use: name=\"quantity text\", or name='{\"quantity\": …, "
+                        "\"conditions\": {…}, \"field\": \"interval.lower\"}'; repeat for several")
+    p.add_argument("--supported", help="rule for supported: an expression over quantities and parameters, "
+                                       "or text for formal and qualitative plans")
+    p.add_argument("--not-supported", dest="not_supported", help="rule for not_supported (refuted)")
+    p.add_argument("--runs", type=int, help="how many successful confirmatory runs decide the plan (default 1)")
+    p.add_argument("--decision", metavar="FILE", help="the whole decision rule as a JSON file")
+    p.add_argument("--holdout", action="append", default=[], metavar="FILE",
+                   help="data kept for this test only (hashed); runs that use it elsewhere are flagged")
+    p.add_argument("--criterion", help="records begun under lab record v0.4 or earlier only")
     p.add_argument("--data", action="append", default=[], metavar="FILE",
                    help="data file the plan uses (hashed); repeat for several")
+
+    p = cmd("verdict", cmd_verdict, "the verdict a decided plan's rule gives", parents=(viewer,))
+    p.add_argument("plan", help="plan ID")
 
     p = cmd("approve", cmd_approve, "approve a plan or other event (human actors only)")
     p.add_argument("target")
@@ -463,8 +575,6 @@ def add_parser(subparsers):
     p = cmd("merge", cmd_merge, "merge finished agent logs into the main log")
     p.add_argument("actors", nargs="*", metavar="ACTOR", help="agent logs to merge (default: all open ones)")
 
-    viewer = argparse.ArgumentParser(add_help=False, parents=[common])
-    viewer.add_argument("--by", help="read as this actor: its open agent log included (default: $CLAIMSET_ACTOR)")
 
     p = cmd("show", cmd_show, "show one event, with corrections resolved", parents=(viewer,))
     p.add_argument("id")

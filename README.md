@@ -47,12 +47,18 @@ claimset lab actor --kind agent --name "Research agent" --model "Anthropic|Claud
 export CLAIMSET_ACTOR=AC1
 claimset lab question "Does X improve Y?"
 claimset lab hypothesis "X improves Y on monthly series." --question Q1
-claimset lab plan --kind confirmatory --hypotheses H1 --design "…" --analysis "…" --criterion "…"
+claimset lab plan --kind confirmatory --hypotheses H1 --design "…" --analysis "…" \
+    --framework frequentist --parameter alpha=0.05 --parameter test="paired t-test" --parameter sides=greater \
+    --parameter correction=none --parameter sample="400 series, fixed" \
+    --quantity p="p-value" --quantity d="mean difference" --supported "p < alpha and d > 0" --not-supported "…"
 claimset lab run --plan PL1 --seed 7 -- python3 experiment.py
-claimset lab status H1 supported --why "PL1 criterion met." --evidence RS1
+claimset lab verdict PL1     # the verdict the plan's rule gives on the run's results
+claimset lab status H1 supported --plan PL1 --why "Rule of PL1 met." --evidence RS1 RS2
 claimset lab summary     # current state, for whoever picks up the work
 claimset lab verify      # hash chain, rules and run files
 ```
+
+A confirmatory plan fixes everything that decides the outcome before any run: the test, significance level, sidedness, correction for multiple tests, sample size and stopping rule, the results the decision is made on, and the rules for *supported* and *not supported* (anything else is *inconclusive*). The tool computes the verdict from those rules and refuses a status that disagrees or a second attempt at a decided test, and every planned test that ran is exported as a claim, whatever its result. Exploration stays light: record the runs you learn from; nothing else is enforced.
 
 `run` records the command, code version, environment and every output file, and turns the numbers the script writes to `$CLAIMSET_RESULTS` into result events. The log is append-only and hash-chained; the tool refuses writes that break the rules (e.g. confirming a hypothesis with the result that suggested it).
 

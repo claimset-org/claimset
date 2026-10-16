@@ -10,7 +10,7 @@ from claimset.lab import anchor as anchor_mod
 from claimset.lab.core import LabError, canonical, content_hash, header_hash, verify
 from claimset.lab.run import run_command
 
-from test_lab import PlanRunCase, TestCli, run_body
+from test_lab import DECISION, PlanRunCase, TestCli, run_body
 from test_lab_protect import HAVE_GIT, make_repo, rewrite_consistently
 
 
@@ -256,7 +256,7 @@ class TestAgentAnchoring(AgentCase):
 
     def agent_plan(self):
         return self.write(self.a, "plan", {"kind": "confirmatory", "hypotheses": [self.h], "design": "d",
-                                           "analysis": "a", "criterion": "c"})
+                                           "analysis": "a", "decision": DECISION})
 
     def test_confirmatory_run_from_agent_plan(self):
         pl = self.agent_plan()
@@ -348,7 +348,7 @@ class TestMalformedAndForged(AgentCase):
         (self.lab.root / "anchors.jsonl").write_text('{"seq": null, "agents": {"AC2": "bad"}}\n"x"\n')
         anchor_mod.save_config(self.lab, {"anchor": {"service": "git_remote"}})
         self.plan_id = self.lab.append("plan", {"kind": "confirmatory", "hypotheses": [self.h], "design": "d",
-                                                "analysis": "a", "criterion": "c"}, by=self.human)["id"]
+                                                "analysis": "a", "decision": DECISION}, by=self.human)["id"]
         rules = [r for r, _, _ in self.errors(verify(self.lab, check_files=False))]
         self.assertIn("L14", rules)
 
@@ -400,7 +400,7 @@ class TestWorkingCopies(unittest.TestCase):
         self.labA.append("note", {"text": "main moves on"}, by=self.hum)
         anchor_mod.anchor(self.labA)
         pl = self.labB.append("plan", {"kind": "confirmatory", "hypotheses": [self.h], "design": "d",
-                                       "analysis": "a", "criterion": "c"}, by=self.ag)
+                                       "analysis": "a", "decision": DECISION}, by=self.ag)
         anchor_mod.ensure_covered(self.labB, pl, self.ag)          # B is behind on lab.jsonl: allowed
         rep = verify(self.labB, remote=True)
         self.assertTrue(rep["ok"], rep["errors"])

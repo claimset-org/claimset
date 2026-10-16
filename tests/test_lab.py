@@ -387,6 +387,11 @@ sys.exit(int(sys.argv[1]) if len(sys.argv) > 1 else 0)
 """
 
 
+#: A deterministic decision rule on the result "q" that SCRIPT writes (0.5): its verdict is supported.
+DECISION = {"framework": "deterministic", "quantities": {"q": {"quantity": "q"}},
+            "supported": "q > 0", "not_supported": "q < 0"}
+
+
 class PlanRunCase(LabCase):
     def setUp(self):
         super().setUp()
@@ -395,9 +400,11 @@ class PlanRunCase(LabCase):
         self.script.write_text(SCRIPT)
 
     def plan(self, kind="confirmatory", **extra):
-        body = {"kind": kind, "hypotheses": [self.h], "design": "d", "analysis": "a", "criterion": "c"}
+        body = {"kind": kind, "hypotheses": [self.h], "design": "d", "analysis": "a"}
+        if kind == "confirmatory":
+            body["decision"] = DECISION
         body.update(extra)
-        return self.add("plan", body)
+        return self.add("plan", {k: v for k, v in body.items() if v is not None})
 
     def execute(self, *args, **kw):
         return run_command(self.lab, self.agent, [sys.executable, str(self.script)] + list(args),
@@ -407,11 +414,11 @@ class PlanRunCase(LabCase):
 class TestPlansAndApprovals(PlanRunCase):
     def test_confirmatory_plan_needs_hypotheses(self):
         self.assertRefused("schema", "plan", {"kind": "confirmatory", "design": "d", "analysis": "a",
-                                              "criterion": "c"})
+                                              "decision": DECISION})
 
-    def test_confirmatory_plan_needs_criterion(self):
-        self.assertRefused("schema", "plan", {"kind": "confirmatory", "hypotheses": [self.h],
-                                              "design": "d", "analysis": "a"})
+    def test_confirmatory_plan_needs_decision_rule(self):
+        self.assertRefused("L15", "plan", {"kind": "confirmatory", "hypotheses": [self.h],
+                                           "design": "d", "analysis": "a", "criterion": "c"})
 
     def test_exploratory_plan_needs_no_criterion(self):
         self.plan(kind="exploratory", hypotheses=[], criterion=None)

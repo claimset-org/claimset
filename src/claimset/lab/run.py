@@ -1,6 +1,7 @@
 """Running a command under the lab record (lab record spec §5.9.1)."""
 
 import json
+import math
 import os
 import platform
 import subprocess
@@ -79,8 +80,9 @@ def _parse_results(path):
     good, problems = [], []
     for i, r in enumerate(data):
         v = r.get("value") if isinstance(r, dict) else None
-        if not isinstance(r, dict) or not r.get("quantity") or not isinstance(v, (int, float)) or isinstance(v, bool):
-            problems.append(f"entry {i}: needs 'quantity' (text) and 'value' (a number)")
+        if not isinstance(r, dict) or not isinstance(r.get("quantity"), str) or not r["quantity"].strip() \
+                or not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v):
+            problems.append(f"entry {i}: needs 'quantity' (text) and 'value' (a finite number)")
             continue
         good.append({k: r[k] for k in ("quantity", "value", "unit", "interval", "conditions") if r.get(k) is not None})
     return good, problems
@@ -117,8 +119,10 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
             raise LabError("schema", f"run: data file {d} does not exist")
         data_entries.append({"path": d, "hash": file_hash(d)})
 
-    probe = {"plan": plan, "label": label, "command": list(argv), "exit_status": "success",
-             "outputs": [], "data": data_entries}
+    plan_version = st.latest(plan)["id"] if plan is not None else None
+    probe = {"plan": plan, "plan_version": plan_version, "label": label, "command": list(argv),
+             "exit_status": "success", "outputs": [], "data": data_entries}
+    probe = {k: v for k, v in probe.items() if v is not None}
     st.check("run", st.next_id("run"), by, probe, None)
 
     runs_dir = lab.root / "runs"
@@ -159,7 +163,7 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
         proc.stderr.close()
     ended = lab.clock()
 
-    body = {"plan": plan, "label": label, "command": list(argv), "code_version": commit, "dirty": dirty,
+    body = {"plan": plan, "plan_version": plan_version, "label": label, "command": list(argv), "code_version": commit, "dirty": dirty,
             "parameters": parameters or None, "seeds": seeds or None, "data": data_entries or None,
             "environment": environment(), "started_at": started, "ended_at": ended,
             "exit_status": status, "exit_code": exit_code, "outputs": _outputs(rdir)}

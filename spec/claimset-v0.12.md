@@ -1,10 +1,20 @@
-# Claimset — Specification v0.11 (draft)
+# Claimset — Specification v0.12 (draft)
 
-Status: working draft · Date: 2026-10-15 · Supersedes v0.10 (`spec/claimset-v0.10.md`) · Companion: lab record specification (`spec/lab-record-v0.4.md`)
+Status: working draft · Date: 2026-10-16 · Supersedes v0.11 (`spec/claimset-v0.11.md`) · Companion: lab record specification (`spec/lab-record-v0.5.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.10
+## Changes since v0.11
+
+Planned tests carry the decision rule they were planned with, so readers can check the verdict against a rule fixed before the data were seen.
+
+- New claim field `test`: the inferential framework, its parameters (significance level, test, sidedness, correction for multiple tests, sample size and stopping rule, equivalence bounds, prior, thresholds), the rules for `supported` and `not_supported`, and whether the verdict was computed from recorded results or judged (§3.3.3).
+- `not_supported` now means refuted under a rule stated in advance; a test that met neither rule is `inconclusive` (§3.3.3).
+- A hypothesis tested more than once gives one claim per test, so no test goes unreported (§3.3.3).
+- `exploration` gains `hypotheses.open` (hypotheses never closed) and `tests` (planned tests and their verdicts); its counts are lower bounds of the exploration (§3.1.1).
+- New rule 47; rules 45 and 46 revised for the new counts (§10).
+
+## Changes in v0.11 (since v0.10)
 
 Links claimsets to the lab record, the running record of the research from which a claimset is distilled.
 
@@ -113,7 +123,7 @@ Top-level layout:
 
 ```json
 {
-  "schema_version": "0.11",
+  "schema_version": "0.12",
   "@context": "optional",
   "paper": {},
   "contributors": [],
@@ -174,12 +184,17 @@ Contributors are listed in the top-level `contributors` list (§3.11), not in th
 "exploration": {
   "lab_record": "A10",
   "questions": 2,
-  "hypotheses": {"total": 9, "supported": 3, "not_supported": 2, "inconclusive": 1, "revised": 2, "abandoned": 1},
+  "hypotheses": {"total": 10, "supported": 3, "not_supported": 2, "inconclusive": 1, "revised": 2, "abandoned": 1, "open": 1},
+  "tests": {"total": 5, "supported": 2, "not_supported": 2, "inconclusive": 1},
   "runs": {"total": 214, "confirmatory": 18, "exploratory": 196, "failed": 11}
 }
 ```
 
-`hypotheses.total` is the sum of the other hypothesis counts; `runs.total` is the sum of `confirmatory` and `exploratory`; `failed` counts runs of either kind whose exit status was not `success`.
+- `hypotheses` counts recorded hypotheses by their final status; `open` counts those never closed. `total` is the sum of the other hypothesis counts.
+- `tests` counts planned tests that have run, by verdict: one per plan and hypothesis it names. `total` is the sum of the three verdicts.
+- `runs.total` is the sum of `confirmatory` and `exploratory`; `failed` counts runs of either kind whose exit status was not `success`.
+
+The counts cover what was recorded. Exploration is recorded where its results informed decisions, not step by step, so the counts are lower bounds of the exploration; the counts of planned tests are complete.
 
 Retracted papers are never deleted. All their claims inherit the retraction status for readers and the platform. A converted claimset whose source is retracted is shown with the source's retraction, whatever its own status.
 
@@ -217,6 +232,7 @@ Retracted papers are never deleted. All their claims inherit the retraction stat
 | `planning` | enum | `confirmatory` · `confirmatory_with_deviations` · `exploratory` (§3.3.3) |
 | `planned_at` | datetime | When the plan that tested this claim was recorded (ISO 8601, UTC) |
 | `planned_at_anchor` | enum | Strength of `planned_at`: `platform` · `rfc3161` · `git_remote` · `none` |
+| `test` | object | The decision rule fixed before the test (§3.3.3); required for confirmatory claims |
 | `source_spans` | list | Locations in the source text; required for converted papers |
 | `provenance` | enum | Default for the claim: `author_stated` · `extracted` · `inferred` |
 | `field_provenance` | object | Overrides per field path, e.g. `{"scope.excludes": "inferred"}`; any field whose provenance differs from the default must be listed |
@@ -245,6 +261,36 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
 - `confirmatory`: tested by a run under a plan, recorded before the run, that named the hypothesis, with no deviation.
 - `confirmatory_with_deviations`: as above, but the run deviated from the plan; the deviation is recorded as a limitation.
 - `exploratory`: every other case, including results found while exploring.
+
+**Outcomes.** `supported` and `not_supported` are conclusive: each means that the rule stated for it in advance was met. A test that met neither rule is `inconclusive`. In particular, failing to reject a null hypothesis is `inconclusive`, not `not_supported`, unless the plan stated a rule for refutation (for example equivalence bounds).
+
+**One claim per planned test.** A hypothesis tested under several plans (a replication, a larger sample) gives one claim per test, each with its own outcome and `test`, so every planned test that ran is reported. The statement of each is the hypothesis as it stood when its plan was written.
+
+**Decision rule (`test`).** A confirmatory claim records the rule it was planned with, as fixed before the data were seen:
+
+```json
+"test": {
+  "framework": "frequentist",
+  "parameters": {"alpha": 0.05, "test": "one-sided paired t-test on per-series MAE differences", "sides": "greater",
+                 "correction": "none", "sample": "500 series, fixed in advance; no interim analysis"},
+  "quantities": {"p": {"quantity": "p-value, paired t-test of MAE difference"},
+                 "d_upper": {"quantity": "mean MAE difference", "field": "interval.upper"}},
+  "supported": "p < alpha",
+  "not_supported": "d_upper < 0.01",
+  "verdict": "computed",
+  "runs": 1,
+  "lab_plan": "PL2",
+  "registration": null
+}
+```
+
+- `framework`: `frequentist` · `equivalence` · `bayesian` · `deterministic` · `formal` · `qualitative`, as defined in the lab record specification §5.7.1.
+- `parameters`: required per framework: `frequentist`: `alpha`, `test`, `sides`, `correction`, `sample`; `equivalence`: `alpha`, `test`, `lower_bound`, `upper_bound`, `sample`; `bayesian`: `prior`, `threshold`, `sample`.
+- `quantities`: when the rules are expressions, the results they are evaluated on, each `{quantity, conditions, field, run}`; they correspond to results in the claim's evidence.
+- `supported`, `not_supported`: the two rules: expressions over quantities and numeric parameters (lab record §5.7.3), or text saying what observation decides.
+- `verdict`: `computed` (the rules are expressions and the outcome was computed from the recorded results by the lab tool) · `judged` (the rules are text and the outcome was stated by the writer, who said which rule the evidence met).
+- `runs`: how many runs decided the test. `lab_plan`: the plan's lab-record ID, when there is one. `registration`: the URI of an external pre-registration, when there is one.
+- `flags`: optional list of weaknesses of the test, from the lab record (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs).
 
 `planned_at_anchor` says how far `planned_at` can be trusted (lab record §7): from strongest, `platform` (receipt from the Claimset platform), `rfc3161` (trusted timestamp authority), `git_remote` (pushed commit), to `none`.
 
@@ -597,8 +643,12 @@ The platform mints a DOI for every published claimset. The file records identifi
 42. `hypothesis` present ⇒ `hypothesis.lab_event` and `hypothesis.outcome` present, and `planning` present.
 43. `planning` is `confirmatory` or `confirmatory_with_deviations` ⇒ `planned_at` and `planned_at_anchor` present.
 44. Any claim has `hypothesis` ⇒ `paper.exploration` present, and `exploration.lab_record` is an artefact of kind `lab_record`.
-45. `exploration` counts are non-negative integers; `hypotheses.total` equals the sum of the other hypothesis counts; `runs.total` equals `confirmatory` + `exploratory`; `failed` ≤ `total`.
-46. For each outcome (`supported`, `not_supported`, `inconclusive`), the number of distinct `hypothesis.lab_event` values reporting it does not exceed the corresponding `exploration.hypotheses` count.
+45. (Revised in v0.12.) `exploration` counts are non-negative integers; `hypotheses.total` equals the sum of the other hypothesis counts (`open` included, 0 if absent); `tests.total`, if `tests` is present, equals the sum of its verdict counts; `runs.total` equals `confirmatory` + `exploratory`; `failed` ≤ `total`.
+46. (Revised in v0.12.) For each outcome (`supported`, `not_supported`, `inconclusive`): the number of claims with `test` reporting it does not exceed the corresponding `exploration.tests` count, and the number of distinct `hypothesis.lab_event` values among claims without `test` reporting it does not exceed the corresponding `exploration.hypotheses` count.
+
+### 10.8 Rules added in v0.12 (errors: file rejected)
+
+47. `planning` is `confirmatory` or `confirmatory_with_deviations` ⇒ `test` present, with a `framework` from the list, non-empty `supported` and `not_supported` rules, the parameters its framework requires, and `verdict` (`computed` or `judged`); `verdict: computed` ⇒ `quantities` present; `flags`, if present, are from the list in §3.3.3.
 
 ### 10.4 Warnings (file accepted, warning recorded)
 
@@ -658,7 +708,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.11",
+  "schema_version": "0.12",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -749,7 +799,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.11",
+  "schema_version": "0.12",
   "paper": {
     "id": "doi:10.0000/claimset.2026.000456",
     "title": "Example converted paper",
