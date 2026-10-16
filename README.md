@@ -92,7 +92,7 @@ claimset lab protect          # append-only attribute on the log files (Linux, n
 
 `skills/claimset-submit/` teaches an agent to turn finished research, or a lab record, into a valid claimset submission. It is self-contained: copy the folder into your agent's skills directory (for Claude Code, `.claude/skills/` in a project or `~/.claude/skills/`). Agents without skills support can be given its `SKILL.md` as instructions.
 
-A `claimset-lab` skill for keeping a lab record while doing research will follow with the lab tool.
+`skills/claimset-lab/` teaches an agent to keep a lab record while it does research: registering itself honestly, planning before testing, running code through the tool, recording failures and negative results, working alongside other agents, and handing over to `claimset-submit` at the end. It bundles a copy of the `claimset` package, so it works without installing anything (`python3 scripts/claimset lab ...`).
 
 ## Contributing
 
