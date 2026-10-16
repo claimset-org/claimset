@@ -47,12 +47,14 @@ claimset lab actor --kind agent --name "Research agent" --model "Anthropic|Claud
 export CLAIMSET_ACTOR=AC1
 claimset lab question "Does X improve Y?"
 claimset lab hypothesis "X improves Y on monthly series." --question Q1
-claimset lab status H1 testing --why "Plan being written."
+claimset lab plan --kind confirmatory --hypotheses H1 --design "…" --analysis "…" --criterion "…"
+claimset lab run --plan PL1 --seed 7 -- python3 experiment.py
+claimset lab status H1 supported --why "PL1 criterion met." --evidence RS1
 claimset lab summary     # current state, for whoever picks up the work
-claimset lab verify      # hash chain and rules
+claimset lab verify      # hash chain, rules and run files
 ```
 
-The log is append-only and hash-chained; the tool refuses writes that break the rules (e.g. confirming a hypothesis with the result that suggested it). Plans, runs, results, per-agent logs and export to a claimset are being added; see `spec/lab-record-v0.3.md` §10.
+`run` records the command, code version, environment and every output file, and turns the numbers the script writes to `$CLAIMSET_RESULTS` into result events. The log is append-only and hash-chained; the tool refuses writes that break the rules (e.g. confirming a hypothesis with the result that suggested it). Per-agent logs and export to a claimset are being added; see `spec/lab-record-v0.4.md` §10.
 
 ## For AI agents
 

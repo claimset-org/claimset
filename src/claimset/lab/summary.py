@@ -16,6 +16,16 @@ def _text(event):
         return f"{b.get('target')} -> {b.get('to')}: {b.get('rationale', '')}"
     if event["type"] == "check":
         return f"{b.get('target')}: {b.get('outcome')} ({b.get('extent')})"
+    if event["type"] == "run":
+        return f"[{b.get('label')}, {b.get('exit_status')}] {' '.join(b.get('command') or [])}"
+    if event["type"] == "result":
+        return f"{b.get('quantity')} = {b.get('value')} ({b.get('run')})"
+    if event["type"] == "plan":
+        return f"[{b.get('kind')}] {b.get('design', '')}"
+    if event["type"] == "approval":
+        return f"approves {b.get('target')}"
+    if event["type"] == "deviation":
+        return f"{b.get('run')} vs {b.get('plan')}: {b.get('text', '')}"
     return ""
 
 
@@ -72,6 +82,22 @@ def build(events):
                 for e in by_type(t)]
         return rows[-last:] if last else rows
 
+    runs = [e for e in st.events if e["type"] == "run" and not is_withheld(e)]
+    approvals = {e["body"].get("target") for e in st.events
+                 if e["type"] == "approval" and not is_withheld(e)}
+    plans = []
+    for p in by_type("plan"):
+        cur = st.latest(p["id"])
+        if is_withheld(cur):
+            continue
+        under = [r for r in runs if st.root(r["body"].get("plan") or "") == p["id"]]
+        plans.append({"id": p["id"], "kind": cur["body"].get("kind"),
+                      "hypotheses": cur["body"].get("hypotheses", []), "design": cur["body"].get("design"),
+                      "approved": bool({p["id"], cur["id"]} & approvals),
+                      "runs": [r["id"] for r in under],
+                      "done": any(r["body"].get("exit_status") == "success" for r in under)})
+    results = [e for e in st.events if e["type"] == "result" and not is_withheld(e)]
+
     return {
         "title": _text(init) if init else None,
         "events": len(st.events),
@@ -88,6 +114,15 @@ def build(events):
         "recent_notes": items("note", last=5),
         "checks": checks,
         "artefacts": items("artefact"),
+        "plans": plans,
+        "pending_plans": [p["id"] for p in plans if not p["done"]],
+        "runs": {"total": len(runs),
+                 "confirmatory": sum(r["body"].get("label") == "confirmatory" for r in runs),
+                 "exploratory": sum(r["body"].get("label") == "exploratory" for r in runs),
+                 "failed": sum(r["body"].get("exit_status") != "success" for r in runs)},
+        "recent_results": [{"id": r["id"], "run": r["body"].get("run"), "quantity": r["body"].get("quantity"),
+                            "value": r["body"].get("value"), "conditions": r["body"].get("conditions")}
+                           for r in results[-5:]],
     }
 
 
@@ -113,6 +148,18 @@ def render(s):
     out.append("Open hypotheses: " + (", ".join(s["open_hypotheses"]) or "none"))
     if s["assumptions"]:
         out.append("Assumptions: " + "; ".join(f"{a['id']} ({a['check']})" for a in s["assumptions"]))
+    if s["plans"]:
+        out.append("Plans:")
+        for p in s["plans"]:
+            flags = ("approved, " if p["approved"] else "") + (f"runs {' '.join(p['runs'])}" if p["runs"] else "no runs yet")
+            out.append(f"  {p['id']} [{p['kind']}] tests {', '.join(p['hypotheses']) or '-'} ({flags})")
+    r = s["runs"]
+    if r["total"]:
+        out.append(f"Runs: {r['total']} ({r['confirmatory']} confirmatory, {r['exploratory']} exploratory, "
+                   f"{r['failed']} not successful)")
+    if s["recent_results"]:
+        out.append("Recent results:")
+        out += [f"  {x['id']} ({x['run']}) {x['quantity']} = {x['value']}" for x in s["recent_results"]]
     if s["checks"]:
         out.append("Checks: " + "; ".join(f"{c['id']} {c['target']} {c['outcome']}" for c in s["checks"]))
     if s["recent_decisions"]:
