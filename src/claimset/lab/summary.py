@@ -1,6 +1,6 @@
 """Current state of a lab record, for whoever picks up the work (spec §2, principle 8)."""
 
-from .core import State, is_withheld
+from .core import State, final_statuses, is_withheld
 
 OPEN_STATUSES = ("proposed", "testing")
 
@@ -42,10 +42,7 @@ def build(events):
     def by_type(t):
         return [e for e in roots if e["type"] == t]
 
-    hyp_status = {}
-    for e in st.events:
-        if e["type"] == "status" and not is_withheld(e) and e["id"] not in st.superseded_by:
-            hyp_status[st.root(e["body"].get("target"))] = e
+    hyp_status = final_statuses(st)
 
     hypotheses = []
     for h in by_type("hypothesis"):
