@@ -111,6 +111,11 @@ class _Exporter:
 
     def version_before(self, eid, run):
         """The latest version of eid's chain that the run's writer could see (not withheld), or None."""
+        named = run["body"].get("plan_version") if isinstance(run.get("body"), dict) else None
+        if isinstance(named, str) and self.st.get(named) is not None \
+                and self.st.root(named) == self.st.root(eid):
+            e = self.st.get(named)
+            return None if is_withheld(e) else e
         found = None
         for v in self.versions(eid):
             e = self.st.get(v)
@@ -293,6 +298,15 @@ class _Exporter:
             if chosen:
                 r, pv, _ = chosen
                 claim["planned_at"] = pv["at"]
+                rule = pv["body"].get("decision")
+                if isinstance(rule, dict):
+                    claim["test"] = {k: rule[k] for k in ("framework", "parameters", "quantities", "supported",
+                                                          "not_supported") if rule.get(k) is not None}
+                    claim["test"].update({"runs": pv["body"].get("runs", 1), "lab_plan": pv["id"]})
+                else:
+                    self.todo(f"claims.{cid}.test", f"plan {pv['id']} has no decision rule (it was written under lab "
+                                                    f"record v0.4 with the criterion: {pv['body'].get('criterion')}); "
+                                                    f"state the rule in {cid}.test as it was fixed before the run")
                 started = r["body"].get("started_at") or r["at"]
                 usable = sorted((a for a in self.anchors if isinstance(a, dict) and covers(a, pv)
                                  and isinstance(a.get("at"), str) and a["at"] <= started), key=lambda a: a["at"])
@@ -416,7 +430,7 @@ class _Exporter:
         art = {"id": lab_aid, "kind": "lab_record", "uri": f"{repo.rstrip('/')}/{rel}" if repo else rel,
                "version": file_hash(self.lab.log_path), "availability": {"level": "public"},
                "description": "Lab record of the study: questions, hypotheses, plans, runs, results and decisions, "
-                              "as an append-only, hash-chained event log (Claimset lab record specification v0.4)."}
+                              "as an append-only, hash-chained event log (Claimset lab record specification v0.5)."}
         withheld = [{"event": e["id"], "reason": e["body"].get("reason"), "comment": e["body"].get("comment")}
                     for e in self.st.events if is_withheld(e)]
         if withheld:

@@ -21,7 +21,7 @@ import json
 import re
 import sys
 
-SCHEMA_VERSION = "0.11"
+SCHEMA_VERSION = "0.12"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -42,6 +42,7 @@ ENUM = {
     "outcome": {"supported", "not_supported", "inconclusive"},
     "planning": {"confirmatory", "confirmatory_with_deviations", "exploratory"},
     "anchor": {"platform", "rfc3161", "git_remote", "none"},
+    "framework": {"frequentist", "equivalence", "bayesian", "deterministic", "formal", "qualitative"},
     "assumption_category": {"theoretical", "statistical", "methodological", "data", "axiom",
                             "theorem_condition", "paradigmatic"},
     "check": {"tested", "sensitivity_analysed", "unchecked", "untestable"},
@@ -565,6 +566,31 @@ def number_matches(value, statement):
     return False
 
 
+TEST_PARAMETERS = {
+    "frequentist": ("alpha", "test", "sides", "correction", "sample"),
+    "equivalence": ("alpha", "test", "lower_bound", "upper_bound", "sample"),
+    "bayesian": ("prior", "threshold", "sample"),
+}
+
+
+def check_test(r, test, w):
+    """Rule 47: a confirmatory claim carries the decision rule it was planned with."""
+    if not isinstance(test, dict):
+        r.err("47", w, "required for confirmatory claims: the decision rule fixed before the test")
+        return
+    fw = test.get("framework")
+    check_enum(r, "47", f"{w}.framework", fw, "framework", required=True)
+    for outcome in ("supported", "not_supported"):
+        if not isinstance(test.get(outcome), str) or not test[outcome].strip():
+            r.err("47", f"{w}.{outcome}", "the rule for this outcome is required")
+    params = test.get("parameters") if isinstance(test.get("parameters"), dict) else {}
+    for key in TEST_PARAMETERS.get(fw, ()):
+        if params.get(key) in (None, ""):
+            r.err("47", f"{w}.parameters.{key}", f"required by the {fw} framework")
+    if fw in ("frequentist", "equivalence", "bayesian", "deterministic") and not test.get("quantities"):
+        r.err("47", f"{w}.quantities", f"required by the {fw} framework: the results the rules are evaluated on")
+
+
 def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozenset()):
     w = f"claims:{cid}"
     statement_checks(r, f"{w}.statement", c.get("statement"))
@@ -713,6 +739,7 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
             if not c.get("planned_at"):
                 r.err("43", f"{w}.planned_at", "required for confirmatory claims")
             check_enum(r, "43", f"{w}.planned_at_anchor", c.get("planned_at_anchor"), "anchor", required=True)
+            check_test(r, c.get("test"), f"{w}.test")
         if c.get("planning") == "exploratory" and c.get("role") == "principal":
             r.warn("W13", w, "exploratory principal claim: say so in the assessment rationale")
     ver = c.get("verification")

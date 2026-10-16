@@ -1,0 +1,219 @@
+"""Decision rules of confirmatory plans (lab record spec v0.5 §5.7.1–5.7.3).
+
+A rule is either text (frameworks `formal` and `qualitative`) or an expression
+over named results and numeric parameters. Expressions are parsed with Python's
+`ast` module and only a small, fixed set of node types is accepted, so a rule
+can compare and combine numbers and nothing else.
+"""
+
+import ast
+import math
+import operator
+import re
+
+FRAMEWORKS = ("frequentist", "equivalence", "bayesian", "deterministic", "formal", "qualitative")
+WITH_QUANTITIES = {"frequentist", "equivalence", "bayesian", "deterministic"}
+REQUIRED = {
+    "frequentist": ("alpha", "test", "sides", "correction", "sample"),
+    "equivalence": ("alpha", "test", "lower_bound", "upper_bound", "sample"),
+    "bayesian": ("prior", "threshold", "sample"),
+}
+SIDES = ("two_sided", "greater", "less")
+FIELDS = ("value", "interval.lower", "interval.upper")
+OUTCOMES = ("supported", "not_supported", "inconclusive")
+TEXT_RULE_OUTCOME = {"supported": "supported", "not_supported": "not_supported", "neither": "inconclusive"}
+NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+
+_BINOPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv}
+_CMPOPS = {ast.Lt: operator.lt, ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge,
+           ast.Eq: operator.eq, ast.NotEq: operator.ne}
+
+
+class RuleError(ValueError):
+    pass
+
+
+def _is_number(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _check_node(node, names):
+    """Raise RuleError unless every node is allowed and every name is in `names`."""
+    if isinstance(node, ast.Expression):
+        return _check_node(node.body, names)
+    if isinstance(node, ast.BoolOp) and isinstance(node.op, (ast.And, ast.Or)):
+        for v in node.values:
+            _check_node(v, names)
+    elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.Not, ast.USub, ast.UAdd)):
+        _check_node(node.operand, names)
+    elif isinstance(node, ast.BinOp) and type(node.op) in _BINOPS:
+        _check_node(node.left, names)
+        _check_node(node.right, names)
+    elif isinstance(node, ast.Compare) and all(type(op) in _CMPOPS for op in node.ops):
+        _check_node(node.left, names)
+        for c in node.comparators:
+            _check_node(c, names)
+    elif isinstance(node, ast.Name):
+        if node.id not in names:
+            raise RuleError(f"'{node.id}' is not a quantity or numeric parameter of the plan")
+    elif isinstance(node, ast.Constant):
+        if not _is_number(node.value):
+            raise RuleError(f"only numbers are allowed as constants, not {node.value!r}")
+    elif isinstance(node, ast.Call):
+        if not (isinstance(node.func, ast.Name) and node.func.id == "abs" and len(node.args) == 1
+                and not node.keywords):
+            raise RuleError("the only function allowed is abs(x)")
+        _check_node(node.args[0], names)
+    else:
+        raise RuleError(f"'{type(node).__name__}' is not allowed in a rule")
+
+
+def parse(expr, names):
+    """Parse and check a rule expression; return its tree. Raise RuleError if it is not allowed."""
+    if not isinstance(expr, str) or not expr.strip():
+        raise RuleError("the rule is empty")
+    try:
+        tree = ast.parse(expr.strip(), mode="eval")
+    except SyntaxError as exc:
+        raise RuleError(f"not a valid expression ({exc.msg})") from None
+    _check_node(tree, set(names))
+    return tree
+
+
+def _eval(node, env):
+    if isinstance(node, ast.Expression):
+        return _eval(node.body, env)
+    if isinstance(node, ast.BoolOp):
+        vals = [bool(_eval(v, env)) for v in node.values]
+        return all(vals) if isinstance(node.op, ast.And) else any(vals)
+    if isinstance(node, ast.UnaryOp):
+        v = _eval(node.operand, env)
+        return (not v) if isinstance(node.op, ast.Not) else (-v if isinstance(node.op, ast.USub) else +v)
+    if isinstance(node, ast.BinOp):
+        right = _eval(node.right, env)
+        if isinstance(node.op, ast.Div) and right == 0:
+            raise RuleError("division by zero")
+        return _BINOPS[type(node.op)](_eval(node.left, env), right)
+    if isinstance(node, ast.Compare):
+        left = _eval(node.left, env)
+        for op, comp in zip(node.ops, node.comparators):
+            right = _eval(comp, env)
+            if not _CMPOPS[type(op)](left, right):
+                return False
+            left = right
+        return True
+    if isinstance(node, ast.Name):
+        return env[node.id]
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Call):
+        return abs(_eval(node.args[0], env))
+    raise RuleError(f"'{type(node).__name__}' is not allowed in a rule")
+
+
+def numeric_parameters(decision):
+    params = decision.get("parameters") if isinstance(decision.get("parameters"), dict) else {}
+    return {k: v for k, v in params.items() if isinstance(k, str) and NAME_RE.match(k) and _is_number(v)}
+
+
+def problems(decision):
+    """Everything that makes a decision rule incomplete or invalid (rule L15); empty if it is complete."""
+    if not isinstance(decision, dict):
+        return ["decision must be an object {framework, parameters, quantities, supported, not_supported}"]
+    out = []
+    fw = decision.get("framework")
+    if fw not in FRAMEWORKS:
+        return [f"framework must be one of {', '.join(FRAMEWORKS)}, not {fw!r}"]
+    params = decision.get("parameters", {})
+    if not isinstance(params, dict):
+        out.append("parameters must be an object")
+        params = {}
+    for key in REQUIRED.get(fw, ()):
+        v = params.get(key)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            out.append(f"the {fw} framework needs the parameter '{key}'")
+    if "alpha" in params and not (_is_number(params["alpha"]) and 0 < params["alpha"] < 1):
+        out.append("alpha must be a number between 0 and 1")
+    if "sides" in params and params["sides"] not in SIDES:
+        out.append(f"sides must be one of {', '.join(SIDES)}")
+    for key in ("lower_bound", "upper_bound", "threshold"):
+        if key in params and not _is_number(params[key]):
+            out.append(f"{key} must be a number")
+    if _is_number(params.get("lower_bound")) and _is_number(params.get("upper_bound")) \
+            and not params["lower_bound"] < params["upper_bound"]:
+        out.append("lower_bound must be below upper_bound")
+
+    names = set(numeric_parameters(decision))
+    if fw in WITH_QUANTITIES:
+        q = decision.get("quantities")
+        if not isinstance(q, dict) or not q:
+            out.append(f"the {fw} framework needs quantities: the results the rules are evaluated on")
+            q = {}
+        for name, spec in q.items():
+            if not NAME_RE.match(str(name)):
+                out.append(f"quantity name '{name}' must start with a letter and use only letters, digits and _")
+            elif name in names:
+                out.append(f"'{name}' is both a quantity and a parameter")
+            if not isinstance(spec, dict) or not isinstance(spec.get("quantity"), str) or not spec["quantity"].strip():
+                out.append(f"quantity '{name}' needs the text of the result's quantity")
+                continue
+            if spec.get("conditions") is not None and not isinstance(spec["conditions"], dict):
+                out.append(f"conditions of quantity '{name}' must be an object")
+            if spec.get("field", "value") not in FIELDS:
+                out.append(f"field of quantity '{name}' must be one of {', '.join(FIELDS)}")
+        names |= set(q)
+        for outcome in ("supported", "not_supported"):
+            try:
+                parse(decision.get(outcome), names)
+            except RuleError as exc:
+                out.append(f"the '{outcome}' rule: {exc}")
+    else:
+        for outcome in ("supported", "not_supported"):
+            v = decision.get(outcome)
+            if not isinstance(v, str) or not v.strip():
+                out.append(f"the '{outcome}' rule must say what observation decides it")
+    return out
+
+
+def bind(decision, results):
+    """Bind each quantity to one result. Returns (values, problems); `results` are result bodies."""
+    values, probs = {}, []
+    for name, spec in (decision.get("quantities") or {}).items():
+        cond = spec.get("conditions") or {}
+        matches = [r for r in results if r.get("quantity") == spec.get("quantity")
+                   and all((r.get("conditions") or {}).get(k) == v for k, v in cond.items())]
+        if len(matches) != 1:
+            probs.append(f"quantity '{name}' matches {len(matches)} results of the deciding runs, not exactly one")
+            continue
+        field = spec.get("field", "value")
+        r = matches[0]
+        v = r.get("value") if field == "value" else (r.get("interval") or {}).get(field.split(".")[1])
+        if not _is_number(v):
+            probs.append(f"quantity '{name}' has no numeric {field}")
+            continue
+        values[name] = v
+    return values, probs
+
+
+def verdict(decision, results):
+    """The outcome the rule gives on these results.
+
+    Returns {"verdict", "values", "problems", "holds"}; "verdict" is None for text rules.
+    """
+    if decision.get("framework") not in WITH_QUANTITIES:
+        return {"verdict": None, "values": {}, "problems": [], "holds": {}}
+    values, probs = bind(decision, results)
+    if probs:
+        return {"verdict": "inconclusive", "values": values, "problems": probs, "holds": {}}
+    env = dict(numeric_parameters(decision), **values)
+    holds = {}
+    try:
+        for outcome in ("supported", "not_supported"):
+            holds[outcome] = bool(_eval(parse(decision[outcome], env), env))
+    except RuleError as exc:
+        return {"verdict": "inconclusive", "values": values, "problems": [str(exc)], "holds": holds}
+    if holds["supported"] and holds["not_supported"]:
+        return {"verdict": "inconclusive", "values": values, "holds": holds,
+                "problems": ["both rules hold: the plan's rules overlap, so the test is inconclusive"]}
+    v = "supported" if holds["supported"] else "not_supported" if holds["not_supported"] else "inconclusive"
+    return {"verdict": v, "values": values, "problems": [], "holds": holds}

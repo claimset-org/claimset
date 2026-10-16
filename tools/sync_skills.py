@@ -20,15 +20,15 @@ SPEC = ROOT / "spec"
 COPIES = {
     "claimset-submit": [
         ("src/claimset/validate.py", "skills/claimset-submit/scripts/validate.py"),
-        ("spec/claimset-v0.11.md", "skills/claimset-submit/references/spec-v0.11.md"),
-        ("spec/lab-record-v0.4.md", "skills/claimset-submit/references/lab-record-v0.4.md"),
+        ("spec/claimset-v0.12.md", "skills/claimset-submit/references/spec-v0.12.md"),
+        ("spec/lab-record-v0.5.md", "skills/claimset-submit/references/lab-record-v0.5.md"),
         ("examples/submission-native.json", "skills/claimset-submit/examples/submission-native.json"),
         ("examples/published-native.json", "skills/claimset-submit/examples/published-native.json"),
         ("examples/submission-from-lab.json", "skills/claimset-submit/examples/submission-from-lab.json"),
     ],
     "claimset-lab": [
         ("src/claimset", "skills/claimset-lab/scripts/lib/claimset"),   # the whole package
-        ("spec/lab-record-v0.4.md", "skills/claimset-lab/references/lab-record-v0.4.md"),
+        ("spec/lab-record-v0.5.md", "skills/claimset-lab/references/lab-record-v0.5.md"),
     ],
 }
 

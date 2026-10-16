@@ -23,10 +23,23 @@ sys.exit(int(sys.argv[3]) if len(sys.argv) > 3 else 0)
 """
 
 
+def rule(frequency=None):
+    """A deterministic decision rule on the reduction SCRIPT writes: supported if positive, refuted if negative."""
+    spec = {"quantity": "mean relative MASE reduction"}
+    if frequency:
+        spec["conditions"] = {"frequency": frequency}
+    return {"framework": "deterministic", "quantities": {"d": spec}, "supported": "d > 0", "not_supported": "d < 0"}
+
+
 class ExportCase(PlanRunCase):
     def setUp(self):
         super().setUp()
         self.script.write_text(SCRIPT)
+
+    def plan(self, kind="confirmatory", **extra):
+        if kind == "confirmatory":
+            extra.setdefault("decision", rule())
+        return super().plan(kind, **extra)
 
     def run_(self, value, cond, plan=None, exploratory=False, by=None, code=0):
         out = run_command(self.lab, by or self.agent, [sys.executable, str(self.script), str(value), cond, str(code)],
@@ -77,14 +90,15 @@ class TestMapping(ExportCase):
         super().setUp()
         self.h2 = self.hyp("X improves Y weekly.")
         self.h3 = self.hyp("X improves Y daily.")
-        self.pl = self.plan(hypotheses=[self.h, self.h2])
+        self.pl = self.plan(hypotheses=[self.h], decision=rule("monthly"))
+        self.pl2 = self.plan(hypotheses=[self.h2], decision=rule("weekly"))
         self.rn1, self.rs1 = self.run_(0.08, "monthly", plan=self.pl)
-        self.rn2, self.rs2 = self.run_(-0.004, "weekly", plan=self.pl)
-        self.add("deviation", {"plan": self.pl, "run": self.rn2, "text": "Used 900 series.", "reason": "Data gap."})
+        self.rn2, self.rs2 = self.run_(-0.004, "weekly", plan=self.pl2)
+        self.add("deviation", {"plan": self.pl2, "run": self.rn2, "text": "Used 900 series.", "reason": "Data gap."})
         self.rn3, self.rs3 = self.run_(0.05, "daily")
         self.rn4, _ = self.run_(0.0, "failed", code=3)
-        self.status(self.h, "supported", self.rs1)
-        self.status(self.h2, "not_supported", self.rs2)
+        self.status(self.h, "supported", self.rs1, plan=self.pl)
+        self.status(self.h2, "not_supported", self.rs2, plan=self.pl2)
         self.status(self.h3, "inconclusive", [self.rn3])
         self.h4 = self.hyp("X improves Y hourly.")
         self.status(self.h4, "abandoned")
@@ -170,8 +184,8 @@ class TestDetails(ExportCase):
         pl = self.plan()
         rn, rs = self.run_(0.1, "m", plan=pl)
         self.add("plan", {"kind": "confirmatory", "hypotheses": [self.h], "design": "changed later", "analysis": "a",
-                          "criterion": "c"}, supersedes=pl)
-        self.status(self.h, "supported", rs)
+                          "decision": rule()}, supersedes=pl)
+        self.status(self.h, "supported", rs, plan=pl)
         c = export(self.lab)["draft"]["claims"][0]
         self.assertEqual(c["planned_at"], self.lab.state().get(pl)["at"])
 
@@ -180,7 +194,7 @@ class TestDetails(ExportCase):
         pl = self.plan(hypotheses=[other])
         rn, rs = self.run_(0.1, "m", plan=pl)
         self.status(self.h, "supported", rs)
-        self.status(other, "abandoned")
+        self.status(other, "supported", rs, plan=pl)
         self.assertEqual(self.claim(export(self.lab), self.h)["planning"], "exploratory")
 
     def test_checks_follow_their_targets(self):
@@ -295,11 +309,11 @@ class TestReviewFindings(ExportCase):
         pl = self.plan()
         self.lab.start_agent(self.agent)
         rn, rs = self.run_(0.1, "m", plan=pl)
-        self.status(self.h, "supported", rs)
+        self.status(self.h, "supported", rs, plan=pl)
         other = self.lab.append("hypothesis", {"statement": "Other.", "question": self.q, "origin": "a_priori"},
                                 by=self.human)["id"]
         self.lab.append("plan", {"kind": "confirmatory", "hypotheses": [other], "design": "d2", "analysis": "a",
-                                 "criterion": "c"}, by=self.human, supersedes=pl)
+                                 "decision": rule()}, by=self.human, supersedes=pl)
         self.lab.append("status", {"target": other, "to": "abandoned", "rationale": "r"}, by=self.human)
         self.lab.merge(self.human)
         out = export(self.lab)
@@ -342,7 +356,7 @@ class TestReviewFindings(ExportCase):
     def test_withheld_plan_still_verifies(self):
         pl = self.plan()
         rn, rs = self.run_(0.1, "m", plan=pl)
-        self.status(self.h, "supported", rs)
+        self.status(self.h, "supported", rs, plan=pl)
         withhold(self, pl, "commercial")
         out = export(self.lab)
         self.assertEqual(self.claim(out, self.h)["planning"], "exploratory")
@@ -356,7 +370,7 @@ class TestAnchoredExport(ExportCase):
                                                      "branch": "claimset-lab"}})
         pl = self.plan()
         rn, rs = self.run_(0.1, "m", plan=pl)
-        self.status(self.h, "supported", rs)
+        self.status(self.h, "supported", rs, plan=pl)
         out = export(self.lab)
         self.assertEqual(self.claim(out, self.h)["planned_at_anchor"], "git_remote")
         lab_art = out["draft"]["artefacts"][-1]

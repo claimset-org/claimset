@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .. import LAB_SPEC_VERSION
+from . import decision as _decision
 
 HEADER_FIELDS = ("seq", "id", "type", "at", "by", "prev", "content_hash", "supersedes", "origin")
 
@@ -51,7 +52,18 @@ ENUM = {
     "plan_kind": {"confirmatory", "exploratory"},
     "run_label": {"confirmatory", "exploratory"},
     "exit_status": {"success", "failed", "crashed", "cancelled"},
+    "status_rule": {"supported", "not_supported", "neither"},
 }
+
+#: The first version of this specification with decision rules (L15-L17).
+STRICT_VERSION = (0, 5)
+
+
+def version_tuple(v):
+    try:
+        return tuple(int(x) for x in str(v).split("."))
+    except ValueError:
+        return (0,)
 
 HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 ORCID_RE = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
@@ -130,6 +142,10 @@ class State:
         self.agent_events = []
         self.merged = {}
         self._last_merge = None
+        self.spec_version = None
+        self.pos = {}            # event ID -> position in this state's events
+        self.plan_runs = {}      # plan root -> successful confirmatory runs under it, in order
+        self.results_of = {}     # run ID -> result events
         self.events = []
         self.by_id = {}
         self.max_num = {}
@@ -150,6 +166,49 @@ class State:
         while e is not None and e["id"] in self.superseded_by:
             e = self.by_id[self.superseded_by[e["id"]]]
         return e
+
+    @property
+    def strict(self):
+        """Whether rules L15-L17 apply: the record was begun under v0.5 or later."""
+        return self.spec_version is not None and self.spec_version >= STRICT_VERSION
+
+    def plan_rule_version(self, plan_id):
+        """The version of a plan whose decision rule decides it: the latest version written before its
+        first deciding run, or the latest version if it has none yet. None if withheld."""
+        root = self.root(plan_id)
+        runs = self.plan_runs.get(root, [])
+        named = runs[0]["body"].get("plan_version") if runs else None
+        if isinstance(named, str) and named in self.by_id:
+            e = self.by_id[named]   # the version in force when the first deciding run was made
+            return None if is_withheld(e) else e
+        limit = self.pos[runs[0]["id"]] if runs else len(self.events)
+        found = None
+        for v in _chain(self, root):
+            e = self.by_id.get(v)
+            if e is not None and self.pos.get(v, limit) < limit:
+                found = None if is_withheld(e) else e
+        return found
+
+    def deciding_runs(self, plan_id):
+        """(rule version, deciding runs) of a decided plan, or None if it is not decided (§5.7.2)."""
+        pv = self.plan_rule_version(plan_id)
+        if pv is None or pv["body"].get("kind") != "confirmatory":
+            return None
+        n = pv["body"].get("runs", 1)
+        runs = self.plan_runs.get(self.root(plan_id), [])
+        if not isinstance(n, int) or n < 1 or len(runs) < n:
+            return None
+        return pv, runs[:n]
+
+    def decided_plans_for(self, hypothesis_id):
+        """Decided plans naming the hypothesis: {plan root: (rule version, deciding runs)}."""
+        h = self.root(hypothesis_id)
+        out = {}
+        for root in self.plan_runs:
+            d = self.deciding_runs(root)
+            if d and h in {self.root(x) for x in d[0]["body"].get("hypotheses") or [] if isinstance(x, str)}:
+                out[root] = d
+        return out
 
     def type_of(self, eid):
         e = self.by_id.get(eid)
@@ -172,6 +231,16 @@ class State:
             return
         eid = event["id"]
         self.by_id[eid] = event
+        self.pos[eid] = len(self.events) - 1
+        body = event.get("body") if isinstance(event.get("body"), dict) else {}
+        visible = not is_withheld(event)
+        if event["type"] == "init" and visible:
+            self.spec_version = version_tuple(body.get("lab_spec_version"))
+        if event["type"] == "run" and visible and body.get("label") == "confirmatory" \
+                and body.get("exit_status") == "success" and isinstance(body.get("plan"), str):
+            self.plan_runs.setdefault(self.root(body["plan"]), []).append(event)
+        if event["type"] == "result" and visible and isinstance(body.get("run"), str):
+            self.results_of.setdefault(body["run"], []).append(event)
         m = ID_RE.match(eid)
         if m:
             key, n = (m.group(1), m.group(2)), int(m.group(3))
@@ -344,6 +413,12 @@ def check_status(state, body, by, eid):
         raise LabError("L7", f"status: '{to}' requires evidence (run, result or other event IDs)")
     if to == "revised":
         _ref(state, _req(body, "revised_to", "status"), "status", "revised_to", {"hypothesis"})
+    if body.get("rule") is not None:
+        _enum(body, "rule", "status_rule", "status")
+    if body.get("plan") is not None:
+        _ref(state, body["plan"], "status", "plan", {"plan"})
+    if state.strict:
+        _check_verdict(state, body, target, to, evidence)
     if to == "supported":
         hyp = state.latest(target)
         prompted = set(hyp["body"].get("prompted_by") or []) if not is_withheld(hyp) else set()
@@ -356,6 +431,44 @@ def check_status(state, body, by, eid):
             if ev and ev["type"] == "result" and not is_withheld(ev) and ev["body"].get("run") in prompted_runs:
                 raise LabError("L6", f"status: {e} comes from run {ev['body']['run']}, which suggested "
                                      f"hypothesis {target}; confirm it with a new run")
+
+
+def _check_verdict(state, body, target, to, evidence):
+    """Rule L17: once a planned test of the hypothesis has run, statuses report its verdict."""
+    decided = state.decided_plans_for(target)
+    named = body.get("plan")
+    if not decided:
+        if named is not None and state.latest(named)["body"].get("kind") == "confirmatory" \
+                and not is_withheld(state.latest(named)):
+            raise LabError("L17", f"status: plan {named} has not had its deciding runs yet")
+        return
+    plans = ", ".join(sorted(decided))
+    if to not in _decision.OUTCOMES:
+        raise LabError("L17", f"status: the planned test of {target} under {plans} has run; report its verdict "
+                              f"(supported, not_supported or inconclusive) with --plan. A planned test is reported, "
+                              f"not set aside; to refine the hypothesis, record a new one prompted by the result")
+    if named is None or state.root(named) not in decided:
+        raise LabError("L17", f"status: name the plan whose test decided {target} (--plan {plans})")
+    pv, runs = decided[state.root(named)]
+    cited = set(evidence)
+    for r in runs:
+        if r["id"] not in cited and not any(x["id"] in cited for x in state.results_of.get(r["id"], [])):
+            raise LabError("L17", f"status: cite the deciding run {r['id']} of {named}, or its results")
+    rule = pv["body"]["decision"]
+    if rule.get("framework") in _decision.WITH_QUANTITIES:
+        results = [x["body"] for r in runs for x in state.results_of.get(r["id"], [])]
+        out = _decision.verdict(rule, results)
+        if to != out["verdict"]:
+            shown = ", ".join(f"{k} = {v}" for k, v in out["values"].items())
+            why = "; ".join(out["problems"]) or f"with {shown}, the rule of {pv['id']} gives {out['verdict']}"
+            raise LabError("L17", f"status: {to} does not follow from plan {pv['id']}: {why}")
+    else:
+        stated = body.get("rule")
+        if stated is None:
+            raise LabError("L17", f"status: plan {pv['id']} has text rules; say which one the evidence met "
+                                  f"(--rule supported, not_supported or neither)")
+        if _decision.TEXT_RULE_OUTCOME[stated] != to:
+            raise LabError("L17", f"status: rule '{stated}' gives {_decision.TEXT_RULE_OUTCOME[stated]}, not {to}")
 
 
 def check_assumption(state, body, by, eid):
@@ -418,7 +531,18 @@ def check_plan(state, body, by, eid):
     if kind == "confirmatory":
         if not hyps:
             raise LabError("schema", "plan: a confirmatory plan names the hypotheses it tests")
-        _req(body, "criterion", "plan")
+        if state.strict:
+            if body.get("decision") is None:
+                raise LabError("L15", "plan: a confirmatory plan needs a decision rule (--framework, its parameters, "
+                                      "--quantity, --supported and --not-supported), fixed before any run")
+            probs = _decision.problems(body["decision"])
+            if probs:
+                raise LabError("L15", "plan: " + "; ".join(probs))
+            runs = body.get("runs", 1)
+            if not isinstance(runs, int) or isinstance(runs, bool) or runs < 1:
+                raise LabError("L15", "plan: runs must be a positive integer")
+        else:
+            _req(body, "criterion", "plan")
     for d in body.get("data") or []:
         if not isinstance(d, dict) or not d.get("description"):
             raise LabError("schema", "plan: each data entry needs a description")
@@ -446,14 +570,27 @@ def check_run(state, body, by, eid):
     plan_id = body.get("plan")
     if plan_id is not None:
         _ref(state, plan_id, "run", "plan", {"plan"})
+    version = body.get("plan_version")
+    if version is not None:
+        if plan_id is None:
+            raise LabError("schema", "run: plan_version without plan")
+        _ref(state, version, "run", "plan_version", {"plan"})
+        if state.root(version) != state.root(plan_id):
+            raise LabError("L12", f"run: {version} is not a version of plan {plan_id}")
     if label == "confirmatory":
         if plan_id is None:
             raise LabError("L5", "run: a confirmatory run names the confirmatory plan it carries out")
-        plan = state.latest(plan_id)
+        plan = state.get(version) if version is not None else state.latest(plan_id)
         if is_withheld(plan):
             return  # the plan's kind is withheld (§8); the run was checked when it was written
         if plan["body"].get("kind") != "confirmatory":
             raise LabError("L5", f"run: {plan_id} is not a confirmatory plan, so the run is exploratory")
+        if state.strict:
+            d = state.deciding_runs(plan_id)
+            if d:
+                raise LabError("L16", f"run: plan {plan_id} already has its deciding runs "
+                                      f"({', '.join(r['id'] for r in d[1])}); a new test needs a new plan, "
+                                      f"or run it as exploratory")
 
 
 def check_result(state, body, by, eid):

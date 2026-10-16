@@ -117,8 +117,10 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
             raise LabError("schema", f"run: data file {d} does not exist")
         data_entries.append({"path": d, "hash": file_hash(d)})
 
-    probe = {"plan": plan, "label": label, "command": list(argv), "exit_status": "success",
-             "outputs": [], "data": data_entries}
+    plan_version = st.latest(plan)["id"] if plan is not None else None
+    probe = {"plan": plan, "plan_version": plan_version, "label": label, "command": list(argv),
+             "exit_status": "success", "outputs": [], "data": data_entries}
+    probe = {k: v for k, v in probe.items() if v is not None}
     st.check("run", st.next_id("run"), by, probe, None)
 
     runs_dir = lab.root / "runs"
@@ -159,7 +161,7 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
         proc.stderr.close()
     ended = lab.clock()
 
-    body = {"plan": plan, "label": label, "command": list(argv), "code_version": commit, "dirty": dirty,
+    body = {"plan": plan, "plan_version": plan_version, "label": label, "command": list(argv), "code_version": commit, "dirty": dirty,
             "parameters": parameters or None, "seeds": seeds or None, "data": data_entries or None,
             "environment": environment(), "started_at": started, "ended_at": ended,
             "exit_status": status, "exit_code": exit_code, "outputs": _outputs(rdir)}

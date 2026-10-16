@@ -382,6 +382,27 @@ class TestLabRules(Base):
         h["total"] = sum(v for k, v in h.items() if k != "total")
         self.assertRule(self.d, "46")
 
+    def test_47_confirmatory_without_test(self):
+        del claim(self.d, "C2")["test"]
+        self.assertRule(self.d, "47")
+
+    def test_47_test_missing_framework_parameter(self):
+        del claim(self.d, "C2")["test"]["parameters"]["alpha"]
+        self.assertRule(self.d, "47")
+
+    def test_47_test_missing_refutation_rule(self):
+        del claim(self.d, "C4")["test"]["not_supported"]
+        self.assertRule(self.d, "47")
+
+    def test_47_statistical_test_needs_quantities(self):
+        del claim(self.d, "C4")["test"]["quantities"]
+        self.assertRule(self.d, "47")
+
+    def test_47_text_rules_for_formal_tests(self):
+        claim(self.d, "C2")["test"] = {"framework": "formal", "supported": "A proof of the statement.",
+                                       "not_supported": "A counterexample."}
+        self.assertValid(self.d)
+
     def test_agent_log_run_ids_accepted(self):
         self.d["evidence"][0]["lab_runs"] = ["AC2.RN4"]
         self.assertValid(self.d)
