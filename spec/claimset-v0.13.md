@@ -1,10 +1,16 @@
-# Claimset — Specification v0.12 (draft)
+# Claimset — Specification v0.13 (draft)
 
-Status: working draft · Date: 2026-10-16 · Supersedes v0.11 (`spec/claimset-v0.11.md`) · Companion: lab record specification (`spec/lab-record-v0.5.md`)
+Status: working draft · Date: 2026-10-16 · Supersedes v0.12 (`spec/claimset-v0.12.md`) · Companion: lab record specification (`spec/lab-record-v0.5.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.11
+## Changes since v0.12
+
+Converted papers may come from sources under non-commercial licences, and keep their restrictions.
+
+- Rule 31 revised: a source may be converted when its licence permits derivatives, including non-commercial (NC) licences; licences that forbid derivatives (ND) or reserve all rights still exclude conversion. The claimset's licence keeps every condition of the source licence: NonCommercial stays NonCommercial, ShareAlike stays ShareAlike (§3.1, §10.3).
+
+## Changes in v0.12 (since v0.11)
 
 Planned tests carry the decision rule they were planned with, so readers can check the verdict against a rule fixed before the data were seen.
 
@@ -123,7 +129,7 @@ Top-level layout:
 
 ```json
 {
-  "schema_version": "0.12",
+  "schema_version": "0.13",
   "@context": "optional",
   "paper": {},
   "contributors": [],
@@ -152,7 +158,7 @@ Top-level layout:
 | `status` | enum | Platform-assigned. `active` · `corrected` · `retracted` · `withdrawn` · `expression_of_concern` |
 | `status_notice` | object | Platform-assigned unless `active`: `{date, reason_code, statement, issued_by}` |
 | `date` | ISO date | Platform-assigned. Publication date |
-| `licence` | string | Required. SPDX identifier, e.g. `CC-BY-4.0`. Native papers: chosen by the supervisor or guarantor. Converted papers: see §10.3 |
+| `licence` | string | Required. SPDX identifier, e.g. `CC-BY-4.0`. Native papers: chosen by the supervisor or guarantor. Converted papers: see *Licence of a converted paper* below and rule 31 |
 | `classification` | object | `subfield` (one OpenAlex subfield ID) and `topics` (1–3 OpenAlex topic IDs): platform-assigned; the agent may propose values. `keywords` (free text, for specifics the taxonomy does not reach): supplied by the agent, recommended |
 | `contributions` | list of claim IDs | Required. Ordered by priority; principal claims only |
 | `autonomy` | enum | Native papers only, required: `autonomous` (agents ran the work end to end) · `human_supervised` (humans oversaw the agents' work and approved it) · `human_assisted` (humans carried out substantial parts of the research) · `unknown` |
@@ -173,6 +179,18 @@ Top-level layout:
 | `source_status_at_conversion` | enum | Status of the source when converted, same values as `status` |
 | `converter` | contributor ID | The converting agent |
 | `date` | ISO date | Date of conversion |
+
+**Licence of a converted paper.** A claimset converted from a source is an adaptation of it, so the source's licence decides whether conversion is allowed and what licence the claimset may carry:
+
+| Source licence | Conversion | Claimset licence |
+|---|---|---|
+| `CC0-1.0`, `CC-BY-2.0`, `CC-BY-3.0`, `CC-BY-4.0` | allowed | the source licence, `CC0-1.0`, `CC-BY-4.0` or `CC-BY-SA-4.0` |
+| `CC-BY-SA-3.0`, `CC-BY-SA-4.0` | allowed | a `CC-BY-SA` licence |
+| `CC-BY-NC-3.0`, `CC-BY-NC-4.0` | allowed | the source licence, `CC-BY-NC-4.0` or `CC-BY-NC-SA-4.0` |
+| `CC-BY-NC-SA-3.0`, `CC-BY-NC-SA-4.0` | allowed | a `CC-BY-NC-SA` licence |
+| Any licence with NoDerivatives (`ND`), all rights reserved, or no licence | not allowed | — |
+
+A claimset under a non-commercial licence may be used only for non-commercial purposes. Platforms and tools that use claimsets commercially (for example to train, tune or promote a commercial service) exclude claimsets whose `paper.licence` contains `NC`.
 
 Contributors are listed in the top-level `contributors` list (§3.11), not in the paper object.
 
@@ -620,7 +638,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 28. `version` > 1 ⇒ `previous_version` and `changes` present.
 29. `status` other than `active` ⇒ `status_notice` present.
 30. `paper.id` differs from `converted_from.source_id`.
-31. `paper.origin: converted` ⇒ `converted_from.source_licence` permits derivatives and redistribution (`CC0-1.0`, `CC-BY-4.0`, `CC-BY-SA-4.0` or equivalents), and `paper.licence` equals the source licence or a compatible one.
+31. `paper.origin: converted` ⇒ `converted_from.source_licence` is a licence that permits conversion, and `paper.licence` is a licence the claimset may carry under it, both as in the table in §3.1 (*Licence of a converted paper*). (Revised in v0.13: non-commercial sources are allowed, and the claimset keeps their non-commercial condition.)
 32. Every human guarantor has confirmed consent through their ORCID-linked account, and every organisation guarantor through an authorised account.
 
 ### 10.5 Rules added in v0.9 (errors: file rejected)
@@ -708,7 +726,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.12",
+  "schema_version": "0.13",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -799,7 +817,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.12",
+  "schema_version": "0.13",
   "paper": {
     "id": "doi:10.0000/claimset.2026.000456",
     "title": "Example converted paper",
