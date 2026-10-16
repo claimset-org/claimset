@@ -7,9 +7,11 @@ Status: working draft · Date: 2026-10-16 · Supersedes v0.4 · Companion to the
 Strict hypothesis testing: every analysis choice that could be tuned after seeing the data is fixed in the plan, and the verdict follows from the plan's rule.
 
 - A confirmatory plan carries a **decision rule** instead of a free-text criterion: the inferential framework, its parameters (significance level, test, sidedness, correction for multiple tests, sample size and stopping rule, equivalence bounds, prior, thresholds), the results it will be decided on, and rules for both conclusive outcomes, `supported` and `not_supported`; anything else is `inconclusive` (§5.7.1–5.7.3).
-- A plan states how many runs decide it; further confirmatory runs under it are refused (§5.7.2). Each run records the plan version in force when it was made (`plan_version`, §5.9).
-- A verdict on a planned test names the plan and must agree with its rule, computed by the tool from the recorded results where the rule is an expression. Once the planned test has run, the hypothesis cannot be set aside as `revised` or `abandoned` (§5.5).
-- New rules L15–L17 (§6). Export carries the decision rule into the claimset (§9).
+- A plan states how many runs decide it. Every confirmatory run under it counts, whatever its exit status, and further confirmatory runs are refused (§5.7.2). Each run records the plan version in force when it was made (`plan_version`, §5.9).
+- A plan commits its hypotheses: until the test has run, their status can only be `testing` or `abandoned`, and a hypothesis abandoned after the plan was written is not tested. A verdict names the plan and must agree with its rule, computed by the tool from the recorded results where the rule is an expression. A tested hypothesis cannot be set aside, reworded or tested again (§5.5, §5.7.4).
+- Confirmatory runs in an agent log are made under plans written in that log (§3.1).
+- Result values are finite numbers (§5.10).
+- New rules L15–L18 (§6). Export refuses a record whose planned tests lack recorded verdicts, and carries each decision rule into the claimset (§9).
 - Records begun under v0.4 or earlier keep their meaning: their plans have `criterion`, and L15–L17 do not apply to them (§5.1).
 
 ## Changes in v0.4 (since v0.3)
@@ -84,7 +86,7 @@ When several agents work on one lab at the same time, each can write its own log
 2. **Chain.** An agent log has its own `seq` (from 1) and its own hash chain. Its first event's `prev` is the header hash of the latest main-log event when that first event was written. That main-log event is the log's **base**: it records which state of the lab the agent worked from.
 3. **IDs.** Event IDs in an agent log are prefixed by the actor ID: `AC2.H1`, `AC2.RN4`, numbered within the log. IDs therefore never collide between agents. Run output directories use the same IDs (`runs/AC2.RN4/`).
 4. **What an agent sees.** An agent's events may refer to main-log events up to its base and to earlier events in its own log, and to nothing else: not to later main-log events, and not to events in other agent logs.
-5. **What an agent may write.** Only its own actor writes an agent log. `init`, `actor` and `merge` events are written only to the main log. A correction (`supersedes`) in an agent log corrects only an event of the same agent log; other events are corrected in the main log after merging. Human approvals are therefore given in the main log, after the log they approve is merged.
+5. **What an agent may write.** Only its own actor writes an agent log. Its confirmatory runs are made under plans written in the same log, so that two logs never race to run the same planned test. `init`, `actor` and `merge` events are written only to the main log. A correction (`supersedes`) in an agent log corrects only an event of the same agent log; other events are corrected in the main log after merging. Human approvals are therefore given in the main log, after the log they approve is merged.
 6. **Once.** An agent log is merged once. After the merge, the actor's events go to the main log; for new concurrent work, an agent is registered as a new actor.
 7. **Merging.** `merge` appends to the main log a `merge` event (§5.16) followed immediately by the events of the agent logs it names, interleaved in order of `at`, each agent's own order kept, ties broken by actor ID, then `seq`. Each merged event keeps its ID, type, `at`, `by`, `supersedes`, `content_hash` and body, gets a new main-log `seq` and `prev`, and records in `origin` its position and header hash in the agent log: `{log: "agents/AC2.jsonl", seq, header_hash}`. The agent log is kept unchanged, so both chains remain verifiable.
 8. **Refusal.** Before writing anything, the tool verifies each agent log on its own and checks every event against the main log as it will be after the events before it. If any check fails (for example, a status change that is no longer valid because the main log has moved on), nothing is written and the problem is reported.
@@ -191,7 +193,7 @@ A revised hypothesis is a new `H` event; the old one gets a `status` event with 
 - `rationale`: required, self-contained.
 - `evidence`: required for `supported`, `not_supported` and `inconclusive`: run and result IDs.
 - `revised_to`: required for `revised`.
-- `plan`: the confirmatory plan whose test this status reports. Required once a plan naming the hypothesis has its deciding runs (§5.7.2).
+- `plan`: the confirmatory plan whose test this status reports. Required once a plan naming the hypothesis has its deciding runs (§5.7.2). Until then, while a confirmatory plan names the hypothesis, its status can only be `testing` or `abandoned` (§5.7.4).
 - `rule`: for plans whose rules are text (frameworks `formal` and `qualitative`): which rule the evidence met, `supported` · `not_supported` · `neither`.
 
 `abandoned` means dropped without a conclusive test; `not_supported` means tested and refuted under a rule stated in advance; `inconclusive` means tested without either rule being met.
@@ -241,7 +243,7 @@ Everything that decides the outcome is fixed in the plan, before any run: the fr
 
 - `framework`: `frequentist` (a null-hypothesis significance test) · `equivalence` (an equivalence test against stated bounds) · `bayesian` · `deterministic` (a measured quantity compared with fixed thresholds, without sampling uncertainty, e.g. a benchmark or a simulation with fixed seeds) · `formal` (proof or counterexample) · `qualitative` (a stated pattern in qualitative data).
 - `parameters`: the parameters the framework requires (table below), and any others the analysis fixes in advance. Values are numbers or text. Numeric parameters can be used in rules by name.
-- `quantities`: required for `frequentist`, `equivalence`, `bayesian` and `deterministic`. Each name (letters, digits and `_`, starting with a letter) binds to exactly one result of the deciding runs: the result whose `quantity` equals the given text, whose `conditions` include every given key with the given value, read from `field`: `value` (default), `interval.lower` or `interval.upper`.
+- `quantities`: required for `frequentist`, `equivalence`, `bayesian` and `deterministic`. Each name (letters, digits and `_`, starting with a letter) binds to exactly one result of the deciding runs: the result whose `quantity` equals the given text, whose `conditions` include every given key with the given value, read from `field`: `value` (default), `interval.lower` or `interval.upper`. When the plan has more than one deciding run, each quantity also names the run it comes from, `run` (1 for the first deciding run, and so on), and is bound among that run's results only.
 - `supported` and `not_supported`: the rules for the two conclusive outcomes. If neither rule holds, the outcome is `inconclusive`. For frameworks with quantities each rule is an expression (§5.7.3); for `formal` and `qualitative` it is self-contained text stating what observation decides (a proof of the statement, a counterexample; the pattern in the data that would confirm or disconfirm the hypothesis).
 
 | Framework | Required parameters |
@@ -255,13 +257,21 @@ Everything that decides the outcome is fixed in the plan, before any run: the fr
 
 #### 5.7.2 Deciding runs
 
-The **deciding runs** of a confirmatory plan are its first `runs` confirmatory runs that end with exit status `success`. Once a plan has its deciding runs it is **decided**, and further confirmatory runs under it are refused (L16): repeating a test until it comes out favourably is exactly the flexibility the plan removes. Runs that fail are recorded and do not count, so a failed run may be repeated; every attempt stays visible in the record. A new test needs a new plan.
+The **deciding runs** of a confirmatory plan are its first `runs` confirmatory runs, whatever their exit status. Once a plan has its deciding runs it is **decided**, and further confirmatory runs under it are refused (L16): repeating a test until it comes out favourably is exactly the flexibility the plan removes. A run that fails still counts: a script could otherwise write its results and then fail on purpose. If a needed result is missing because a run failed, the verdict is `inconclusive`. Check that scripts work with exploratory runs on other data before the confirmatory run.
 
 #### 5.7.3 Rule expressions
 
-A rule expression uses numbers, names (quantities and numeric parameters), `+ - * /`, unary minus, `abs()`, comparisons (`< <= > >= == !=`, which may be chained: `0 < d < 1`), `and`, `or`, `not` and parentheses. Nothing else is allowed. Every name must be defined in `quantities` or as a numeric parameter (L15).
+A rule expression is at most 1,000 characters long and uses finite numbers, names (quantities and numeric parameters), `+ - * /`, unary minus, `abs()`, comparisons (`< <= > >= == !=`, which may be chained: `0 < d < 1`), `and`, `or`, `not` and parentheses. Nothing else is allowed. Every name must be defined in `quantities` or as a numeric parameter (L15).
 
 The tool evaluates both rules on the results of the deciding runs. The verdict is `supported` if only the `supported` rule holds, `not_supported` if only the `not_supported` rule holds, and `inconclusive` if neither holds. If both hold, the rules overlap and the verdict is `inconclusive`. If a quantity cannot be bound (no result matches, or several do), no conclusive verdict can be computed, and only `inconclusive` can be recorded.
+
+#### 5.7.4 Commitment
+
+A confirmatory plan commits the hypotheses it names to its test (L17, L18):
+- Until the plan is decided, each hypothesis it names can only be set to `testing` or `abandoned`. A verdict reached by other evidence in the meantime would pre-empt the test.
+- A confirmatory run is refused if a hypothesis the plan names was abandoned after the plan was written: an abandoned test is not run.
+- A hypothesis is tested once. A confirmatory plan cannot name a hypothesis that another plan has already run confirmatory runs for, and no confirmatory run is made under a second plan for it. To test it again (a replication, a larger sample), record a new hypothesis prompted by the first result.
+- A hypothesis that has been tested is not corrected: the verdict stays attached to the statement that was tested.
 
 ### 5.8 `approval` (prefix `AP`)
 
@@ -310,7 +320,7 @@ A script reports results by writing a JSON array to the file named by `CLAIMSET_
   "interval": {"level": 0.95, "lower": 0.15, "upper": 0.21}}]
 ```
 
-Each entry needs `quantity` (text) and `value` (a number); `unit`, `interval` and `conditions` are optional. Values are written exactly as computed. An entry that is not valid produces no event and is reported by the tool.
+Each entry needs `quantity` (text) and `value` (a finite number: not NaN or infinite); `unit`, `interval` and `conditions` are optional. Values are written exactly as computed. An entry that is not valid produces no event and is reported by the tool.
 
 ### 5.11 `decision` (prefix `DC`)
 
@@ -352,11 +362,12 @@ L11. A `supersedes` reference names an earlier event of the same type that has n
 L12. Every `id` has the prefix of its `type` and is unique in the log; every reference in a body names an event with a lower `seq`.
 L13. The files of a run directory match the hashes in the run's `outputs`. Run directories are never changed after the run.
 L14. Every entry in `anchors.jsonl` names a `seq` present in the log, and its `head_hash` equals the header hash of the event at that `seq`; the same holds for each agent log the entry names. A mismatch means the log was rewritten after it was anchored.
-L15. A confirmatory plan has a complete decision rule (§5.7.1): a framework, the parameters it requires, and both rules; for frameworks with quantities, every quantity is well formed and every rule is a valid expression whose names are defined (§5.7.3); `runs` is a positive integer.
-L16. A confirmatory run is not made under a plan that already has its deciding runs (§5.7.2).
-L17. Once a confirmatory plan naming a hypothesis has its deciding runs, every later status of that hypothesis is a verdict that names such a plan, cites its deciding runs or their results, and has the outcome the plan's rule gives (§5.5).
+L15. A confirmatory plan has a complete decision rule (§5.7.1): a framework, the parameters it requires, and both rules; for frameworks with quantities, every quantity is well formed (with `run` when there are several deciding runs) and every rule is a valid expression whose names are defined (§5.7.3); `runs` is a positive integer.
+L16. A confirmatory run is not made under a plan that already has its deciding runs (§5.7.2), under a plan one of whose hypotheses was abandoned after the plan was written (§5.7.4), or, in an agent log, under a plan written outside that log (§3.1).
+L17. While a confirmatory plan naming a hypothesis is not decided, the hypothesis's status can only be set to `testing` or `abandoned`. Once such a plan is decided, every later status of the hypothesis is a verdict that names a decided plan naming it, cites its deciding runs or their results, and has the outcome the plan's rule gives (§5.5).
+L18. A hypothesis is tested once: no confirmatory plan names, and no confirmatory run is made for, a hypothesis already named by another plan that has confirmatory runs; and a hypothesis with confirmatory runs is not corrected (§5.7.4).
 
-The tool enforces L1–L5 and L8–L17 mechanically, and refuses L6 and L7 violations. L15–L17 apply to records begun under v0.5 or later.
+The tool enforces L1–L5 and L8–L18 mechanically, and refuses L6 and L7 violations. L15–L18 apply to records begun under v0.5 or later, and to records whose `init` is withheld. Where a check depends on withheld content (a withheld run, result or plan), `verify` does not report it as a violation; withholding lowers verifiability instead (§8).
 
 ## 7. Timestamp anchoring
 
@@ -408,7 +419,8 @@ The header still carries the original `content_hash`, so the chain verifies and 
 **Preconditions.** `export` refuses, and says why, unless:
 - the record verifies (§6);
 - no agent log is unmerged (§3.1);
-- every hypothesis has a final status: `supported`, `not_supported`, `inconclusive`, `revised` or `abandoned`. A hypothesis still `proposed` or `testing` cannot be counted in `paper.exploration`, so it must be closed first, for example as `abandoned` with a rationale.
+- every hypothesis has a final status: `supported`, `not_supported`, `inconclusive`, `revised` or `abandoned`. A hypothesis still `proposed` or `testing` cannot be counted in `paper.exploration`, so it must be closed first, for example as `abandoned` with a rationale;
+- every decided plan has its verdict recorded: the final status of each hypothesis it names is a verdict naming a decided plan. A test that has run is reported.
 
 **Mapping.** The latest correction of each event is used throughout. A hypothesis's **final status** is its last `status` event, a correction standing in its original's place: correcting an earlier status does not make it the latest. An actor's events are those written under its ID or any correction of it. Withheld content (§8) is never guessed: a withheld event is left out of the draft, or the fields it would supply are, and the completion list names it.
 

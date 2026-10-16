@@ -63,6 +63,11 @@ class RuleCase(LabCase):
 
 
 class TestRuleChecks(unittest.TestCase):
+    def test_rule_size_and_constants_limited(self):
+        for bad in ["p * " + "9" * 400 + " < 1", "+".join(["p"] * 600) + " > 0"]:
+            with self.assertRaises(dec.RuleError):
+                dec.parse(bad, {"p"})
+
     def test_complete_rules_pass(self):
         self.assertEqual(dec.problems(FREQ), [])
         self.assertEqual(dec.problems({"framework": "formal", "supported": "A proof of the theorem.",
@@ -150,20 +155,29 @@ class TestPlans(RuleCase):
 class TestDecidingRuns(RuleCase):
     def test_l16_no_confirmatory_run_after_deciding_runs(self):
         pl = self.plan()
-        self.run_(code=2, plan=pl)                  # failed: does not count
         self.run_(plan=pl)                          # deciding run
         msg = self.refused("L16", self.run_, plan=pl)
-        self.assertIn("new plan", msg)
+        self.assertIn("new hypothesis and plan", msg)
         self.run_(plan=pl, exploratory=True)        # still allowed as exploratory
         self.assertTrue(verify(self.lab)["ok"])
 
-    def test_several_deciding_runs(self):
-        rule = dict(FREQ, quantities={"p": {"quantity": "p-value", "conditions": {"seed": 1}}}, supported="p < alpha",
-                    not_supported="p > 0.5")
-        pl = self.plan(rule=rule, runs=2)
-        self.run_(plan=pl)
-        self.run_(plan=pl)
+    def test_failed_run_counts(self):
+        pl = self.plan()
+        rn, rs = self.run_(d=-0.1, lo=-0.2, hi=-0.05, p=0.9, code=1, plan=pl)   # writes results, then fails
         self.refused("L16", self.run_, plan=pl)
+        self.verdict_status("not_supported", rs, pl)
+
+    def test_several_deciding_runs(self):
+        self.refused("L15", self.plan, rule=dict(FREQ, quantities={"p": {"quantity": "p-value"}},
+                                                 supported="p < alpha", not_supported="p > 0.5"), runs=2)
+        rule = dict(FREQ, quantities={"p1": {"quantity": "p-value", "run": 1}, "p2": {"quantity": "p-value", "run": 2}},
+                    supported="p1 < alpha and p2 < alpha", not_supported="p1 > 0.5 and p2 > 0.5")
+        pl = self.plan(rule=rule, runs=2)
+        rn1, rs1 = self.run_(plan=pl)
+        self.refused("L17", self.verdict_status, "supported", rs1, pl)          # not decided yet
+        rn2, rs2 = self.run_(p=0.02, plan=pl)
+        self.refused("L16", self.run_, plan=pl)
+        self.verdict_status("supported", rs1 + rs2, pl)
 
     def test_correction_after_deciding_run_does_not_change_verdict(self):
         pl = self.plan()
@@ -172,6 +186,45 @@ class TestDecidingRuns(RuleCase):
                           "decision": dict(FREQ, supported="d > 0")}, supersedes=pl)
         self.refused("L17", self.verdict_status, "supported", rs, pl)
         self.verdict_status("not_supported", rs, pl)
+
+
+class TestCommitment(RuleCase):
+    """A plan commits its hypotheses to its test; a hypothesis is tested once (L16-L18)."""
+
+    def test_no_verdict_before_the_test_runs(self):
+        pl = self.plan()
+        rn, rs = self.run_()                                          # exploratory
+        msg = self.refused("L17", self.add, "status", {"target": self.h, "to": "supported", "rationale": "r",
+                                                       "evidence": rs})
+        self.assertIn("committed to the test", msg)
+        self.add("status", {"target": self.h, "to": "testing", "rationale": "r"})
+
+    def test_abandoned_before_run_cannot_be_run(self):
+        pl = self.plan()
+        self.add("status", {"target": self.h, "to": "abandoned", "rationale": "r"})
+        self.refused("L16", self.run_, plan=pl)
+
+    def test_hypothesis_tested_once(self):
+        pl = self.plan()
+        rn, rs = self.run_(d=-0.1, lo=-0.2, hi=-0.05, p=0.9, plan=pl)
+        self.verdict_status("not_supported", rs, pl)
+        self.refused("L18", self.plan)
+        self.refused("L18", self.add, "hypothesis", {"statement": "Reworded.", "question": self.q,
+                                                     "origin": "a_priori"}, supersedes=self.h)
+
+    def test_two_plans_written_before_running(self):
+        pl1 = self.plan()
+        pl2 = self.plan()
+        self.run_(plan=pl1)
+        self.refused("L18", self.run_, plan=pl2)
+
+    def test_agent_runs_only_its_own_plans(self):
+        pl = self.plan()
+        self.lab.start_agent(self.agent)
+        self.refused("L16", self.run_, plan=pl)
+        own = self.add("plan", {"kind": "confirmatory", "hypotheses": [self.h], "design": "d", "analysis": "a",
+                                "decision": FREQ})
+        self.run_(plan=own)
 
 
 class TestVerdicts(RuleCase):
@@ -228,6 +281,32 @@ class TestVerdicts(RuleCase):
         self.refused("L17", self.verdict_status, "supported", [rn], pl)
         self.refused("L17", self.verdict_status, "supported", [rn], pl, rule="neither")
         self.verdict_status("supported", [rn], pl, rule="supported")
+
+
+class TestWithheldAndMalformed(RuleCase):
+    def withhold(self, eid):
+        events = [json.loads(l) for l in self.lines()]
+        for e in events:
+            if e["id"] == eid:
+                e["body"] = {"withheld": True, "reason": "commercial"}
+        self.write_lines([canonical(e).decode("utf-8") for e in events])
+
+    def test_withheld_deciding_result_or_run_is_not_a_violation(self):
+        pl = self.plan()
+        rn, rs = self.run_(plan=pl)
+        self.verdict_status("supported", rs, pl)
+        self.withhold(rs[0])
+        self.assertTrue(verify(self.lab)["ok"], verify(self.lab)["errors"])
+        self.withhold(rn)
+        self.assertTrue(verify(self.lab, check_files=False)["ok"])
+
+    def test_non_finite_results_are_reported_not_recorded(self):
+        script = Path(self.tmp.name) / "nan.py"
+        script.write_text("import json, os\nopen(os.environ['CLAIMSET_RESULTS'], 'w').write("
+                          "'[{\"quantity\": \"q\", \"value\": NaN}]')\n")
+        out = run_command(self.lab, self.agent, [sys.executable, str(script)], echo=False, cwd=self.tmp.name)
+        self.assertEqual(out["results"], [])
+        self.assertIn("finite", out["problems"][0])
 
 
 class TestOlderRecords(LabCase):

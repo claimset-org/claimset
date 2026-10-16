@@ -1,6 +1,7 @@
 """Running a command under the lab record (lab record spec §5.9.1)."""
 
 import json
+import math
 import os
 import platform
 import subprocess
@@ -79,8 +80,9 @@ def _parse_results(path):
     good, problems = [], []
     for i, r in enumerate(data):
         v = r.get("value") if isinstance(r, dict) else None
-        if not isinstance(r, dict) or not r.get("quantity") or not isinstance(v, (int, float)) or isinstance(v, bool):
-            problems.append(f"entry {i}: needs 'quantity' (text) and 'value' (a number)")
+        if not isinstance(r, dict) or not isinstance(r.get("quantity"), str) or not r["quantity"].strip() \
+                or not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v):
+            problems.append(f"entry {i}: needs 'quantity' (text) and 'value' (a finite number)")
             continue
         good.append({k: r[k] for k in ("quantity", "value", "unit", "interval", "conditions") if r.get(k) is not None})
     return good, problems

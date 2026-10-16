@@ -196,8 +196,7 @@ def cmd_verdict(args):
            "not_supported": rule.get("not_supported")}
     if d:
         if rule.get("framework") in _decision.WITH_QUANTITIES:
-            results = [x["body"] for r in d[1] for x in st.results_of.get(r["id"], [])]
-            out.update(_decision.verdict(rule, results))
+            out.update(_decision.verdict(rule, [[x["body"] for x in st.results_of.get(r["id"], [])] for r in d[1]]))
         else:
             out["verdict"] = None
             out["note"] = "text rules: judge which rule the evidence meets and record it with --rule"

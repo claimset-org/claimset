@@ -305,21 +305,17 @@ class TestReviewFindings(ExportCase):
         self.assertEqual(out["draft"]["paper"]["contribution_record"], "partial")
         self.assertIn(f"actor {self.human} is withheld", self.todo(out))
 
-    def test_merged_run_judged_against_plan_its_agent_saw(self):
-        pl = self.plan()
+    def test_merged_agent_plan_exports_as_confirmatory(self):
         self.lab.start_agent(self.agent)
+        pl = self.plan()
         rn, rs = self.run_(0.1, "m", plan=pl)
         self.status(self.h, "supported", rs, plan=pl)
-        other = self.lab.append("hypothesis", {"statement": "Other.", "question": self.q, "origin": "a_priori"},
-                                by=self.human)["id"]
-        self.lab.append("plan", {"kind": "confirmatory", "hypotheses": [other], "design": "d2", "analysis": "a",
-                                 "decision": rule()}, by=self.human, supersedes=pl)
-        self.lab.append("status", {"target": other, "to": "abandoned", "rationale": "r"}, by=self.human)
         self.lab.merge(self.human)
         out = export(self.lab)
         c = self.claim(out, self.h)
         self.assertEqual(c["planning"], "confirmatory")
-        self.assertIn(f"under plan {pl}.", out["draft"]["evidence"][0]["description"])
+        self.assertEqual(c["test"]["lab_plan"], pl)
+        self.assertTrue(pl.startswith(self.agent + "."))
 
     def test_check_by_author_is_not_exported(self):
         rn, rs = self.run_(0.1, "m")

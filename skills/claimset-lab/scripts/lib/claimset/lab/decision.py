@@ -23,6 +23,7 @@ FIELDS = ("value", "interval.lower", "interval.upper")
 OUTCOMES = ("supported", "not_supported", "inconclusive")
 TEXT_RULE_OUTCOME = {"supported": "supported", "not_supported": "not_supported", "neither": "inconclusive"}
 NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+MAX_RULE_LENGTH = 1000
 
 _BINOPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv}
 _CMPOPS = {ast.Lt: operator.lt, ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge,
@@ -34,7 +35,12 @@ class RuleError(ValueError):
 
 
 def _is_number(v):
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    if not isinstance(v, (int, float)) or isinstance(v, bool):
+        return False
+    try:
+        return math.isfinite(v)
+    except OverflowError:
+        return False
 
 
 def _check_node(node, names):
@@ -57,6 +63,8 @@ def _check_node(node, names):
         if node.id not in names:
             raise RuleError(f"'{node.id}' is not a quantity or numeric parameter of the plan")
     elif isinstance(node, ast.Constant):
+        if isinstance(node.value, (int, float)) and not isinstance(node.value, bool) and not _is_number(node.value):
+            raise RuleError("a constant is too large")
         if not _is_number(node.value):
             raise RuleError(f"only numbers are allowed as constants, not {node.value!r}")
     elif isinstance(node, ast.Call):
@@ -72,6 +80,8 @@ def parse(expr, names):
     """Parse and check a rule expression; return its tree. Raise RuleError if it is not allowed."""
     if not isinstance(expr, str) or not expr.strip():
         raise RuleError("the rule is empty")
+    if len(expr) > MAX_RULE_LENGTH:
+        raise RuleError(f"the rule is longer than {MAX_RULE_LENGTH} characters")
     try:
         tree = ast.parse(expr.strip(), mode="eval")
     except SyntaxError as exc:
@@ -105,7 +115,7 @@ def _eval(node, env):
     if isinstance(node, ast.Name):
         return env[node.id]
     if isinstance(node, ast.Constant):
-        return node.value
+        return float(node.value)
     if isinstance(node, ast.Call):
         return abs(_eval(node.args[0], env))
     raise RuleError(f"'{type(node).__name__}' is not allowed in a rule")
@@ -116,8 +126,11 @@ def numeric_parameters(decision):
     return {k: v for k, v in params.items() if isinstance(k, str) and NAME_RE.match(k) and _is_number(v)}
 
 
-def problems(decision):
-    """Everything that makes a decision rule incomplete or invalid (rule L15); empty if it is complete."""
+def problems(decision, runs=1):
+    """Everything that makes a decision rule incomplete or invalid (rule L15); empty if it is complete.
+
+    `runs` is the plan's number of deciding runs: with more than one, each quantity names its run.
+    """
     if not isinstance(decision, dict):
         return ["decision must be an object {framework, parameters, quantities, supported, not_supported}"]
     out = []
@@ -161,6 +174,11 @@ def problems(decision):
                 out.append(f"conditions of quantity '{name}' must be an object")
             if spec.get("field", "value") not in FIELDS:
                 out.append(f"field of quantity '{name}' must be one of {', '.join(FIELDS)}")
+            r = spec.get("run")
+            if r is not None and not (isinstance(r, int) and not isinstance(r, bool) and 1 <= r <= max(runs, 1)):
+                out.append(f"run of quantity '{name}' must be a deciding run's number, 1 to {runs}")
+            elif r is None and isinstance(runs, int) and runs > 1:
+                out.append(f"quantity '{name}' must say which deciding run it comes from (\"run\": 1 to {runs})")
         names |= set(q)
         for outcome in ("supported", "not_supported"):
             try:
@@ -175,19 +193,41 @@ def problems(decision):
     return out
 
 
+def _by_run(results):
+    """Results as a list per deciding run; a flat list of result bodies counts as one run."""
+    if results and all(isinstance(r, list) for r in results):
+        return results
+    return [list(results)]
+
+
 def bind(decision, results):
-    """Bind each quantity to one result. Returns (values, problems); `results` are result bodies."""
+    """Bind each quantity to one result. Returns (values, problems).
+
+    `results` holds the result bodies of the deciding runs: a list per run, in order, or a flat list
+    for a single run.
+    """
     values, probs = {}, []
-    for name, spec in (decision.get("quantities") or {}).items():
-        cond = spec.get("conditions") or {}
-        matches = [r for r in results if r.get("quantity") == spec.get("quantity")
-                   and all((r.get("conditions") or {}).get(k) == v for k, v in cond.items())]
+    per_run = _by_run(results)
+    quantities = decision.get("quantities") if isinstance(decision.get("quantities"), dict) else {}
+    for name, spec in quantities.items():
+        if not isinstance(spec, dict):
+            probs.append(f"quantity '{name}' is not well formed")
+            continue
+        cond = spec.get("conditions") if isinstance(spec.get("conditions"), dict) else {}
+        run = spec.get("run")
+        pool = per_run[run - 1] if isinstance(run, int) and 1 <= run <= len(per_run) else \
+            [r for rs in per_run for r in rs]
+        matches = [r for r in pool if isinstance(r, dict) and r.get("quantity") == spec.get("quantity")
+                   and all((r.get("conditions") if isinstance(r.get("conditions"), dict) else {}).get(k) == v
+                           for k, v in cond.items())]
         if len(matches) != 1:
-            probs.append(f"quantity '{name}' matches {len(matches)} results of the deciding runs, not exactly one")
+            where = f"deciding run {run}" if run else "the deciding runs"
+            probs.append(f"quantity '{name}' matches {len(matches)} results of {where}, not exactly one")
             continue
         field = spec.get("field", "value")
         r = matches[0]
-        v = r.get("value") if field == "value" else (r.get("interval") or {}).get(field.split(".")[1])
+        interval = r.get("interval") if isinstance(r.get("interval"), dict) else {}
+        v = r.get("value") if field == "value" else interval.get(str(field).split(".")[-1])
         if not _is_number(v):
             probs.append(f"quantity '{name}' has no numeric {field}")
             continue

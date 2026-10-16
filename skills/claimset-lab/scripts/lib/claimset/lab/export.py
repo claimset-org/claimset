@@ -52,8 +52,22 @@ class _Exporter:
         self.roots = [e for e in st.events if e["id"] == st.root(e["id"])]
         self.hyps = [e for e in self.roots if e["type"] == "hypothesis"]
         self.statuses = final_statuses(st)
+        for h in (self.hyps if st.strict else []):
+            decided = st.decided_plans_for(h["id"])
+            final = self.statuses.get(h["id"])
+            if decided and (final is None or final["body"].get("plan") is None
+                            or st.root(final["body"]["plan"]) not in decided):
+                plans = ", ".join(sorted(decided))
+                raise LabError("export", f"the planned test of {h['id']} under {plans} has run but its verdict is not "
+                                         f"recorded; see `claimset lab verdict {sorted(decided)[0]}` and record it "
+                                         f"with `claimset lab status {h['id']} … --plan`")
         open_ = [h["id"] for h in self.hyps
                  if h["id"] not in self.statuses or self.statuses[h["id"]]["body"].get("to") not in FINAL]
+        pending = [h for h in open_ if st.strict and st.committed_plans(h)]
+        if pending:
+            raise LabError("export", f"hypotheses {', '.join(pending)} are committed to planned tests that have not "
+                                     f"run ({', '.join(sorted({p for h in pending for p in st.committed_plans(h)}))}); "
+                                     f"run them, or record the hypotheses as abandoned")
         if open_:
             raise LabError("export", f"hypotheses {', '.join(open_)} have no final status (supported, not_supported, "
                                      f"inconclusive, revised or abandoned); record one with `claimset lab status`, "
