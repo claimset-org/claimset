@@ -45,8 +45,7 @@ def converted_base():
     for c in d["claims"]:
         c["provenance"] = "extracted"
         c["source_spans"] = ["sec1:p1"]
-        for a in c.get("assessments", []):
-            a["by"] = "converter"
+        c.pop("assessments", None)
     return d
 
 
@@ -699,6 +698,63 @@ class TestRulesV016(Base):
         claim(d, "C2")["field_provenance"] = {"statement": "inferred"}
         errors, _ = self.rules(d)
         self.assertNotIn("52", errors)
+
+
+class TestRulesV017(Base):
+    def test_53_no_converter_or_reviewer_assessments_in_converted_papers(self):
+        for by in ("converter", "reviewer"):
+            d = converted_base()
+            claim(d, "C2")["assessments"] = [{"by": by, "reviewer_type": "ai", "strength": "low", "rationale": "x"}]
+            self.assertRule(d, "53")
+
+    def test_53_source_stated_strength_in_converted_paper(self):
+        d = converted_base()
+        claim(d, "C2")["assessments"] = [{"by": "author", "strength": "low", "rationale": "the source says the evidence is weak",
+                                          "source_span": "p3.2"}]
+        errors, _ = self.rules(d)
+        self.assertNotIn("53", errors)
+
+    def test_53_converter_assessment_in_native_paper(self):
+        d = load("submission-native.json")
+        claim(d, "C2")["assessments"] = [{"by": "converter", "strength": "low", "rationale": "x"}]
+        self.assertRule(d, "53")
+
+
+class TestReadingView(Base):
+    def setUp(self):
+        from claimset.render import render
+        self.render = render
+
+    def test_render_keeps_reading_fields_and_drops_audit_fields(self):
+        d = converted_base()
+        with_table(d)
+        text = self.render(d)
+        for c in d["claims"]:
+            self.assertIn(c["statement"], text)
+        self.assertIn("| r1 | M | 0.861 | 6.95 |", text)
+        for audit in ("source_spans", "provenance", "sec1:p1", "harness", "availability", "https://"):
+            self.assertNotIn(audit, text)
+
+    def test_render_is_deterministic_and_shorter(self):
+        d = load("submission-native.json")
+        self.assertEqual(self.render(d), self.render(copy.deepcopy(d)))
+        self.assertLess(len(self.render(d)), len(json.dumps(d, separators=(",", ":"))))
+
+    def test_appendix_d_matches_the_renderer(self):
+        spec = (ROOT / "spec" / "claimset-v0.17.md").read_text(encoding="utf-8")
+        self.assertIn(self.render(load("submission-native.json")), spec)
+
+    def test_render_command_refuses_invalid_file(self):
+        import tempfile
+        d = load("submission-native.json")
+        claim(d, "C2")["role"] = "background"
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+            json.dump(d, fh)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = cli.main(["render", fh.name])
+        self.assertEqual(code, 1)
+        Path(fh.name).unlink()
 
 
 if __name__ == "__main__":

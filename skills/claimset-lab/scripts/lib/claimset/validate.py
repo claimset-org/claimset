@@ -22,7 +22,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.16"
+SCHEMA_VERSION = "0.17"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -82,7 +82,7 @@ ENUM = {
                      "argument", "cited", "consensus", "expert_judgement", "assumption", "unstated"},
     "id_type": {"doi", "arxiv", "handle", "pmid", "isbn", "url", "physical", "reference"},
     "rel_id_type": {"claimset", "doi", "arxiv", "handle", "pmid", "isbn", "url", "physical"},
-    "by": {"author", "converter", "reviewer"},
+    "by": {"author", "reviewer"},
     "reviewer_type": {"ai", "human"},
     "strength": {"high", "moderate", "low", "very_low"},
 }
@@ -1024,14 +1024,16 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
     for i, a in enumerate(as_list(c.get("assessments"))):
         a = as_dict(a)
         aw = f"{w}.assessments[{i}]"
-        check_enum(r, "1", f"{aw}.by", a.get("by"), "by", required=True)
+        if a.get("by") == "converter" or (converted and a.get("by") == "reviewer"):
+            r.err("53", f"{aw}.by", "a converted paper records only strengths its source states (by: author, with "
+                                    "source_span); judgements of the conversion are platform assessments")
+        else:
+            check_enum(r, "1", f"{aw}.by", a.get("by"), "by", required=True)
         check_enum(r, "1", f"{aw}.strength", a.get("strength"), "strength", required=True)
         if a.get("by") == "reviewer":
             check_enum(r, "1", f"{aw}.reviewer_type", a.get("reviewer_type"), "reviewer_type", required=True)
         if converted and a.get("by") == "author" and not a.get("source_span"):
             r.err("23", aw, "in converted papers, by: author assessments require source_span")
-        if not converted and a.get("by") == "converter":
-            r.err("1", aw, "by: converter assessments appear only in converted papers")
 
 
 def compute_verifiability(c, by_id):

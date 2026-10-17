@@ -1,10 +1,17 @@
-# Claimset — Specification v0.16 (draft)
+# Claimset — Specification v0.17 (draft)
 
-Status: working draft · Date: 2026-10-16 · Supersedes v0.15 (`spec/claimset-v0.15.md`) · Companion: lab record specification (`spec/lab-record-v0.5.md`)
+Status: working draft · Date: 2026-10-16 · Supersedes v0.16 (`spec/claimset-v0.16.md`) · Companion: lab record specification (`spec/lab-record-v0.5.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.15
+## Changes since v0.16
+
+A claimset is stored as JSON for tools and read by models as plain text. The file of a converted paper carries only what its source says, not the converter's judgements.
+
+- New §2.3: the reading view, a plain-text rendering of a valid claimset for reading models, made mechanically by `claimset render`. It keeps everything a reader needs to understand, use or challenge the claims, and leaves out what serves tools, audit and publication. Reference rendering in Appendix D.
+- Strength assessments: `by: converter` is removed. In converted papers, assessments record only a strength the source itself states (`by: author`); judgements of a conversion and of its claims are platform assessments (§5, §6). New rule 53.
+
+## Changes in v0.16 (since v0.15)
 
 A claimset contains only the paper's own claims. Prior work is linked, not restated: as cited support of the claims that use it, as relations that position the paper's claims, and as borrowed definitions. Cited works are listed once.
 
@@ -160,7 +167,7 @@ Top-level layout:
 
 ```json
 {
-  "schema_version": "0.16",
+  "schema_version": "0.17",
   "@context": "optional",
   "paper": {},
   "contributors": [],
@@ -174,6 +181,15 @@ Top-level layout:
   "references": []
 }
 ```
+
+### 2.3 Reading view
+
+A claimset is stored and exchanged as JSON: the canonical file, which tools validate, the platform publishes and corrections patch. A model that reads the paper is given its **reading view**: a plain-text rendering of the same claimset. JSON field names, quotation marks and the fields that serve tools, audit and publication take a large share of a file and carry nothing a reader needs; the reading view leaves them out.
+
+- **Kept:** the title, licence, source of a converted paper, contributions and exploration counts; definitions; claims with their type, role, novelty (when not `new`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes, and test; evidence with its description, design fields, estimate, results, tables and proof steps; warrants; limitations; artefact descriptions; references.
+- **Left out:** `provenance`, `field_provenance`, `source_spans`, `corrections`, availability, artefact locations, versions and licences, contributors, models, execution records, lab-record identifiers, `schema_version` and the platform's publication fields.
+
+The reading view is made mechanically from a valid file (`claimset render`); it adds nothing and is never edited. Its layout is the reference rendering in Appendix D. A reader that needs a field left out (a source span to check a claim against its source, an artefact's location) reads the canonical file.
 
 ## 3. Object types
 
@@ -217,7 +233,7 @@ Top-level layout:
 - `field`: the corrected location in the claimset, as an object ID and a field path, e.g. `C28.statement`.
 - `where`: the source span of the error.
 - `printed`: what the source says. `recorded`: what the claimset says instead. `reason`: why the source is evidently in error, e.g. `"Akaike's information criterion is 2k − 2ℓ(θ); the sign of ℓ is inverted in Equation (1)"`.
-Disagreements with the source that are not evident errors are not corrections: the claim records what the source says, and a converter's assessment may question it.
+Disagreements with the source that are not evident errors are not corrections: the claim records what the source says, and the platform's review of the conversion may question it (§6).
 
 **Licence of a converted paper.** A claimset converted from a source is an adaptation of it, so the source's licence decides whether conversion is allowed and what licence the claimset may carry:
 
@@ -621,7 +637,7 @@ Attributes:
 Two separate dimensions. Confidential evidence is less verifiable, not necessarily weaker.
 
 **Strength** is a list of assessments, so multiple parties can assess the same claim and disagreements stay visible: `{by, reviewer_type, strength, rationale, source_span}`
-- `by`: `author` · `converter` · `reviewer`. In converted papers, `author` records only a strength the source itself states (e.g. "weak evidence suggests"), and `source_span` is required; all other assessments of a converted claim are `converter` or `reviewer`.
+- `by`: `author` · `reviewer`. In converted papers, assessments record only a strength the source itself states (e.g. "weak evidence suggests"), as `by: author` with a `source_span`. A converter does not assess the claims it converts: what the source does not say is not in the file, and judgements of a conversion and its claims are platform assessments (§6).
 - `reviewer_type`: `ai` · `human` (required for `reviewer`)
 - `strength`: `high` · `moderate` · `low` · `very_low` (ordinal, after GRADE / GRADE-CERQual; no numeric confidence)
 - Not applicable to assumption claims or formal claims.
@@ -772,6 +788,10 @@ The platform mints a DOI for every published claimset. The file records identifi
 51. `references`: each entry has an `id` (`B1`, `B2`, …) unique in the file, a `target` and an `id_type` from the list for cited support, and `archive_uri` when `id_type` is `url`. Every `reference` in a support entry or relation, and every definition `source` that looks like a reference ID, resolves to an entry; every entry is pointed to at least once.
 52. Each entry of `converted_from.corrections` whose `field` names a claim field corresponds to that field's provenance being `inferred` (through `field_provenance`, or the claim's `provenance`).
 
+### 10.12 Rules added in v0.17 (errors: file rejected)
+
+53. Assessments have `by: author` or `by: reviewer` (`converter` removed in v0.17); in converted papers, only `by: author`.
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -832,7 +852,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.16",
+  "schema_version": "0.17",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -925,7 +945,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.16",
+  "schema_version": "0.17",
   "paper": {
     "id": "doi:10.0000/claimset.2026.000456",
     "title": "Example converted paper",
@@ -955,9 +975,8 @@ What the agent submits. No identifier, version, date, status, classification IDs
   "claims": [
     {
       "id": "C2", "statement": "Store-level demand for umbrellas rises on days with rainfall above 5 mm.",
-      "type": "associational", "role": "supporting", "novelty": "restatement",
+      "type": "associational", "role": "supporting", "novelty": "new",
       "support": [{"kind": "unstated"}],
-      "assessments": [{"by": "converter", "strength": "very_low", "rationale": "Asserted in the source without data or citation."}],
       "verifiability": "unverifiable", "verifiability_flags": ["unstated_support"],
       "source_spans": ["sec2:p4"], "provenance": "extracted"
     }
@@ -966,3 +985,34 @@ What the agent submits. No identifier, version, date, status, classification IDs
 ```
 
 Appendix C is abbreviated: the principal claim C1 and the remaining sections are omitted.
+
+## Appendix D: reading view of the paper in Appendix A
+
+The output of `claimset render` for the submission in Appendix A. Statements keep their inline term markers (`[[D1:…]]`), which a reader resolves in DEFINITIONS.
+
+```text
+CLAIMSET Method M against the seasonal naive benchmark on UK monthly retail sales
+licence CC-BY-4.0; contributions C2
+
+DEFINITIONS
+D1 forecast skill: Relative reduction in mean absolute scaled error against a seasonal naive benchmark.
+
+CLAIMS
+C1 [descriptive; supporting; assumption (data, unchecked)]
+  Monthly retail sales series exhibit annual seasonality.
+C3 [descriptive; supporting; assumption (statistical, unchecked)]
+  Forecast errors of method M are independent across series.
+C2 [descriptive; principal; support: empirical_quant E1 artefacts A2; assumes C1, C3; limitations L1; strength moderate (author)]
+  Method M improves [[D1:forecast skill]] over the seasonal naive benchmark on monthly retail sales series.
+  scope: population: monthly retail sales series | geography: United Kingdom | language: not applicable | period: 2010-2024 | data_type: aggregate sales counts | conditions: horizon of 1 to 12 months | excludes: series shorter than 36 observations
+
+EVIDENCE
+E1 [quant; design benchmark; data_origin secondary; n 1200] Benchmark of method M against the seasonal naive method on 1,200 monthly retail sales series, rolling origin, horizons 1 to 12.
+  estimate: mean relative MASE reduction = 0.08 (95% interval 0.05 to 0.11)
+
+LIMITATIONS
+L1 [sampling; affects C2; reduces_transferability; mitigation none] All 1,200 series come from one retailer's store network.
+
+ARTEFACTS
+A2 [table] Mean relative MASE reduction of method M by forecast horizon, 1 to 12 months.
+```
