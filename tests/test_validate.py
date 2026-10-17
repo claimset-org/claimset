@@ -105,9 +105,11 @@ class TestRulesEveryFile(Base):
         claim(self.d, "C3")["assessments"] = [{"by": "author", "strength": "high", "rationale": "x"}]
         self.assertRule(self.d, "3")
 
-    def test_04_background_not_restatement(self):
-        claim(self.d, "C1")["novelty"] = "new"
-        self.assertRule(self.d, "4")
+    def test_04_claims_are_the_papers_own(self):
+        for field, value in (("role", "background"), ("novelty", "restatement")):
+            d = load("submission-native.json")
+            claim(d, "C2")[field] = value
+            self.assertRule(d, "4")
 
     def test_05_contribution_not_principal(self):
         self.d["paper"]["contributions"].append("C1")
@@ -644,6 +646,59 @@ class TestRulesV015(Base):
             d = load("submission-native.json")
             d["definitions"].append({"id": "D9", "term": "MASE", "definition": "x", "source": bad})
             self.assertRule(d, "50")
+
+
+class TestRulesV016(Base):
+    def setUp(self):
+        self.d = load("submission-native.json")
+
+    def add_refs(self, d):
+        d["references"] = [{"id": "B1", "target": "10.1016/j.ijforecast.2006.03.001", "id_type": "doi"},
+                           {"id": "B2", "target": "Hyndman, R. J. et al. (2002). A state space framework. IJF 18(3).",
+                            "id_type": "reference"}]
+        c = claim(d, "C2")
+        c["support"].append({"kind": "cited", "reference": "B1", "locator": "Section 3"})
+        c["relations"] = [{"type": "addresses", "reference": "B2",
+                           "note": "Selection among ETS models often misidentifies the type of trend."}]
+
+    def test_references_cited_and_related_by_id(self):
+        d = converted_base()
+        self.add_refs(d)
+        self.assertValid(d)
+
+    def test_51_unresolved_or_unused_references(self):
+        cases = [
+            lambda d: claim(d, "C2")["support"][-1].update(reference="B9"),
+            lambda d: claim(d, "C2")["relations"][0].update(reference="B9"),
+            lambda d: d["references"].append({"id": "B3", "target": "10.1/x", "id_type": "doi"}),
+            lambda d: d["references"][0].update(id_type="website"),
+            lambda d: d["references"][0].update(id_type="url"),
+            lambda d: d["definitions"].append({"id": "D9", "term": "x", "definition": "x", "source": "B7"}),
+        ]
+        for change in cases:
+            d = converted_base()
+            self.add_refs(d)
+            change(d)
+            self.assertRule(d, "51")
+
+    def test_w14_printed_reference_in_native_paper(self):
+        self.add_refs(self.d)
+        self.assertWarning(self.d, "W14")
+
+    def test_34_relation_needs_reference_or_target(self):
+        claim(self.d, "C2")["relations"] = [{"type": "addresses", "note": "x"}]
+        self.assertRule(self.d, "34")
+        claim(self.d, "C2")["relations"] = [{"type": "addresses", "target": "10.1/x", "id_type": "doi", "note": ""}]
+        self.assertRule(self.d, "34")
+
+    def test_52_listed_correction_must_be_marked_inferred(self):
+        d = converted_base()
+        d["paper"]["converted_from"]["corrections"] = [
+            {"field": "C2.statement", "where": "p2.3", "printed": "a", "recorded": "b", "reason": "r"}]
+        self.assertRule(d, "52")
+        claim(d, "C2")["field_provenance"] = {"statement": "inferred"}
+        errors, _ = self.rules(d)
+        self.assertNotIn("52", errors)
 
 
 if __name__ == "__main__":
