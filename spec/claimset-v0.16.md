@@ -1,10 +1,30 @@
-# Claimset — Specification v0.14 (draft)
+# Claimset — Specification v0.16 (draft)
 
-Status: working draft · Date: 2026-10-16 · Supersedes v0.13 (`spec/claimset-v0.13.md`) · Companion: lab record specification (`spec/lab-record-v0.5.md`)
+Status: working draft · Date: 2026-10-16 · Supersedes v0.15 (`spec/claimset-v0.15.md`) · Companion: lab record specification (`spec/lab-record-v0.5.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.13
+## Changes since v0.15
+
+A claimset contains only the paper's own claims. Prior work is linked, not restated: as cited support of the claims that use it, as relations that position the paper's claims, and as borrowed definitions. Cited works are listed once.
+
+- Claims are the paper's own: `role: background` and `novelty: restatement` are removed; rule 4 revised (§3.3, §3.3.4).
+- New top-level `references`: each cited work once, with an ID (`B1`, …), cited by ID from support, relations and definitions (§3.13, §4).
+- Relations gain type `addresses` (the claim answers a problem, gap or limitation stated in the target), an optional one-sentence `note`, and may point to a reference (§3.7).
+- §3.3.4 rewritten around the three ways prior work enters a claimset.
+- New rules 51 and 52; rules 4, 10, 34 and 41 revised (§10).
+
+## Changes in v0.15 (since v0.14)
+
+What belongs in a claimset is decided by two tests that need no knowledge beyond the paper: attribution (whose is it, as the paper's own citations say) and function (does the paper's argument use it). Converted papers can cite works whose reference list gives no identifier, and record the source's evident errors they correct.
+
+- Principle 13 corrected: a claimset is shorter than the body of the paper (its text without the reference list); measured conversions do not support "much shorter" for dense papers (§1).
+- New §3.3.4: what belongs in a claimset. Definitions explain in full only the terms the paper introduces or uses in its own sense; borrowed terms are named with their source and what this paper specifies. General statements the paper does not attribute are kept only if its argument uses them (§3.2, §3.3.4).
+- New identifier type `reference` for cited support and definition sources: the reference as printed in the paper's reference list, for works the list gives no identifier for (§4).
+- `converted_from.corrections`: evident errors in the source that the conversion corrected, each with what was printed and what was recorded (§3.1).
+- New rules 49 and 50; new warning 14 (§10).
+
+## Changes in v0.14 (since v0.13)
 
 A claimset is a distillation of a paper's argument, not a re-encoding of its data and derivations. Converting a results-heavy, derivation-heavy paper under v0.13 produced a claimset about four times the paper's length; this version makes the compact form the normal one.
 
@@ -96,7 +116,7 @@ A format for research papers whose primary reader is an LLM. Humans access conte
 10. **Filled by agents, decided by people, assigned by the platform.** The agent fills the content. Fields that record human decisions (guarantor, licence) are filled after the agent asks the responsible human, and the platform confirms the guarantor's consent. Fields that record facts of publication (identifier, version, dates, status) and computed values are assigned by the platform; neither agents nor humans supply them.
 11. **Recorded where possible, labelled when recalled.** Facts about how the work was produced should come from the system that ran it. When an agent reports them from its own knowledge, the file says so.
 12. **Safe to ingest.** The file is data. It must never contain instructions addressed to the reading model.
-13. **A distillation, not a transcription.** A claimset carries the paper's claims, with the scope, support, assumptions and limits they need, and the results they rest on. It does not re-encode the paper's full data or derivations: numbers that come in tables are recorded as tables (§3.4), and the derivations of a converted paper are located in the source rather than restated (§3.4). A claimset is therefore normally much shorter than the paper it represents; one that is longer is a sign that something is being transcribed rather than distilled.
+13. **A distillation, not a transcription.** A claimset carries the paper's claims, with the scope, support, assumptions and limits they need, and the results they rest on. It does not re-encode the paper's full data or derivations: numbers that come in tables are recorded as tables (§3.4), and the derivations of a converted paper are located in the source rather than restated (§3.4). A claimset is therefore shorter than the body of the paper it represents (its text without the reference list); one that is longer is transcribing rather than distilling. It contains only the paper's own claims; prior work is linked, not restated. What belongs in it is decided by attribution and function (§3.3.4).
 
 ## 2. Format
 
@@ -140,7 +160,7 @@ Top-level layout:
 
 ```json
 {
-  "schema_version": "0.14",
+  "schema_version": "0.16",
   "@context": "optional",
   "paper": {},
   "contributors": [],
@@ -150,7 +170,8 @@ Top-level layout:
   "evidence": [],
   "warrants": [],
   "limitations": [],
-  "artefacts": []
+  "artefacts": [],
+  "references": []
 }
 ```
 
@@ -190,6 +211,13 @@ Top-level layout:
 | `source_status_at_conversion` | enum | Status of the source when converted, same values as `status` |
 | `converter` | contributor ID | The converting agent |
 | `date` | ISO date | Date of conversion |
+| `corrections` | list | Evident errors in the source corrected in the conversion (below) |
+
+**Corrections.** A conversion records what the source says, including its errors, except an evident error (a typographical error in a formula or a number that the source itself contradicts elsewhere), which it corrects visibly: the corrected field's provenance is `inferred` (`field_provenance`), and the correction is listed in `corrections` as `{field, where, printed, recorded, reason}`:
+- `field`: the corrected location in the claimset, as an object ID and a field path, e.g. `C28.statement`.
+- `where`: the source span of the error.
+- `printed`: what the source says. `recorded`: what the claimset says instead. `reason`: why the source is evidently in error, e.g. `"Akaike's information criterion is 2k − 2ℓ(θ); the sign of ℓ is inverted in Equation (1)"`.
+Disagreements with the source that are not evident errors are not corrections: the claim records what the source says, and a converter's assessment may question it.
 
 **Licence of a converted paper.** A claimset converted from a source is an adaptation of it, so the source's licence decides whether conversion is allowed and what licence the claimset may carry:
 
@@ -234,7 +262,9 @@ Retracted papers are never deleted. All their claims inherit the retraction stat
 | `id` | string | `D1` … |
 | `term` | string | |
 | `definition` | string | One term, one meaning, used rigidly throughout |
-| `source` | claim/DOI ref | Optional, if the definition is borrowed |
+| `source` | object or string | Where a borrowed term is defined: a reference ID (`B3`, §3.13), `{target, id_type}` as for cited support (§4), or a global claim or definition ID of another claimset |
+
+A definition explains in full only a term the paper introduces or uses in its own sense. A term the paper takes from elsewhere (it cites where the term comes from) is a **borrowed term**: its `definition` names the standard meaning in one line and states only what this paper specifies (e.g. `"Mean scaled interval score; here of the 95% prediction interval"`), and `source` says where the term is defined. A term the paper uses without defining or citing it, in its usual sense, needs no definition.
 
 ### 3.3 Claim
 
@@ -243,8 +273,8 @@ Retracted papers are never deleted. All their claims inherit the retraction stat
 | `id` | string | `C1` … |
 | `statement` | string | Self-contained sentence (rules in §8) |
 | `type` | enum | `descriptive` · `associational` · `causal` · `predictive` · `interpretive` · `formal` · `methodological` (choosing: §3.3.1) |
-| `role` | enum | `principal` · `supporting` · `background` |
-| `novelty` | enum | `new` · `replication` · `extension` · `refutation` · `restatement` |
+| `role` | enum | `principal` (a contribution) · `supporting` (one of the paper's own claims that a contribution rests on) |
+| `novelty` | enum | `new` · `replication` · `extension` · `refutation` |
 | `scope` | object | `population`, `setting`, `geography`, `language`, `period`, `data_type`, `conditions` (list), `excludes` (list: where it explicitly does not apply). Describes this claim only (§3.3.2) |
 | `support` | list | Kinds of support (§4); at least one entry |
 | `assumptions` | list of claim IDs | Assumption claims (§3.8) this claim relies on |
@@ -322,6 +352,23 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
 - `flags`: optional list of weaknesses of the test, from the lab record (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs).
 
 `planned_at_anchor` says how far `planned_at` can be trusted (lab record §7): from strongest, `platform` (receipt from the Claimset platform), `rfc3161` (trusted timestamp authority), `git_remote` (pushed commit), to `none`.
+
+#### 3.3.4 What belongs in a claimset
+
+A claimset contains the paper's own claims, with what they need: definitions of the paper's own terms, evidence, warrants, assumptions, scope and limitations. It does not restate what others have found. Two tests, both answerable from the paper itself, decide what is the paper's own and what it needs. Neither asks whether something is new to the field, which would need knowledge of the literature that a converter or reader may not have; the paper's authors have already recorded that knowledge in their citations.
+
+1. **Attribution:** whose is it, as the paper's own citations say? What the paper introduces is its own. What it attributes to others (it cites them) is theirs, and enters the claimset only by reference, in one of the three ways below.
+2. **Function:** does the paper's argument use it? A general statement the paper makes without attributing it is kept only if one of the paper's claims rests on it (then it is an assumption, §3.8, or `consensus` support of that claim) or the paper contrasts its contribution with it (then the claim's statement says so). Justifications of routine choices (which accuracy measure, which software) that no finding depends on are left out, or belong in the evidence's `description`.
+
+Prior work enters a claimset in three ways, each linked to the paper's own content, never as a claim of its own:
+
+| The paper uses prior work … | Recorded as |
+|---|---|
+| as a premise of one of its claims (a theorem it applies, a result it builds on) | `cited` support of that claim, pointing to the reference, with a `locator` (§4) |
+| to position a claim: what the claim answers, extends, refines, supports or contradicts | a relation of that claim (§3.7), with a one-sentence `note` saying what the target states |
+| as vocabulary | a borrowed definition (§3.2) |
+
+Prior work that the paper mentions but none of its claims uses (general motivation, surveys of the field) is left out. When the tests do not decide, the item is kept: an unnecessary item costs length, a missing one loses content.
 
 ### 3.4 Evidence
 
@@ -414,14 +461,16 @@ Tables are stored as data (CSV or JSON), not images. Prompts are stored verbatim
 
 ### 3.7 Relations (cross-paper)
 
-Links from a claim to a claim or work outside this paper: `{type, target, id_type, locator, archive_uri, self}`.
+Links from a claim to a claim or work outside this paper: `{type, reference, target, id_type, locator, archive_uri, self, note}`.
 
-- `type`: `supports` · `contradicts` · `extends` · `refines` · `replicates` · `fails_to_replicate` · `supersedes`.
+- `type`: `supports` · `contradicts` · `extends` · `refines` · `replicates` · `fails_to_replicate` · `supersedes` · `addresses` (the claim answers a problem, gap or limitation that the target states).
+- `reference`: the ID of the cited work in `references` (§3.13). Either `reference`, or `target` with `id_type`, is given.
 - `target`: a global claim ID when the target is a claimset; otherwise the identifier of the work (paper, book, software release).
 - `id_type`: `claimset` · `doi` · `arxiv` · `handle` · `pmid` · `isbn` · `url` · `physical`.
 - `locator`: optional; where in the target the related result is, e.g. `"eq. 29 and B.6"`, `"Section 4.2"`, `"function adam(), lognormal scale"`.
 - `archive_uri`: required for `url` targets: an archived snapshot.
 - `self`: true when the target work shares a human supervisor, guarantor or contributor with this paper.
+- `note`: optional; one self-contained sentence saying what the target states that the relation is about, e.g. for `addresses`: `"Selection among ETS models often misidentifies the type of trend."` It describes the target; it is not a claim of this paper.
 
 Required relations: `novelty: refutation` ⇒ at least one `contradicts` or `fails_to_replicate`; `novelty: replication` ⇒ at least one `replicates` or `fails_to_replicate`. Recommended: `novelty: extension` ⇒ an `extends` relation. A refutation with `self: true` is a self-correction; the platform records it separately from self-citation.
 
@@ -533,6 +582,14 @@ Each model used anywhere in the paper is defined once.
 | `weights_uri` | recommended if `open` | string | |
 | `accessed` | recommended | ISO date | Date of use (or first date, if used over a period) |
 
+### 3.13 References
+
+Each work the paper cites is listed once, in the top-level `references`, and cited by its ID from support entries, relations and definitions. `{id, target, id_type, archive_uri}`
+- `id`: `B1`, `B2`, ….
+- `target` and `id_type`: as for cited support (§4): an identifier (`doi`, `arxiv`, …), a global claim ID of a claimset (`id_type: claimset`), or the reference as printed in the paper's reference list (`id_type: reference`).
+- `archive_uri`: required for `url` targets.
+Only works that a support entry, relation or definition points to are listed.
+
 ## 4. Support kinds
 
 Each support entry: `{kind, <required pointer>, …attributes}`.
@@ -554,7 +611,8 @@ Each support entry: `{kind, <required pointer>, …attributes}`.
 Attributes:
 - On any empirical kind: optional `artefacts` (e.g. "supported by Figure 15" → `{"kind": "empirical_quant", "evidence": "E3", "artefacts": ["A15"]}`).
 - On `empirical_quant` and `simulation`: optional `results`, the specific results the claim reports: result entries, result tables or table rows (e.g. `{"kind": "simulation", "evidence": "E20", "results": ["E20.R1", "E20.T1.r2"]}`). Recommended whenever the statement quotes numbers, so readers can check each number against the structured result.
-- On `cited`: `target`, `id_type` (`doi` · `arxiv` · `handle` · `pmid` · `isbn` · `url` · `physical`), `archive_uri` (required for `url`: an archived snapshot), `self` (boolean, below). Where a claimset of the cited work exists, `target` may be its global claim ID.
+- On `cited`: `reference` (the ID of the cited work in `references`, §3.13), or `target` with `id_type` (`doi` · `arxiv` · `handle` · `pmid` · `isbn` · `url` · `physical` · `reference`) and `archive_uri` (required for `url`: an archived snapshot); optional `locator` (where in the cited work, e.g. `"Theorem 3.1"`); `self` (boolean, below). Where a claimset of the cited work exists, `target` may be its global claim ID.
+- `id_type: reference`: the cited work has no identifier in the paper's reference list. `target` is the reference as printed there (authors, year, title, venue), copied, not reconstructed. It is for converted papers, whose sources often print no DOIs; native papers give an identifier. Identifiers are never guessed: the platform may later resolve a printed reference to an identifier.
 - `self` is true when the cited work shares any human supervisor, guarantor or contributor with this paper, or (for converted papers) any source author. Shared agent systems are recorded but computed by the platform, not flagged by the file.
 - Meta-analyses: performed in the paper → `empirical_quant` with `data_origin: secondary`; cited → `cited`.
 
@@ -576,7 +634,7 @@ Two separate dimensions. Confidential evidence is less verifiable, not necessari
 - `resolution`: optional, on a `disputed` check only: how the dispute was resolved (e.g. the claim was corrected and rechecked). An unresolved dispute stays visible.
 For formal claims a check is a re-derivation; for empirical and simulation claims it is a reproduction from the artefacts. Checks are reported honestly: a failed check is recorded, not omitted.
 
-**Verification** replaces strength for formal claims (`type: formal`). It is required when the paper itself proves or argues the claim (support `formal_proof` or `argument`); a formal result cited as background relies on the cited work and carries no verification. It summarises the checks:
+**Verification** replaces strength for formal claims (`type: formal`). It is required when the paper itself proves or argues the claim (support `formal_proof` or `argument`); a formal result the paper cites is cited support of the claim that applies it, not a claim of its own. It summarises the checks:
 - `machine_checked`: a proof assistant checked the proof; the formal evidence has `proof_artefact` and `checker`.
 - `agent_checked`: at least one full, confirmed check by an agent, and no unresolved dispute.
 - `peer_checked`: at least one full, confirmed check by a human, and no unresolved dispute.
@@ -589,7 +647,7 @@ For formal claims a check is a re-derivation; for empirical and simulation claim
 - `open`: everything needed to check the claim is public or platform-available; formal claims are machine-checked, have full proof steps, or (converted papers) have their derivation located in an openly licensed source.
 - `audit_only`: checking requires `audit` or `author_only` material.
 - `unverifiable`: rests on `unavailable` material, on `expert_judgement` alone, or on `unstated` support.
-- `not_applicable`: assumption claims; background claims supported only by `consensus`.
+- `not_applicable`: assumption claims.
 
 **Verifiability flags** (computed, list):
 - `api_model_dependency`: the supporting evidence relies on a model with `weights: api_only`; the result may not be reproducible once the model is withdrawn.
@@ -637,13 +695,13 @@ The platform mints a DOI for every published claimset. The file records identifi
 1. All IDs are unique; all references resolve.
 2. Every claim has at least one support entry.
 3. `assumption` is the sole support kind of its claim; the claim carries no strength assessments and has `assumption_category` and `check`. `assumption_category: axiom` ⇒ `check: untestable`.
-4. `role: background` ⇒ `novelty: restatement` ⇒ support kinds limited to `cited` and/or `consensus`.
+4. Claims are the paper's own: `role` is `principal` or `supporting`, and `novelty` is not `restatement` (both removed in v0.16; prior work is cited, related or defined, §3.3.4). (Revised in v0.16.)
 5. `contributions` lists only `principal` claims; every `principal` claim appears in `contributions`.
 6. `type: interpretive` ⇒ `warrant` present.
 7. `formal_proof` support ⇒ `verification` present; evidence has `foundation` and either `steps` or `proof_artefact`, or, in converted papers, `source_spans` locating the derivation. (Revised in v0.14.)
 8. `depends_on` contains no cycles.
 9. `provenance` or `field_provenance` values `extracted`/`inferred` only when `paper.origin: converted`; `source_spans` required in that case.
-10. Each support kind carries its required pointer (§4).
+10. Each support kind carries its required pointer (§4); `cited` carries `reference` or `target` with `id_type`. (Revised in v0.16.)
 11. Every limitation affects at least one claim; every claim's `limitations` resolve.
 12. `availability.level` other than `public` ⇒ `reason` present; `audit`/`author_only`/`platform` ⇒ `content_hash` present.
 13. `verifiability` and `verifiability_flags`, where present, match the platform's computation (§5).
@@ -676,7 +734,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 ### 10.5 Rules added in v0.9 (errors: file rejected)
 
 33. `novelty: refutation` ⇒ at least one relation of type `contradicts` or `fails_to_replicate`; `novelty: replication` ⇒ at least one relation of type `replicates` or `fails_to_replicate`.
-34. Every relation has `type`, `target` and `id_type`; `id_type: url` ⇒ `archive_uri`.
+34. Every relation has `type` and either `reference` (resolving to an entry of `references`) or `target` with `id_type`; `id_type: url` ⇒ `archive_uri`. (Revised in v0.16.)
 35. `type: formal` ⇒ no `assessments`; `type: formal` with `formal_proof` or `argument` support ⇒ `verification` present.
 36. (Revised in v0.10.) `verification` is consistent with `checks` as defined in §5; `machine_checked` ⇒ the formal evidence has `proof_artefact` and `checker`.
 37. Formal evidence has no `theorem` field.
@@ -686,7 +744,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 39. Every check has `by`, `outcome` and `extent`; `by` is a contributor that does not hold `author`; a `disputed` check has `notes`.
 40. `verified_by` is not used (replaced by `checks`).
-41. `checks` do not appear on assumption claims or on background claims.
+41. `checks` do not appear on assumption claims. (Revised in v0.16.)
 
 ### 10.7 Rules added in v0.11 (errors: file rejected)
 
@@ -704,6 +762,16 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 48. Result tables appear only in quant and simulation evidence. Each has an `id` (`T1`, `T2`, …) unique within its evidence object, a `description`, `row_labels` (a list of names, possibly empty), `columns` (a non-empty list of unique names) and a non-empty list of `rows`; each row has an `id` (`r1`, `r2`, …) unique within the table, a `label` with one entry per row label, and `values` with one entry per column, each a number or `null`, at least one value in the table being a number. `units`, if present, has one entry per column; `artefact`, if present, resolves.
 
+### 10.10 Rules added in v0.15 (errors: file rejected)
+
+49. `converted_from.corrections` appears only in converted papers. Each correction has `field`, `where`, `printed`, `recorded` and `reason`, all non-empty strings, and `field` begins with the ID of an object in the file (e.g. `C28.statement`).
+50. A definition's `source`, if present, is a non-empty string or an object with a `target` and an `id_type` from the list for cited support (§4).
+
+### 10.11 Rules added in v0.16 (errors: file rejected)
+
+51. `references`: each entry has an `id` (`B1`, `B2`, …) unique in the file, a `target` and an `id_type` from the list for cited support, and `archive_uri` when `id_type` is `url`. Every `reference` in a support entry or relation, and every definition `source` that looks like a reference ID, resolves to an entry; every entry is pointed to at least once.
+52. Each entry of `converted_from.corrections` whose `field` names a claim field corresponds to that field's provenance being `inferred` (through `field_provenance`, or the claim's `provenance`).
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -719,6 +787,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 11. A check was made by an agent that runs on the same model as an `author` agent.
 12. A number in a claim's statement cannot be matched to the results the claim cites, at the precision stated (heuristic; percentages are compared as fractions). Applies to cited result entries; cited tables and rows are not checked.
 13. `planning: exploratory` on a principal claim: exploratory findings can be principal, but readers should be told so in the claim's assessment rationale.
+14. `id_type: reference` in a native paper: give the cited work's identifier.
 
 ## 11. Platform dependencies
 
@@ -733,6 +802,7 @@ Platform functionality is specified in the platform requirements document. The f
 - **Conversion review and claiming:** sampled human review of conversions, and the process by which source authors review, endorse or claim the conversion of their work.
 - **Content review:** AI review of each claim's scope against its statement, and independent re-derivation of formal claims; findings are returned to the submitting agent as warnings before publication and stored as platform assessments.
 - **Relation resolution:** resolving relation targets to claimsets where they exist, and showing incoming relations (e.g. "contradicted by") on the targets.
+- **Reference resolution:** resolving printed references (`id_type: reference`) to identifiers where one exists, stored as derived data.
 
 ## 12. Alignment with existing standards
 
@@ -762,7 +832,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.14",
+  "schema_version": "0.16",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -792,8 +862,10 @@ What the agent submits. No identifier, version, date, status, classification IDs
   "claims": [
     {
       "id": "C1", "statement": "Monthly retail sales series exhibit annual seasonality.",
-      "type": "descriptive", "role": "background", "novelty": "restatement",
-      "support": [{"kind": "consensus"}], "provenance": "author_stated"
+      "type": "descriptive", "role": "supporting", "novelty": "new",
+      "support": [{"kind": "assumption"}],
+      "assumption_category": "data", "check": "unchecked",
+      "provenance": "author_stated"
     },
     {
       "id": "C3", "statement": "Forecast errors of method M are independent across series.",
@@ -808,10 +880,10 @@ What the agent submits. No identifier, version, date, status, classification IDs
       "type": "descriptive", "role": "principal", "novelty": "new",
       "scope": {"population": "monthly retail sales series", "geography": "United Kingdom", "language": "not applicable", "period": "2010-2024", "data_type": "aggregate sales counts", "conditions": ["horizon of 1 to 12 months"], "excludes": ["series shorter than 36 observations"]},
       "support": [{"kind": "empirical_quant", "evidence": "E1", "artefacts": ["A2"]}],
-      "assumptions": ["C3"],
+      "assumptions": ["C1", "C3"],
       "limitations": ["L1"],
       "assessments": [{"by": "author", "strength": "moderate", "rationale": "Single benchmark collection, no external replication."}],
-      "depends_on": ["C1"], "provenance": "author_stated"
+      "provenance": "author_stated"
     }
   ],
   "evidence": [
@@ -853,7 +925,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.14",
+  "schema_version": "0.16",
   "paper": {
     "id": "doi:10.0000/claimset.2026.000456",
     "title": "Example converted paper",

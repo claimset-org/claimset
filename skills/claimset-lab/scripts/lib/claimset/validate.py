@@ -22,7 +22,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.15"
+SCHEMA_VERSION = "0.16"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -30,8 +30,8 @@ ENUM = {
     "autonomy": {"autonomous", "human_supervised", "human_assisted", "unknown"},
     "contribution_record": {"complete", "partial", "unknown"},
     "claim_type": {"descriptive", "associational", "causal", "predictive", "interpretive", "formal", "methodological"},
-    "role": {"principal", "supporting", "background"},
-    "novelty": {"new", "replication", "extension", "refutation", "restatement"},
+    "role": {"principal", "supporting"},
+    "novelty": {"new", "replication", "extension", "refutation"},
     "provenance": {"author_stated", "extracted", "inferred"},
     "verification": {"machine_checked", "agent_checked", "peer_checked", "disputed", "unchecked"},
     "check_outcome": {"confirmed", "disputed", "inconclusive"},
@@ -58,7 +58,8 @@ ENUM = {
     "reasoning": {"deductive", "inductive", "abductive", "analogical", "interpretive"},
     "artefact_kind": {"code", "data", "protocol", "proof", "model", "software", "figure", "table",
                       "prompt", "trace", "manuscript", "lab_record", "other"},
-    "relation": {"supports", "contradicts", "extends", "refines", "replicates", "fails_to_replicate", "supersedes"},
+    "relation": {"supports", "contradicts", "extends", "refines", "replicates", "fails_to_replicate", "supersedes",
+                 "addresses"},
     "limitation_category": {"sampling", "sample_size", "measurement", "confounding", "data_quality",
                             "model_specification", "analytic_flexibility", "researcher_position",
                             "computational", "other"},
@@ -87,7 +88,7 @@ ENUM = {
 }
 
 PREFIX = {"definitions": "D", "claims": "C", "evidence": "E", "warrants": "W",
-          "limitations": "L", "artefacts": "A", "contributors": "P", "models": "M"}
+          "limitations": "L", "artefacts": "A", "contributors": "P", "models": "M", "references": "B"}
 
 ORCID_RE = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -268,12 +269,51 @@ def validate(doc, published=False):
                 if isinstance(fld, str) and fld.split(".")[0] not in ids:
                     r.err("49", f"{w}.field", f"'{fld}' does not begin with the ID of an object in the file")
 
+    # ---------- References (rule 51) ----------
+    for b in coll["references"]:
+        if not isinstance(b, dict):
+            continue
+        bw = f"references:{b.get('id')}"
+        if not isinstance(b.get("target"), str) or not b["target"].strip():
+            r.err("51", bw, "missing target")
+        if b.get("id_type") not in ENUM["id_type"] | ENUM["rel_id_type"]:
+            r.err("51", f"{bw}.id_type", f"'{b.get('id_type')}' is not an identifier type for cited works")
+        if b.get("id_type") == "url" and not b.get("archive_uri"):
+            r.err("51", bw, "url targets require archive_uri")
+        if b.get("id_type") == "reference" and not converted:
+            r.warn("W14", f"{bw}.id_type", "a printed reference without identifier: give the cited work's identifier (doi, arxiv, …)")
+    if coll["references"]:
+        pointed = set()
+        for c in coll["claims"]:
+            c = as_dict(c)
+            pointed |= {as_dict(s).get("reference") for s in as_list(c.get("support"))}
+            pointed |= {as_dict(x).get("reference") for x in as_list(c.get("relations"))}
+        pointed |= {as_dict(d).get("source") for d in coll["definitions"] if isinstance(as_dict(d).get("source"), str)}
+        for b in coll["references"]:
+            if isinstance(b, dict) and b.get("id") and b["id"] not in pointed:
+                r.err("51", f"references:{b['id']}", "listed but never cited: list only works that are cited")
+
+    # ---------- Corrections marked inferred (rule 52) ----------
+    if converted:
+        for i, corr in enumerate(as_list(as_dict(paper.get("converted_from")).get("corrections"))):
+            fld = as_dict(corr).get("field")
+            if not isinstance(fld, str) or "." not in fld:
+                continue
+            oid, path = fld.split(".", 1)
+            target = by_id(oid, "claims")
+            if target is not None and target.get("provenance") != "inferred" \
+                    and as_dict(target.get("field_provenance")).get(path) != "inferred":
+                r.err("52", f"paper.converted_from.corrections[{i}]",
+                      f"{fld} is listed as corrected but its provenance is not inferred (add field_provenance)")
+
     # ---------- Definitions ----------
     for d in coll["definitions"]:
         if isinstance(d, dict):
             for f in ("term", "definition"):
                 if not d.get(f):
                     r.err("1", f"definitions:{d.get('id')}", f"missing {f}")
+            if isinstance(d.get("source"), str) and re.match(r"^B\d+$", d["source"]):
+                ref("51", f"definitions:{d.get('id')}.source", d["source"], "references")
             if "source" in d:
                 src = d["source"]
                 ok = (isinstance(src, str) and src.strip()) or (
@@ -761,8 +801,12 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
     statement_checks(r, f"{w}.statement", c.get("statement"))
     text_checks(r, f"{w}.statement", c.get("statement"), ids)
     check_enum(r, "1", f"{w}.type", c.get("type"), "claim_type", required=True)
-    check_enum(r, "1", f"{w}.role", c.get("role"), "role", required=True)
-    check_enum(r, "1", f"{w}.novelty", c.get("novelty"), "novelty", required=True)
+    if c.get("role") == "background" or c.get("novelty") == "restatement":
+        r.err("4", w, "claims are the paper's own (removed in v0.16: background, restatement); "
+                      "cite prior work as support, relate to it, or define borrowed terms (spec §3.3.4)")
+    else:
+        check_enum(r, "1", f"{w}.role", c.get("role"), "role", required=True)
+        check_enum(r, "1", f"{w}.novelty", c.get("novelty"), "novelty", required=True)
     if c.get("provenance") is not None:
         check_enum(r, "1", f"{w}.provenance", c.get("provenance"), "provenance")
     if c.get("verification") is not None:
@@ -801,9 +845,11 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
                 r.err("10", sw, "demonstration support requires artefacts")
         elif k == "argument":
             ref("10", f"{sw}.warrant", s.get("warrant"), "warrants")
+        elif k == "cited" and "reference" in s:
+            ref("51", f"{sw}.reference", s.get("reference"), "references")
         elif k == "cited":
             if not s.get("target"):
-                r.err("10", sw, "cited support requires target")
+                r.err("10", sw, "cited support requires reference, or target with id_type")
             check_enum(r, "10", f"{sw}.id_type", s.get("id_type"), "id_type", required=True)
             if s.get("id_type") == "url" and not s.get("archive_uri"):
                 r.err("10", sw, "url citations require archive_uri")
@@ -832,11 +878,6 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
     if "unstated" in kinds and len(support) != 1:
         r.err("22", w, "unstated must be the sole support entry of its claim")
 
-    if c.get("role") == "background":
-        if c.get("novelty") != "restatement":
-            r.err("4", w, "background claims must have novelty: restatement")
-        if any(k not in ("cited", "consensus") for k in kinds):
-            r.err("4", w, "background claims may be supported only by cited and/or consensus")
 
     if c.get("type") == "interpretive":
         if not c.get("warrant"):
@@ -871,8 +912,13 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
         rw = f"{w}.relations[{i}]"
         check_enum(r, "34", f"{rw}.type", rel.get("type"), "relation", required=True)
         rel_types.append(rel.get("type"))
+        if "note" in rel and not (isinstance(rel["note"], str) and rel["note"].strip()):
+            r.err("34", f"{rw}.note", "must be a non-empty sentence")
+        if "reference" in rel:
+            ref("51", f"{rw}.reference", rel.get("reference"), "references")
+            continue
         if not rel.get("target"):
-            r.err("34", rw, "missing target")
+            r.err("34", rw, "missing reference, or target with id_type")
         check_enum(r, "34", f"{rw}.id_type", rel.get("id_type"), "rel_id_type", required=True)
         if rel.get("id_type") == "url" and not rel.get("archive_uri"):
             r.err("34", rw, "url targets require archive_uri")
@@ -912,8 +958,8 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
     if "verified_by" in c:
         r.err("40", f"{w}.verified_by", "removed in v0.10: record the check in checks instead")
     checks = [as_dict(x) for x in as_list(c.get("checks"))]
-    if checks and (is_assumption(c) or c.get("role") == "background"):
-        r.err("41", w, "checks are not used on assumption or background claims")
+    if checks and is_assumption(c):
+        r.err("41", w, "checks are not used on assumption claims")
     confirmed_full = {"agent": False, "human": False}
     unresolved_dispute = False
     for i, ck in enumerate(checks):
@@ -995,8 +1041,6 @@ def compute_verifiability(c, by_id):
     kinds = [s.get("kind") for s in support]
     flags = set()
     if "assumption" in kinds:
-        return "not_applicable", flags, notes
-    if c.get("role") == "background" and kinds and all(k == "consensus" for k in kinds):
         return "not_applicable", flags, notes
     if "unstated" in kinds:
         return "unverifiable", {"unstated_support"}, notes

@@ -1,13 +1,13 @@
 ---
 name: claimset-submit
-description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.15 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
+description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.16 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
 ---
 
 # Preparing a Claimset submission
 
 A claimset is a research paper written for LLM readers: a flat JSON file of atomic, self-contained claims plus the definitions, evidence, assumptions, limitations, warrants and artefacts that support, condition and limit them. You write every field. A human decides two things (guarantor and licence), and you ask them before you finish.
 
-The normative rules are in `references/spec-v0.15.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
+The normative rules are in `references/spec-v0.16.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
 
 You produce a **submission**. The platform turns it into the published file: it mints the DOI and assigns version, publication date, status, the OpenAlex classification IDs and each claim's verifiability. You never supply these, and you never ask the human for them.
 
@@ -57,11 +57,15 @@ Then continue with the steps below to choose principal claims, review wording an
 
 ### 3. Write the claims first
 
-Work in this order: principal claims → supporting claims → background claims → assumptions.
+Work in this order: principal claims → supporting claims → assumptions.
 
 **Find the principal claims.** These are the contributions: what the work establishes that a reader should take away. Usually 1–5. List them in `paper.contributions` in order of priority.
 
-**Decide what belongs (spec §3.3.4).** A claim is something the work asserts that a reader needs to understand, use or challenge its findings: the contributions, the assumptions and conditions they rest on, the limitations, the results (including those against the method), and the positioning against earlier work. Leave out general knowledge that no claim rests on and justifications of routine choices (which accuracy measure, which software); put such choices in the evidence's `description` if they matter. Define in full only the terms the work introduces or uses in its own sense; for a borrowed term (MASE, ETS), give a one-line definition with what this work specifies (e.g. the interval level) and its `source`.
+**Decide what belongs (spec §3.3.4).** Claims are the work's own: the contributions, the claims they rest on, the assumptions and conditions, the results (including those against the method). Never restate what others found. Prior work enters only by reference, listed once in `references` (`B1`, …):
+- a result your claim builds on → `cited` support of that claim, `{"kind": "cited", "reference": "B3", "locator": "Theorem 2"}`;
+- what your claim answers, extends or contradicts → a relation of that claim, `{"type": "addresses", "reference": "B4", "note": "Selection among ETS models often misidentifies the type of trend."}`;
+- a borrowed term (MASE, ETS) → a one-line definition with what this work specifies (e.g. the interval level) and `"source": "B5"`.
+Leave out general knowledge that no claim rests on and justifications of routine choices (which accuracy measure, which software); put such choices in the evidence's `description` if they matter. Define in full only the terms the work introduces or uses in its own sense.
 
 **Apply the granularity rule.** Split a statement when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one `interpretive` claim with a warrant.
 
@@ -84,7 +88,7 @@ Work in this order: principal claims → supporting claims → background claims
 
 "Method M was 10.5 times faster" or "the KL divergence was 0.001" are `descriptive`: they report a measurement.
 
-**Choose `novelty`:** `new` · `replication` · `extension` · `refutation` · `restatement` (background only).
+**Choose `novelty`:** `new` · `replication` · `extension` · `refutation`.
 
 **Link to prior work.** A `refutation` must have a `contradicts` (or `fails_to_replicate`) relation naming what it refutes; a `replication` must have `replicates` or `fails_to_replicate`; an `extension` should have `extends`. The target can be a paper, book or software release, with a `locator` for the exact place:
 
@@ -106,14 +110,14 @@ Each claim needs at least one support entry. Use these exact pointer fields:
 {"kind": "demonstration", "artefacts": ["A5"]}
 {"kind": "formal_proof", "evidence": "E4"}
 {"kind": "argument", "warrant": "W1"}
-{"kind": "cited", "target": "doi:10.xxxx/yyyy", "id_type": "doi", "self": false}
+{"kind": "cited", "reference": "B1", "locator": "Section 3", "self": false}
 {"kind": "consensus"}
 {"kind": "expert_judgement", "holder": "P2"}
 {"kind": "assumption"}
 ```
 
 - `self: true` when the cited work shares a human supervisor, guarantor or contributor with this paper.
-- Background claims (prior knowledge restated for context) may use only `cited` and/or `consensus`, and must have `novelty: restatement`.
+- Each cited work is listed once in `references`: `{"id": "B1", "target": "10.xxxx/yyyy", "id_type": "doi"}`, and cited by its ID.
 - Never use `unstated`; it exists only for converted papers. If you cannot support a claim, remove it or turn it into an assumption.
 - When a statement quotes numbers, point `results` at the structured results that hold them.
 
@@ -179,7 +183,7 @@ Formal claims get **no strength assessment**. A formal claim proved or argued in
 
 Then set `verification` to match the checks: `agent_checked` (a full confirmed check by an agent, no unresolved dispute), `peer_checked` (the same by a named human), `disputed` (an unresolved dispute), `unchecked` (no full confirmed check), or `machine_checked` (only with a proof-assistant artefact and `checker`). Never record your own checking as a check.
 
-Formal results cited as background (`role: background`) carry neither.
+A formal result you cite and apply is `cited` support of your claim, not a claim of its own, and carries neither.
 
 ### 9. Fill contributors, models and paper metadata
 
