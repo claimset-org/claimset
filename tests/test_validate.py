@@ -741,7 +741,7 @@ class TestReadingView(Base):
         self.assertLess(len(self.render(d)), len(json.dumps(d, separators=(",", ":"))))
 
     def test_appendix_d_matches_the_renderer(self):
-        spec = (ROOT / "spec" / "claimset-v0.17.md").read_text(encoding="utf-8")
+        spec = (ROOT / "spec" / "claimset-v0.18.md").read_text(encoding="utf-8")
         self.assertIn(self.render(load("submission-native.json")), spec)
 
     def test_render_command_refuses_invalid_file(self):
@@ -755,6 +755,79 @@ class TestReadingView(Base):
             code = cli.main(["render", fh.name])
         self.assertEqual(code, 1)
         Path(fh.name).unlink()
+
+
+class TestRulesV018(Base):
+    def setUp(self):
+        self.d = load("submission-native.json")
+
+    def with_cited_data(self, d, ref="B1"):
+        d["references"] = [{"id": "B1", "target": "10.1000/data.1", "id_type": "doi"}]
+        d["artefacts"].append({"id": "A9", "kind": "data", "reference": ref, "licence": "CC-BY-4.0",
+                               "availability": {"level": "public", "uri": "https://example.org/data"}})
+        next(e for e in d["evidence"] if e["id"] == "E1").setdefault("artefacts", []).append("A9")
+
+    def test_54_artefact_reference_resolves_and_counts_as_cited(self):
+        self.with_cited_data(self.d)
+        self.assertValid(self.d)                # the reference is pointed to only by the artefact (rule 51)
+
+    def test_54_artefact_reference_must_resolve(self):
+        self.with_cited_data(self.d, ref="B7")
+        self.assertRule(self.d, "54")
+
+    def test_secondary_role_is_valid_and_not_warned(self):
+        d = load("submission-from-lab.json")
+        self.assertEqual(claim(d, "C4")["role"], "secondary")
+        self.assertValid(d)
+        _, warnings = self.rules(d)
+        self.assertNotIn("W15", warnings)
+        self.assertNotIn("W16", warnings)
+
+    def test_w15_supporting_claim_nothing_rests_on(self):
+        d = load("submission-from-lab.json")
+        claim(d, "C4")["role"] = "supporting"
+        self.assertWarning(d, "W15")
+        _, warnings = self.rules(self.d)          # C1 and C3 are assumptions of the principal claim
+        self.assertNotIn("W15", warnings)
+
+    def test_w15_reached_through_evidence_assumptions(self):
+        claim(self.d, "C2")["assumptions"] = ["C1"]
+        next(e for e in self.d["evidence"] if e["id"] == "E1")["assumptions"] = ["C3"]
+        _, warnings = self.rules(self.d)
+        self.assertNotIn("W15", warnings)
+
+    def test_w16_principal_rests_on_secondary(self):
+        claim(self.d, "C1")["role"] = "secondary"
+        self.assertWarning(self.d, "W16")
+
+    def test_rule_4_rejects_other_roles(self):
+        claim(self.d, "C1")["role"] = "peripheral"
+        self.assertRule(self.d, "1")
+
+
+class TestReadingViewV018(Base):
+    def setUp(self):
+        from claimset.render import render
+        self.render = render
+
+    def test_claims_grouped_by_role_principal_first(self):
+        d = load("submission-from-lab.json")
+        text = self.render(d)
+        pos = {cid: text.index(f"\n{cid} [") for cid in ("C1", "C2", "C3", "C4")}
+        self.assertLess(pos["C2"], pos["C1"])
+        self.assertLess(pos["C1"], pos["C3"])
+        self.assertLess(pos["C3"], pos["C4"])
+
+    def test_claims_without_evidence_grouped_last(self):
+        d = load("submission-native.json")
+        d["claims"].append({"id": "C9", "statement": "Method M is likely to work for weekly sales as well.",
+                            "type": "predictive", "role": "secondary", "novelty": "new",
+                            "support": [{"kind": "unstated"}]})
+        claim(d, "C2")["support"] = [{"kind": "unstated"}]       # a principal claim stays with the principals
+        text = self.render(d)
+        self.assertIn("CLAIMS WITHOUT EVIDENCE\nC9 [", text)
+        self.assertLess(text.index("C2 ["), text.index("CLAIMS WITHOUT EVIDENCE"))
+        self.assertLess(text.index("CLAIMS WITHOUT EVIDENCE"), text.index("EVIDENCE\nE1"))
 
 
 if __name__ == "__main__":

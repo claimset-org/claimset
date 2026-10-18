@@ -162,6 +162,12 @@ def _evidence(e):
     return lines
 
 
+def _without_evidence(c):
+    """True if the claim's only support is argument or none (spec §2.3)."""
+    kinds = {s.get("kind") for s in c.get("support") or [] if isinstance(s, dict)}
+    return bool(kinds) and kinds <= {"argument", "unstated"}
+
+
 def render(doc):
     """The reading view of a claimset, as a string."""
     p = doc.get("paper") or {}
@@ -178,12 +184,18 @@ def render(doc):
     if isinstance(p.get("exploration"), dict):
         out.append("exploration " + json.dumps(p["exploration"], ensure_ascii=False, separators=(", ", ": ")))
 
+    claims = [c for c in doc.get("claims") or [] if isinstance(c, dict)]
+    unevidenced = [c for c in claims if c.get("role") != "principal" and _without_evidence(c)]
+    order = {"principal": 0, "supporting": 1, "secondary": 2}
+    main = sorted((c for c in claims if not any(c is u for u in unevidenced)),
+                  key=lambda c: order.get(c.get("role"), 3))           # stable: file order within a role
     sections = [
         ("DEFINITIONS", doc.get("definitions"),
          lambda d: [f"{d.get('id')} {d.get('term')}: {d.get('definition')}"
                     + (f" [source {_s(d['source']) if not isinstance(d['source'], dict) else d['source'].get('target')}]"
                        if d.get("source") else "")]),
-        ("CLAIMS", doc.get("claims"), _claim),
+        ("CLAIMS", main, _claim),
+        ("CLAIMS WITHOUT EVIDENCE", unevidenced, _claim),
         ("EVIDENCE", doc.get("evidence"), _evidence),
         ("WARRANTS", doc.get("warrants"),
          lambda w: [f"{w.get('id')} [{_join([w.get('reasoning'), ('premises ' + ', '.join(w['premises'])) if w.get('premises') else ''])}] {w.get('text', '')}"]),

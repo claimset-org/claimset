@@ -22,7 +22,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.17"
+SCHEMA_VERSION = "0.18"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -30,7 +30,7 @@ ENUM = {
     "autonomy": {"autonomous", "human_supervised", "human_assisted", "unknown"},
     "contribution_record": {"complete", "partial", "unknown"},
     "claim_type": {"descriptive", "associational", "causal", "predictive", "interpretive", "formal", "methodological"},
-    "role": {"principal", "supporting"},
+    "role": {"principal", "supporting", "secondary"},
     "novelty": {"new", "replication", "extension", "refutation"},
     "provenance": {"author_stated", "extracted", "inferred"},
     "verification": {"machine_checked", "agent_checked", "peer_checked", "disputed", "unchecked"},
@@ -289,9 +289,37 @@ def validate(doc, published=False):
             pointed |= {as_dict(s).get("reference") for s in as_list(c.get("support"))}
             pointed |= {as_dict(x).get("reference") for x in as_list(c.get("relations"))}
         pointed |= {as_dict(d).get("source") for d in coll["definitions"] if isinstance(as_dict(d).get("source"), str)}
+        pointed |= {as_dict(a).get("reference") for a in coll["artefacts"]}
         for b in coll["references"]:
             if isinstance(b, dict) and b.get("id") and b["id"] not in pointed:
                 r.err("51", f"references:{b['id']}", "listed but never cited: list only works that are cited")
+
+    # ---------- Roles and what the contributions rest on (warnings 15 and 16) ----------
+    def rests_on(c):
+        """Claims this claim rests on: depends_on, assumptions, and the assumptions of the evidence it cites."""
+        out = list(as_list(c.get("depends_on"))) + list(as_list(c.get("assumptions")))
+        for s in as_list(c.get("support")):
+            e = by_id(as_dict(s).get("evidence"), "evidence")
+            if e is not None:
+                out += list(as_list(e.get("assumptions")))
+        return [x for x in out if isinstance(x, str)]
+
+    reached, stack = set(), [cid for cid, c in claims.items() if c.get("role") == "principal"]
+    while stack:
+        cur = stack.pop()
+        for nxt in rests_on(claims.get(cur) or {}):
+            if nxt in claims and nxt not in reached:
+                reached.add(nxt)
+                stack.append(nxt)
+    for cid, c in claims.items():
+        if c.get("role") == "supporting" and cid not in reached:
+            r.warn("W15", f"claims:{cid}", "no principal claim rests on this supporting claim: link it "
+                                           "(depends_on, assumptions) or make it secondary")
+        if c.get("role") in ("principal", "supporting"):
+            for nxt in rests_on(c):
+                if (claims.get(nxt) or {}).get("role") == "secondary":
+                    r.warn("W16", f"claims:{cid}", f"rests on {nxt}, which is secondary: a claim that a "
+                                                   "contribution rests on is supporting")
 
     # ---------- Corrections marked inferred (rule 52) ----------
     if converted:
@@ -333,6 +361,8 @@ def validate(doc, published=False):
             r.err("1", w, "figures and tables require a description")
         if a.get("underlying_data"):
             ref("1", f"{w}.underlying_data", a["underlying_data"], "artefacts")
+        if a.get("reference") is not None:
+            ref("54", f"{w}.reference", a["reference"], "references")
         check_availability(r, w, a.get("availability"))
         if not a.get("licence"):
             r.warn("W9", f"{w}.licence", "recommended: state the artefact's licence (SPDX identifier)")
