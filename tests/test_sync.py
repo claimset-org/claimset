@@ -30,3 +30,13 @@ class TestSkillCopies(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPackageVersion(unittest.TestCase):
+    def test_package_version_follows_the_spec(self):
+        """pip upgrades only when the version changes: the package's version starts with the spec version."""
+        import re
+        from claimset import SPEC_VERSION, __version__
+        pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertEqual(re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1), __version__)
+        self.assertTrue(__version__.startswith(SPEC_VERSION + "."), __version__)
