@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.17",
+  "schema_version": "0.18",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -232,7 +232,7 @@
       "id": "C4",
       "statement": "Method M does not reduce the mean absolute scaled error of the seasonal naive benchmark on weekly retail sales series by 0.02 or more: the mean relative reduction is -0.004.",
       "type": "descriptive",
-      "role": "supporting",
+      "role": "secondary",
       "novelty": "new",
       "scope": {
         "population": "weekly retail sales series",
