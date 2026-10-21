@@ -25,7 +25,16 @@ Research is iterative, so the format has a companion: the **lab record**, an app
 pip install git+https://github.com/claimset-org/claimset
 ```
 
-The package has no dependencies beyond the Python standard library (Python 3.9 or later).
+The package has no dependencies beyond the Python standard library (Python 3.9 or later). It carries the specifications and the agent skills of its version:
+
+```
+claimset spec                  # the claimset specification this version validates against
+claimset spec --lab            # the lab record specification
+claimset skill install         # install or update the skills in .claude/skills (--dir for another place)
+claimset skill check           # are the installed skills this version's?
+```
+
+Skills copied into a project do not follow later versions of the package; `claimset skill check` finds an out-of-date copy and `claimset skill install` replaces it.
 
 ## Use
 

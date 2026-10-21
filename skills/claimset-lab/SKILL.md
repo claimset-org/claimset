@@ -12,7 +12,7 @@ A lab record is the running log of a piece of research, kept while it happens. I
 
 At the end the record is exported to a claimset (a paper for LLM readers) with the `claimset-submit` skill. The specification is `references/lab-record-v0.5.md`; read §5 (event types) and §6 (rules) when an event or a refusal is unclear.
 
-**The tool.** Use `claimset` if it is installed (`claimset --help` works). Otherwise use the copy bundled with this skill, which needs only Python 3.9+: `python3 <this skill>/scripts/claimset`. Below, `claimset` stands for whichever you use. Every writing command prints the new event's ID; add `--json` to see the whole event. The lab lives in `./lab` unless `--lab DIR` or `$CLAIMSET_LAB` says otherwise.
+**The tool.** Use `claimset` if it is installed (`claimset --help` works); then check that this skill matches it (`claimset skill check`) and, if not, update the skills with `claimset skill install`. Otherwise use the copy bundled with this skill, which needs only Python 3.9+: `python3 <this skill>/scripts/claimset`. Below, `claimset` stands for whichever you use. Every writing command prints the new event's ID; add `--json` to see the whole event. The lab lives in `./lab` unless `--lab DIR` or `$CLAIMSET_LAB` says otherwise.
 
 ## Rules you never break
 
