@@ -18,7 +18,7 @@ At the end the record is exported to a claimset (a paper for LLM readers) with t
 
 1. **Write to `lab/` only through `claimset lab`.** Never edit, delete, move, truncate or overwrite anything in `lab/`, including `runs/`, by any means: editor tools, shell redirection, scripts, git. Fix mistakes with a correction (`--supersedes`). If a guard hook blocks a command, do not look for another way; use the `claimset lab` command it names.
 2. **Write only as yourself.** Pass your own actor ID with `--by` on every writing command. Never use a human's ID. Approvals (`claimset lab approve`) are made by humans only: ask the human to run the command; never run it for them.
-3. **Numbers come from code.** Every result enters the record through `claimset lab run`, from the results file your script writes. A rationale or note may quote a number from a result it cites, but never introduce a measured value that no recorded run produced. If a run fails or gives an unwelcome result, it stays recorded; rerun with a reason, never instead of recording.
+3. **Numbers come from code.** Every result enters the record through `claimset lab run`, from the results file your script writes. A rationale or note may quote a number from a result it cites, but never introduce a measured value that no recorded run produced, including from a quick trace or one-off check in a scratchpad: if you cite its numbers, it is a run. If a run fails or gives an unwelcome result, it stays recorded; rerun with a reason, never instead of recording.
 4. **Plan before you test, and fix every analysis choice in the plan.** A test counts as confirmatory only if its plan was recorded before the run. The plan fixes the test, the significance level, sidedness, correction for multiple tests, sample size and stopping rule, the results the decision is made on, and the rule for each outcome. Nothing that decides the outcome is chosen after seeing data. Never write a plan after seeing a result and present it as prior.
 5. **A result that suggested a hypothesis cannot confirm it.** Record such a hypothesis with `--from-exploration --prompted-by <the run or result>`, then test it on a new run that the plan defines (new data, a held-out split, new seeds). The tool refuses the shortcut (rule L6).
 6. **Record what did not work.** A refuted hypothesis gets `not_supported`, a dropped one `abandoned`, both with a reason. Negative results are published like positive ones.
@@ -79,6 +79,8 @@ Record events as the work happens, not afterwards from memory.
 Write the **not supported** rule as carefully as the supported one. Failing to reach significance is not a negative result: it is `inconclusive`. A hypothesis is refuted only by what the plan says in advance would refute it, for example a confidence interval lying entirely below the smallest effect that would matter (an equivalence bound), or a significant effect in the opposite direction. Work out the sample size so that a conclusive outcome is likely, and say how in `sample`.
 
 Use computed rules whenever the outcome can be computed from numbers; text rules are for proofs, qualitative patterns and the like.
+
+**New data.** A confirmatory test needs data that did not inform the hypothesis. A new seed is new data only for what the seed generates: a fixed grid of settings, a fixed benchmark set or a deterministic computation, run again, is the same data as the exploratory run that prompted the hypothesis, whatever the seed. If part of a planned test would reuse such data, take that part out of the plan (it stays exploratory, and the claim says so) or test it on new settings, and say in the design what is new.
 
 The tool checks that the rule is complete (L15). After that, only two things are strict:
 - **One attempt per plan.** Every confirmatory run counts, including one that fails. Once the plan has its deciding runs, further confirmatory runs under it are refused (L16), so a test cannot be repeated until it comes out favourably. Make sure the script works first, with exploratory runs on other data.
@@ -145,6 +147,16 @@ If you orchestrate other agents that work concurrently:
 4. When the agents finish, run `claimset lab merge --by AC2`. The merge is refused as a whole if an event no longer fits the main log; the tool says which.
 5. An agent log is used once. For new concurrent work, register a new actor.
 
+## Independent checks
+
+A check counts as independent only when someone other than the author makes it, and it is recorded by them. When you ask another agent to check your work (to reproduce runs, re-derive a result, review a draft):
+1. Register it as its own actor, with its model: `claimset lab actor --kind agent --name "Checker" --model … --by AC2`, then `claimset lab start --by AC5` so it writes to its own log.
+2. Tell it its actor ID and to follow this skill. Its reproductions are its own runs (`claimset lab run --by AC5 …`), including reruns with other seeds or tolerances; every number it reports comes from one of them.
+3. It records each verdict with `claimset lab check <run, result or event> --outcome … --extent … --notes "…" --by AC5`. A disputed check stays in the record with the correction that answers it.
+4. Merge its log when it finishes (`claimset lab merge --by AC2`).
+
+Do not summarise a check in a note of your own instead: export takes claims' `checks` from check events, and a check reported only by the author is the author's account.
+
 ## Resuming after a break or a context reset
 
 The record is your memory. Before doing anything else:
@@ -181,5 +193,6 @@ Never work around a refusal by editing files or by writing as another actor.
 
 1. Record the verdict of every planned test that has run; export refuses while one is missing. Give hypotheses you decided something about a final status (`supported`, `not_supported`, `inconclusive`, `revised` or `abandoned`); the rest are counted as open, which is fine.
 2. Merge any agent logs, then run `claimset lab verify` (and `claimset lab verify --remote` if anchoring is set up). Fix nothing by hand. If verification fails, tell the human exactly what it reports.
+   If anchoring is set up, anchor the record now (`claimset lab anchor`), after its last event: export then points the lab record at that fixed version (for a repository on GitHub) instead of a branch whose file keeps changing. Export again if events are added later.
 3. `claimset lab export -o claimset.json` writes the draft claimset and prints the completion list. Continue with the `claimset-submit` skill. The draft takes claim statements from the hypotheses, so the list asks you to reword negative results to say plainly what was not found; do that in the claimset, not in the record.
 4. Tell the human if anything in the record should not be published (personal data, commercial or legal reasons); the record supports withholding individual events with a stated reason (spec §8).

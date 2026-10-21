@@ -6,6 +6,7 @@ results...) are left at neutral defaults or left out, and listed in a separate
 completion list: a claimset never contains instructions.
 """
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -401,6 +402,21 @@ class _Exporter:
             if dv is not None:
                 self.add_deviation_limitation(claim, r, pv, dv)
 
+    def pinned_lab_uri(self, repo, rel):
+        """A URI of exactly this version of the log: the git anchor commit of its last event, for a repository
+        on GitHub. None if the last event is not anchored by a git commit, or the host is not known."""
+        if not repo or not repo.startswith("https://github.com/"):
+            return None
+        lines = [l for l in self.lab.log_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        if not lines:
+            return None
+        head = json.loads(lines[-1]).get("seq")
+        for a in reversed(read_anchors(self.lab)):
+            commit = (a.get("receipt") or {}).get("commit") if isinstance(a, dict) else None
+            if a.get("service") == "git_remote" and a.get("seq") == head and isinstance(commit, str) and commit:
+                return f"{repo.rstrip('/')}/blob/{commit}/{rel}"
+        return None
+
     def export_checks(self):
         st = self.st
         for e in self.roots:
@@ -492,7 +508,9 @@ class _Exporter:
         init = self.body("INIT")
         rel = _repo_path(self.lab.log_path) or f"{self.lab.root.name}/{self.lab.log_path.name}"
         repo = init.get("repository")
-        art = {"id": lab_aid, "kind": "lab_record", "uri": f"{repo.rstrip('/')}/{rel}" if repo else rel,
+        pinned = self.pinned_lab_uri(repo, rel)
+        art = {"id": lab_aid, "kind": "lab_record",
+               "uri": pinned or (f"{repo.rstrip('/')}/{rel}" if repo else rel),
                "version": file_hash(self.lab.log_path), "availability": {"level": "public"},
                "description": "Lab record of the study: questions, hypotheses, plans, runs, results and decisions, "
                               "as an append-only, hash-chained event log (Claimset lab record specification v0.5)."}
@@ -505,6 +523,11 @@ class _Exporter:
         if not repo:
             self.todo(f"artefacts.{lab_aid}.uri", "give the public URI of the lab record (the record names no "
                                                   "repository)")
+        elif not pinned:
+            self.todo(f"artefacts.{lab_aid}.uri",
+                      f"the URI names no fixed version of the lab record, and the file there changes as the record "
+                      f"grows, so it will not match the version hash: anchor the record (`claimset lab anchor`) "
+                      f"and export again, or give a URI of this version ({art['version']})")
         for x in self.artefacts:
             if "licence" not in x:
                 self.todo(f"artefacts.{x['id']}.licence", f"give the licence of {x['id']}")

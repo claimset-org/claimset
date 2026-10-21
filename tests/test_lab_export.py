@@ -373,6 +373,34 @@ class TestAnchoredExport(ExportCase):
         self.assertEqual(lab_art["uri"], "lab/lab.jsonl")
 
 
+@unittest.skipUnless(HAVE_GIT, "git is not installed")
+class TestPinnedLabRecord(unittest.TestCase):
+    """The exported lab record points at a fixed version of the log, not at a branch that keeps growing."""
+
+    def test_uri_pinned_to_the_anchor_of_the_last_event(self):
+        import tempfile
+        from claimset.lab.core import Lab
+        with tempfile.TemporaryDirectory() as tmp:
+            make_repo(tmp)
+            lab = Lab.create(Path(tmp) / "lab", "Study", repository="https://github.com/o/r")
+            human = lab.append("actor", {"kind": "human", "name": "R", "orcid": "0000-0000-0000-0000"}, by="AC1")["id"]
+            q = lab.append("question", {"text": "Q?"}, by=human)["id"]
+            h = lab.append("hypothesis", {"statement": "H.", "question": q, "origin": "a_priori"}, by=human)["id"]
+            lab.append("status", {"target": h, "to": "abandoned", "rationale": "out of scope"}, by=human)
+            anchor_mod.save_config(lab, {"anchor": {"service": "git_remote", "remote": "origin",
+                                                    "branch": "claimset-lab"}})
+            entry = anchor_mod.anchor(lab)
+            out = export(lab)
+            art = out["draft"]["artefacts"][-1]
+            self.assertEqual(art["uri"], f"https://github.com/o/r/blob/{entry['receipt']['commit']}/lab/lab.jsonl")
+            self.assertNotIn("fixed version", " ".join(t["what"] for t in out["completion"]))
+            lab.append("note", {"text": "One more thing."}, by=human)          # the head is no longer anchored
+            out = export(lab)
+            art = out["draft"]["artefacts"][-1]
+            self.assertEqual(art["uri"], "https://github.com/o/r/lab/lab.jsonl")
+            self.assertIn("names no fixed version", " ".join(t["what"] for t in out["completion"]))
+
+
 class TestExportCli(TestCli):
     def test_export_writes_draft_and_lists_completion(self):
         self.run_cli("lab", "init", "--title", "Study", "--repository", "https://example.org/repo")
