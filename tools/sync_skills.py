@@ -30,6 +30,19 @@ COPIES = {
         ("src/claimset", "skills/claimset-lab/scripts/lib/claimset"),   # the whole package
         ("spec/lab-record-v0.5.md", "skills/claimset-lab/references/lab-record-v0.5.md"),
     ],
+    # The package carries the specs, examples and skill texts, so that an installed package can print its
+    # spec and install skills that match it (`claimset spec`, `claimset skill install`). No .py files here:
+    # the package's own modules are the skills' scripts.
+    "package-data": [
+        ("spec/claimset-v0.18.md", "src/claimset/data/spec/claimset-v0.18.md"),
+        ("spec/lab-record-v0.5.md", "src/claimset/data/spec/lab-record-v0.5.md"),
+        ("examples/submission-native.json", "src/claimset/data/examples/submission-native.json"),
+        ("examples/published-native.json", "src/claimset/data/examples/published-native.json"),
+        ("examples/submission-from-lab.json", "src/claimset/data/examples/submission-from-lab.json"),
+        ("skills/claimset-submit/SKILL.md", "src/claimset/data/skills/claimset-submit/SKILL.md"),
+        ("skills/claimset-lab/SKILL.md", "src/claimset/data/skills/claimset-lab/SKILL.md"),
+        ("skills/claimset-lab/scripts/claimset", "src/claimset/data/skills/claimset-lab/claimset"),
+    ],
 }
 
 
@@ -48,10 +61,13 @@ def pairs():
                 yield f, (dst / f.relative_to(src)) if src.is_dir() else dst
 
 
+DATA = ROOT / "src" / "claimset" / "data"
+
+
 def stale():
-    """Files in a copied package directory that no longer have a source."""
+    """Files in a copied package directory, or in the package's data, that no longer have a source."""
     expected = {dst for _, dst in pairs()}
-    out = []
+    out = [f for f in sorted(DATA.rglob("*")) if f.is_file() and f not in expected] if DATA.exists() else []
     for items in COPIES.values():
         for src, dst in items:
             if (ROOT / src).is_dir() and (ROOT / dst).is_dir():

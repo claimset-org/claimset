@@ -154,7 +154,11 @@ def validate(doc, published=False):
         return r
 
     if doc.get("schema_version") != SCHEMA_VERSION:
-        r.err("2", "schema_version", f"must be '{SCHEMA_VERSION}'")
+        got = doc.get("schema_version")
+        r.err("2", "schema_version", f"must be '{SCHEMA_VERSION}'" + (
+            f"; the file follows specification {got}, an earlier version with different rules. Read the "
+            f"current specification (`claimset spec`) and update the skills (`claimset skill install`)"
+            if isinstance(got, str) and got else ""))
 
     for key in ("paper", "contributors", "models", "claims"):
         if key not in doc:

@@ -5,6 +5,7 @@ import json
 import sys
 
 from . import LAB_SPEC_VERSION, SPEC_VERSION, __version__
+from . import bundle as _bundle
 from . import render as _render
 from . import validate as _validate
 from .lab import cli as _lab_cli
@@ -68,6 +69,7 @@ def build_parser():
     rv.add_argument("--published", action="store_true", help="the file is a published claimset")
     rv.set_defaults(func=_cmd_render)
 
+    _bundle.add_parsers(sub)
     _lab_cli.add_parser(sub)
     return p
 
