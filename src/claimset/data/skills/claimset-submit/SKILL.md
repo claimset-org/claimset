@@ -90,11 +90,11 @@ Leave out general knowledge that no claim rests on and justifications of routine
 
 "Method M was 10.5 times faster" or "the KL divergence was 0.001" are `descriptive`: they report a measurement.
 
-**Choose `novelty`:** `new` · `replication` · `extension` · `refutation`.
+**Choose `novelty`:** `no_prior_found` (you found no earlier result stating the claim: it reports your search, not a proof that none exists) · `replication` · `extension` · `refutation`. Assumption claims have no novelty.
 
-**Before labelling a claim `new` or `refutation`, find the closest prior result.** Start from the work's own references, then search with whatever is available to you (literature search, web search, the project's notes). Cite the closest result you find: as `cited` support if the claim rests on it, or as a relation (`extends`, `addresses`, `contradicts`, with a `note`) if it positions the claim. If prior work already states the claim, it is not `new`: use `extension` for what this work adds, or leave the known part out. If you could not search, say in the strength rationale which sources you checked.
+**Before labelling a claim `no_prior_found` or `refutation`, find the closest prior result.** Start from the work's own references, then search with whatever is available to you (literature search, web search, the project's notes). Cite the closest result you find: as `cited` support if the claim rests on it, or as a relation (`extends`, `addresses`, `contradicts`, with a `note`) if it positions the claim. For a `no_prior_found` claim, relate it to the closest result you found, with a `note` saying how the claim differs, so the reviewer sees what you found. If prior work already states the claim, it is a `replication` (if your work repeats it independently) or you keep only what is new as an `extension`. If you could not search, say in the strength rationale which sources you checked.
 
-**Check that `consensus` support is a premise, not the claim.** `consensus` means the claim rests on something established. If the established knowledge already says what the claim says, the claim is known; if it does not, it is not the claim's only support. The validator warns (W19) when a `new` claim has no support but `consensus`.
+**Check that `consensus` support is a premise, not the claim.** `consensus` means the claim rests on something established. If the established knowledge already says what the claim says, the claim is known; if it does not, it is not the claim's only support. The validator warns (W19) when a `no_prior_found` claim has no support but `consensus`.
 
 **Link to prior work.** A `refutation` must have a `contradicts` (or `fails_to_replicate`) relation naming what it refutes; a `replication` must have `replicates` or `fails_to_replicate`; an `extension` should have `extends`. The target can be a paper, book or software release, with a `locator` for the exact place:
 
@@ -166,7 +166,7 @@ Every claim rests on assumptions; make them explicit as separate claims with `su
 - data: representativeness, correct labels, measurement validity;
 - methodological: choice of benchmark, metric, horizon, instrument validity.
 
-Use `check: "tested"` or `"sensitivity_analysed"` only if the work actually did so, and point `check_evidence` at that evidence. Otherwise `unchecked` (or `untestable`). Assumption claims have no `assessments`.
+Use `check: "tested"` or `"sensitivity_analysed"` only if the work actually did so, and point `check_evidence` at that evidence. Otherwise `unchecked` (or `untestable`). Assumption claims have no `assessments` and no `novelty`.
 
 ### 7. Separate scope from limitations
 
@@ -227,7 +227,7 @@ Re-read the file as a sceptical reviewer who sees only one claim at a time. If t
 - Does every refutation, replication and extension name the work it relates to?
 - Are limitations specific and attached to the right claims?
 - Are all numbers identical to the structured results and the source tables? Does each claim cite only the results its statement reports? (The validator warns, W12, when a cited result does not appear in the statement, and W17 when a number in the statement matches no result.)
-- Does every `new` or `refutation` claim cite the closest prior result you found?
+- Does every `no_prior_found` or `refutation` claim cite the closest prior result you found?
 - Do the most important claims, especially refutations, have independent checks, with every outcome recorded?
 - If there is a lab record: are negative results included, are the exploration counts right, and is every exploratory claim labelled as such?
 

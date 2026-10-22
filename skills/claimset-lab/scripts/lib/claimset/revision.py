@@ -25,7 +25,7 @@ from . import validate as _validate
 from .lab import decision as _decision
 from .lab.core import canonical, sha256
 
-CATEGORIES = ("prior_work", "scope", "assumption", "test", "measurement", "missing_result", "reproducibility",
+CATEGORIES = ("prior_work", "novelty", "scope", "assumption", "test", "measurement", "missing_result", "reproducibility",
               "reasoning", "presentation", "validation")
 SEVERITIES = ("could_reverse", "could_bias_magnitude", "reduces_precision", "reduces_transferability",
               "presentation")
@@ -226,6 +226,20 @@ class Record:
             if kind != "review" or vn != n:
                 continue
             for x in _as_list(d.get("scores")):
+                x = _as_dict(x)
+                if x.get("claim"):
+                    out[x["claim"]] = dict(x, review=f"{self.vid(n)}/{d.get('id')}")
+        return out
+
+    def novelty(self, n=None):
+        """{claim: {closest, searched, comments, review}}: the latest novelty assessment of each claim of version n
+        (default: the current one) (§7.3)."""
+        n = n or max(self.versions)
+        out = {}
+        for kind, vn, d in self.documents(upto=n):
+            if kind != "review" or vn != n:
+                continue
+            for x in _as_list(d.get("novelty")):
                 x = _as_dict(x)
                 if x.get("claim"):
                     out[x["claim"]] = dict(x, review=f"{self.vid(n)}/{d.get('id')}")
@@ -520,7 +534,7 @@ def _check_verdict(r, w, v, comments, is_resolution):
 
 
 def check_review(record, doc):
-    """Check a review or a resolution against the record (R1-R7, R18, W-R1). `doc` may already be in the record."""
+    """Check a review or a resolution against the record (R1-R7, R18, R19, W-R1). `doc` may already be in the record."""
     r = Report()
     doc = _as_dict(doc)
     schema = doc.get("schema")
@@ -612,7 +626,13 @@ def check_review(record, doc):
                 r.err("R3", f"{w}.targets", f"'{t}' is not an object or field of v{n}")
         if c.get("category") not in CATEGORIES:
             r.err("R3", f"{w}.category", f"must be one of {', '.join(CATEGORIES)}")
-        if c.get("severity") not in SEVERITIES:
+        if c.get("category") == "novelty":
+            if "severity" in c:
+                r.err("R3", f"{w}.severity", "a novelty comment has no severity: it questions a label, not whether "
+                                             "the claim holds")
+            if not _as_list(c.get("references")):
+                r.err("R3", f"{w}.references", "a novelty comment cites the earlier work that questions the label")
+        elif c.get("severity") not in SEVERITIES:
             r.err("R3", f"{w}.severity", f"must be one of {', '.join(SEVERITIES)}")
         for f in ("comment", "requested_action"):
             if not isinstance(c.get(f), str) or not c[f].strip():
@@ -643,11 +663,101 @@ def check_review(record, doc):
             r.err("R5", "verdicts", f"no verdict on {k}, unresolved on v{n - 1}")
     elif _as_list(doc.get("verdicts")) and not is_resolution:
         r.err("R5", "verdicts", "only a re-review gives verdicts on earlier comments")
-    _check_scores(r, record, doc, n, comments, is_resolution, claims)
+    after = _states_after(record, doc, n, comments)
+    _check_scores(r, record, doc, n, after, is_resolution, claims)
+    _check_novelty(r, record, doc, n, after, is_resolution)
     return r
 
 
+def _states_after(record, doc, n, before):
+    """{comment global ID: (state, claims, category)} once this review is published: earlier comments after its
+    verdicts, and its own comments, open."""
+    state = {k: (c.state, c.claims, c.comment.get("category")) for k, c in before.items()}
+    for v in _as_list(doc.get("verdicts")):
+        v = _as_dict(v)
+        if v.get("comment") in state and v.get("state") in STATES:
+            old = state[v["comment"]]
+            state[v["comment"]] = (v["state"], old[1], old[2])
+    for c in _as_list(doc.get("comments")):
+        c = _as_dict(c)
+        if c.get("id"):
+            gid = f"{record.vid(n)}/{doc.get('id')}.{c['id']}"
+            state[gid] = ("open", [x for x in _as_list(c.get("claims")) if isinstance(x, str)], c.get("category"))
+    return state
+
+
+def _own(record, doc, n, category=None):
+    """{global ID: claims} of the review's own comments (of one category)."""
+    out = {}
+    for c in _as_list(doc.get("comments")):
+        c = _as_dict(c)
+        if c.get("id") and (category is None or c.get("category") == category):
+            out[f"{record.vid(n)}/{doc.get('id')}.{c['id']}"] = [x for x in _as_list(c.get("claims"))
+                                                                 if isinstance(x, str)]
+    return out
+
+
+def _check_novelty(r, record, doc, n, state, is_resolution):
+    """R19: the novelty assessment of every claim, with the search it rests on (§7.3)."""
+    entries = doc.get("novelty")
+    kind = doc.get("kind")
+    human = is_resolution or _as_dict(doc.get("reviewer")).get("type") == "human"
+    target = record.versions[n].claimset
+    claims = {c.get("id"): c for c in _as_list(target.get("claims")) if isinstance(c, dict)}
+    due = {cid for cid, c in claims.items() if not _validate.is_assumption(c)}
+    if not entries:
+        if kind in ("initial", "re_review") and not human and due:
+            r.err("R19", "novelty", "an initial review or a re-review assesses the novelty of every claim that is "
+                                    "not an assumption")
+        return
+    if human:
+        r.err("R19", "novelty", "only the platform's reviewer assesses novelty; human reviews and resolutions "
+                                "raise novelty comments instead")
+        return
+    if not isinstance(entries, list):
+        r.err("R19", "novelty", "a list of {claim, closest, searched, comments}")
+        return
+    named = {x for cl in _own(record, doc, n, "novelty").values() for x in cl}
+    seen = set()
+    for i, x in enumerate(entries):
+        w = f"novelty[{i}]"
+        x = _as_dict(x)
+        cid = x.get("claim")
+        if cid not in due:
+            r.err("R19", f"{w}.claim", f"'{cid}' is not a claim of v{n} that has a novelty (assumptions have none)")
+            continue
+        if cid in seen:
+            r.err("R19", f"{w}.claim", f"{cid} is assessed twice")
+        seen.add(cid)
+        if kind == "additional" and cid not in named:
+            r.err("R19", f"{w}.claim", f"an additional review assesses only the claims its novelty comments name")
+        searched = _as_dict(x.get("searched"))
+        sources = _as_list(searched.get("sources"))
+        if not sources or not all(isinstance(t, str) and t.strip() for t in sources):
+            r.err("R19", f"{w}.searched.sources", "say where the search looked: the platform's claims, literature "
+                                                  "databases, the claimset's references")
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", str(searched.get("date", ""))):
+            r.err("R19", f"{w}.searched.date", "the date of the search, YYYY-MM-DD")
+        for j, ref in enumerate(_as_list(x.get("closest"))):
+            if not (isinstance(ref, dict) and ref.get("target") and ref.get("id_type")):
+                r.err("R19", f"{w}.closest[{j}]", "a reference with target and id_type, and a note on the difference")
+        for k in _as_list(x.get("comments")):
+            st = state.get(k)
+            if st is None:
+                r.err("R19", f"{w}.comments", f"'{k}' is not a comment of this claimset")
+            elif st[2] != "novelty":
+                r.err("R19", f"{w}.comments", f"{short(k)} is not a novelty comment")
+            elif st[0] not in UNRESOLVED:
+                r.err("R19", f"{w}.comments", f"{short(k)} is {st[0]}: it no longer questions the label")
+            elif cid not in st[1]:
+                r.err("R19", f"{w}.comments", f"{short(k)} does not name {cid}")
+    if kind in ("initial", "re_review"):
+        for cid in sorted(due - seen):
+            r.err("R19", "novelty", f"no novelty assessment of {cid}")
+
+
 def _check_scores(r, record, doc, n, before, is_resolution, claims):
+    # `before`: the state of every comment once this review is published (_states_after)
     """R18: who scores which claims, and every point below 100 rests on unresolved comments on the claim or on
     what it rests on (§7)."""
     scores = doc.get("scores")
@@ -663,19 +773,8 @@ def _check_scores(r, record, doc, n, before, is_resolution, claims):
     if not isinstance(scores, list):
         r.err("R18", "scores", "a list of {claim, score, comments, reason}")
         return
-    # the state of every comment once this review is published
-    state = {k: (c.state, c.claims) for k, c in before.items()}
-    for v in _as_list(doc.get("verdicts")):
-        v = _as_dict(v)
-        if v.get("comment") in state and v.get("state") in STATES:
-            state[v["comment"]] = (v["state"], state[v["comment"]][1])
-    own = {}
-    for c in _as_list(doc.get("comments")):
-        c = _as_dict(c)
-        if c.get("id"):
-            gid = f"{record.vid(n)}/{doc.get('id')}.{c['id']}"
-            state[gid] = ("open", [x for x in _as_list(c.get("claims")) if isinstance(x, str)])
-            own[gid] = state[gid][1]
+    state = before
+    own = _own(record, doc, n)
     target = record.versions[n].claimset
     named_by_own = {x for cl in own.values() for x in cl}
     seen = set()
@@ -710,6 +809,9 @@ def _check_scores(r, record, doc, n, before, is_resolution, claims):
             st = state.get(k)
             if st is None:
                 r.err("R18", f"{w}.comments", f"'{k}' is not a comment of this claimset")
+            elif st[2] == "novelty":
+                r.err("R18", f"{w}.comments", f"{short(k)} questions novelty, not credibility: it does not lower a "
+                                              f"score")
             elif st[0] not in UNRESOLVED:
                 r.err("R18", f"{w}.comments", f"{short(k)} is {st[0]}: a settled comment no longer lowers a score")
             elif not set(st[1]) & reach:
@@ -1048,7 +1150,7 @@ def cmd_status(args):
     due = [c for c in comments.values() if c.unresolved]
     if args.json:
         print(json.dumps({"concept": rec.concept, "current": rec.vid(rec.current.n), "hash": rec.current.hash,
-                          "scores": rec.scores(),
+                          "scores": rec.scores(), "novelty": rec.novelty(),
                           "comments": [c.summary() for c in comments.values()],
                           "to_answer": [c.id for c in due]}, ensure_ascii=False, indent=2))
         return 0
@@ -1063,6 +1165,12 @@ def cmd_status(args):
             print(f"  {cid}: {x.get('score')}{why}")
     else:
         print("No scores yet: the version has not been reviewed.")
+    labels = {c.get("id"): c.get("novelty") for c in _as_list(rec.current.claimset.get("claims")) if isinstance(c, dict)}
+    for cid, x in rec.novelty().items():
+        closest = ", ".join(str(_as_dict(c).get("target")) for c in _as_list(x.get("closest"))) or "none found"
+        doubt = _as_list(x.get("comments"))
+        state = f"in question ({', '.join(short(k) for k in doubt)})" if doubt else "agrees with the search"
+        print(f"  {cid} novelty {labels.get(cid)}: {state}; closest: {closest}")
     for c in comments.values():
         flag = "*" if c.unresolved else " "
         print(f"{flag} {short(c.id)} [{c.comment.get('category')}, {c.comment.get('severity')}] "

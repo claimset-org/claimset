@@ -27,6 +27,11 @@ NEW = ("W17", "W18", "W19", "W20", "W21")
 def fixture_claimset():
     d = json.loads((FIXTURE / "claimset.json").read_text(encoding="utf-8"))
     d["schema_version"] = SCHEMA_VERSION      # written under v0.18; the checks are what is tested here
+    for c in d["claims"]:                     # the novelty labels as renamed in v0.22
+        if any(s.get("kind") == "assumption" for s in c["support"]):
+            c.pop("novelty", None)
+        elif c.get("novelty") == "new":
+            c["novelty"] = "no_prior_found"
     return d
 
 

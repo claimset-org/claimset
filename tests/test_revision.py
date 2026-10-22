@@ -32,6 +32,18 @@ TEST_RHO = {"procedure": "Compute the correlation of method M's forecast errors 
             "upheld": "rho > 0.3", "withdrawn": "rho <= 0.3"}
 
 
+NOVELTY_C2 = {"claim": "C2", "closest": [], "searched": {"sources": ["claimset", "openalex"], "date": "2026-10-23"},
+              "comments": []}
+PRIOR = {"id": "c4", "claims": ["C2"], "category": "novelty",
+         "comment": "A benchmark of method M against the seasonal naive method on UK retail series is reported in B9.",
+         "requested_action": "Relate C2 to B9 and relabel it, or state how it differs.",
+         "references": [{"target": "doi:10.1016/j.ijforecast.2020.00001", "id_type": "doi", "locator": "Table 3"}],
+         "resolution_test": {"procedure": "Read Table 3 of doi:10.1016/j.ijforecast.2020.00001.",
+                             "framework": "documentary",
+                             "upheld": "it reports method M improving on seasonal naive for UK monthly retail sales",
+                             "withdrawn": "it does not"}}
+
+
 def review_rv1(v1):
     return {
         "schema": "claimset-review", "schema_version": "0.1", "id": "RV1", "kind": "initial",
@@ -72,6 +84,7 @@ def review_rv1(v1):
              "reason": "Independence across series is unchecked and doubtful for one retailer's series (c2)."},
             {"claim": "C2", "score": 60, "comments": [f"{V1}/RV1.c1", f"{V1}/RV1.c2", f"{V1}/RV1.c3"],
              "reason": "The gain may not transfer beyond one retailer (c1), and its interval rests on C3 (c2)."}],
+        "novelty": [NOVELTY_C2],
         "lab_record": None}
 
 
@@ -171,7 +184,8 @@ class RecordCase(unittest.TestCase):
                    {"comment": f"{V1}/RV1.c3", "state": "resolved", "reason": "C2 names the United Kingdom."}],
                "scores": [{"claim": "C1", "score": 100}, {"claim": "C3", "score": 100},
                           {"claim": "C2", "score": 90, "comments": [f"{V1}/RV1.c1"],
-                           "reason": "The gain is measured under one retailer's promotions, as L2 states (c1)."}]}
+                           "reason": "The gain is measured under one retailer's promotions, as L2 states (c1)."}],
+               "novelty": [dict(NOVELTY_C2, searched={"sources": ["claimset"], "date": "2026-10-31"})]}
         doc.update(extra)
         return doc
 
@@ -234,7 +248,8 @@ class TestReviews(RecordCase):
         bad = copy.deepcopy(self.rv1)
         del bad["reviewer"]["prompt"]["hash"]
         self.assertEqual(rules(rv.check_review(rec, bad)), ["R2"])
-        human = dict(self.rv1, id="RV9", kind="additional", reviewer={"type": "human", "name": "R"}, scores=[])
+        human = dict(self.rv1, id="RV9", kind="additional", reviewer={"type": "human", "name": "R"}, scores=[],
+                     novelty=[])
         self.assertEqual(rules(rv.check_review(rec, human)), ["R2"])
 
     def test_w_r1_same_model_as_an_author(self):
@@ -333,7 +348,7 @@ class TestReviews(RecordCase):
         bad = copy.deepcopy(self.rv1)
         del bad["reviewer"]["rubric"]
         self.assertEqual(rules(rv.check_review(rec, bad)), ["R2"])
-        human = dict(copy.deepcopy(self.rv1), id="RV9", kind="additional",
+        human = dict(copy.deepcopy(self.rv1), id="RV9", kind="additional", novelty=[],
                      reviewer={"type": "human", "name": "R", "orcid": "0000-0002-0000-0002",
                                "competing_interests": "none"})
         self.assertEqual(rules(rv.check_review(self.record(), human)), ["R18"])
@@ -341,8 +356,47 @@ class TestReviews(RecordCase):
         self.assertEqual(rv.check_review(self.record(), human).errors, [])
         extra = dict(copy.deepcopy(self.rv1), id="RV9", kind="additional",
                      comments=[dict(self.rv1["comments"][2], id="c1")],
-                     scores=[{"claim": "C1", "score": 100}])
+                     scores=[{"claim": "C1", "score": 100}], novelty=[])
         self.assertEqual(rules(rv.check_review(self.record(), extra)), ["R18"])    # its comment names only C2
+
+    def test_novelty_comments_have_no_severity_and_cite_the_work(self):
+        rec = self.unfiled()
+        doc = copy.deepcopy(self.rv1)
+        doc["comments"].append(PRIOR)
+        doc["novelty"] = [dict(NOVELTY_C2, comments=[f"{V1}/RV1.c4"],
+                               closest=[{"target": "doi:10.1016/j.ijforecast.2020.00001", "id_type": "doi",
+                                         "note": "Same benchmark design on another retailer's series."}])]
+        self.assertEqual(rv.check_review(rec, doc).errors, [])
+        bad = copy.deepcopy(doc)
+        bad["comments"][3]["severity"] = "could_reverse"
+        self.assertEqual(rules(rv.check_review(rec, bad)), ["R3"])
+        bad = copy.deepcopy(doc)
+        del bad["comments"][3]["references"]
+        self.assertEqual(rules(rv.check_review(rec, bad)), ["R3"])
+
+    def test_r18_novelty_comments_do_not_lower_credibility(self):
+        rec = self.unfiled()
+        doc = copy.deepcopy(self.rv1)
+        doc["comments"].append(PRIOR)
+        doc["scores"][2]["comments"].append(f"{V1}/RV1.c4")
+        self.assertEqual(rules(rv.check_review(rec, doc)), ["R18"])
+
+    def test_r19_novelty_assessments(self):
+        rec = self.unfiled()
+        for change in ({"novelty": []},
+                       {"novelty": [dict(NOVELTY_C2, claim="C1")]},                    # an assumption
+                       {"novelty": [dict(NOVELTY_C2, searched={"sources": [], "date": "2026-10-23"})]},
+                       {"novelty": [dict(NOVELTY_C2, searched={"sources": ["claimset"], "date": "23/10/2026"})]},
+                       {"novelty": [dict(NOVELTY_C2, closest=[{"note": "n"}])]},
+                       {"novelty": [dict(NOVELTY_C2, comments=[f"{V1}/RV1.c1"])]}):  # not a novelty comment
+            bad = dict(copy.deepcopy(self.rv1), **change)
+            self.assertEqual(rules(rv.check_review(rec, bad)), ["R19"], change)
+        human = dict(copy.deepcopy(self.rv1), id="RV9", kind="additional", scores=[],
+                     reviewer={"type": "human", "name": "R", "orcid": "0000-0002-0000-0002",
+                               "competing_interests": "none"})
+        self.assertEqual(rules(rv.check_review(self.record(), human)), ["R19"])
+        human["novelty"] = []
+        self.assertEqual(rv.check_review(self.record(), human).errors, [])
 
     def test_resolution(self):
         self.publish_v2()

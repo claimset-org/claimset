@@ -16,7 +16,7 @@ from . import LAB_SPEC_VERSION, REVISION_SPEC_VERSION, SPEC_VERSION, __version__
 
 PACKAGE = Path(__file__).resolve().parent
 DATA = PACKAGE / "data"
-SKILLS = ("claimset-submit", "claimset-lab", "claimset-revise")
+SKILLS = ("claimset-submit", "claimset-lab", "claimset-revise", "claimset-review")
 DEFAULT_DIR = ".claude/skills"
 
 
@@ -47,12 +47,12 @@ def files(name):
         for ex in sorted((DATA / "examples").glob("*.json")):
             out[f"examples/{ex.name}"] = ex
         return out
-    if name in ("claimset-lab", "claimset-revise"):
+    if name in ("claimset-lab", "claimset-revise", "claimset-review"):
         out = {"SKILL.md": DATA / "skills" / name / "SKILL.md",
                "scripts/claimset": DATA / "skills" / "claimset-lab" / "claimset",
                f"references/{lab.name}": lab,
                rev_name: rev}
-        if name == "claimset-revise":
+        if name in ("claimset-revise", "claimset-review"):
             out[f"references/{spec.name.replace('claimset-v', 'spec-v')}"] = spec
         for rel in _package_modules():
             out[f"scripts/lib/claimset/{rel.as_posix()}"] = PACKAGE / rel
@@ -101,7 +101,7 @@ def install(directory, name, force=False):
             dst = staging / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, dst)
-        if name in ("claimset-lab", "claimset-revise"):
+        if name in ("claimset-lab", "claimset-revise", "claimset-review"):
             (staging / "scripts" / "claimset").chmod(0o755)
         existed = target.exists()
         if existed:

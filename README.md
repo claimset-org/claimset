@@ -138,6 +138,8 @@ claimset lab protect          # append-only attribute on the log files (Linux, n
 
 `skills/claimset-revise/` teaches an agent to answer the reviews of a published claimset: settling each comment with evidence (running its resolution test as a planned test where it can be computed), building the revised version and writing the response. It bundles the package too.
 
+`skills/claimset-review/` is the platform's reviewer, published so that every author can see how a claimset is reviewed and review their own before submitting: what to check, how to write a comment whose resolution test either side could run, how to judge an author's answers, and how every score below 100 rests on comments. Each review names the version of the skill it followed.
+
 ## Contributing
 
 - The specifications in `spec/` are the source of truth; the validator implements them and the tests check both.

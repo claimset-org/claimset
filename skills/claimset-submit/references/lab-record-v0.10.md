@@ -1,8 +1,21 @@
-# Claimset Lab Record — Specification v0.8 (draft)
+# Claimset Lab Record — Specification v0.10 (draft)
 
-Status: working draft · Date: 2026-10-22 · Supersedes v0.7 · Companion to the claimset specification (`spec/claimset-v0.20.md`)
+Status: working draft · Date: 2026-10-22 · Supersedes v0.9 · Companion to the claimset specification (`spec/claimset-v0.22.md`) and the revision specification (`spec/claimset-revision-v0.2.md`)
 
-## Changes since v0.7
+## Changes since v0.9
+
+- Export follows claimset v0.22: claims get `novelty: no_prior_found` by default (the authors found no earlier result stating the claim; the completion list asks for the closest one they found), and assumption claims get no novelty (§9).
+
+## Changes in v0.9 (since v0.8)
+
+A published claimset is reviewed, and every review comment says in advance what evidence would settle it (its resolution test, revision §3.4). The lab record is where the author runs that test, so the verdict is computed against a rule the author did not write, at a time the record anchors.
+
+- Plans gain `addresses`: the global IDs of the review comments whose resolution test they run (§5.7.7).
+- `plan --comment ID --review FILE` takes the decision rule from the comment's resolution test (§5.7.7, §10).
+- Export carries `addresses` into the claim's `test` (§9).
+- The record of a revised claimset continues the record of the previous version: new events are appended, nothing before them changes (§5.7.7).
+
+## Changes in v0.8 (since v0.7)
 
 A record can follow every rule and still hide a weak test: a confirmatory run that recomputes the exploration that suggested its hypothesis, units left out of the analysis without a count, one computation run twice under two plans. The tool now says so. Nothing new is required: these are flags and warnings.
 
@@ -281,7 +294,7 @@ A revised hypothesis is a new `H` event; the old one gets a `status` event with 
 
 ### 5.7 `plan` (prefix `PL`)
 
-`{kind, hypotheses, design, analysis, new_data, exclusions, decision, runs, data, holdout, code_version, dirty}`
+`{kind, hypotheses, design, analysis, new_data, exclusions, addresses, decision, runs, data, holdout, code_version, dirty}`
 
 - `kind`: `confirmatory` or `exploratory`. Required.
 - `hypotheses`: hypothesis IDs the plan tests. Required (at least one) for `confirmatory`. One plan can test several hypotheses: when one computation decides several, they are named in one plan, with a quantity and rules that decide each (a verdict is recorded for each, §5.7.4), and the computation is run once.
@@ -289,6 +302,7 @@ A revised hypothesis is a new `H` event; the old one gets a `status` event with 
 - `analysis`: what will be computed from the outputs. Required.
 - `new_data`: optional text: what the test uses that the runs which suggested its hypotheses did not (new data, a seed that changes the sample, new models or settings). Recommended when a hypothesis it names is `from_exploration` (§5.7.6): a test on what the exploration already saw can only repeat it.
 - `exclusions`: optional list of `{name, rule}`: each rule that leaves units out of the analysis (models near a boundary, outliers, trimmed observations), with a name and the rule as text. The deciding runs report how many units each excluded, as a result whose `quantity` contains `excluded` or the exclusion's name (§5.7.6), so readers see how much of the sample the verdict rests on.
+- `addresses`: optional list of the global IDs of review comments (`doi:…@v1/RV1.c6`) whose resolution test the plan runs (§5.7.7).
 - `decision`: the decision rule (§5.7.1). Required for `confirmatory`.
 - `runs`: how many successful confirmatory runs decide the plan (§5.7.2). A positive integer; default 1.
 - `data`: optional list of `{description, hash}` for data that exists when the plan is written.
@@ -364,6 +378,17 @@ The tool warns, and records nothing, when:
 - a plan has no `exclusions` and a parameter of its decision rule has a name that suggests one: split at `_`, `-` and spaces, it contains `edge`, `band`, `exclude`, `exclusion`, `excluded`, `trim`, `trimmed`, `outlier`, `outliers` or `cutoff` (at `plan`);
 - a decided plan declares an exclusion and no result of its deciding runs has a `quantity` containing `excluded` or the exclusion's name (at `verdict`);
 - a confirmatory run has the same `command`, `code_version`, `seeds` and `parameters` as a successful confirmatory run of another plan (at `run`, and as a note of `verify`): one computation recorded twice; one plan naming both hypotheses would have needed one run.
+
+#### 5.7.7 Plans that answer a review
+
+A review comment on a published claimset carries a resolution test: a procedure and two rules, `upheld` (the comment stands) and `withdrawn` (it falls), fixed before the author answers (revision §3.4). The author runs a computable test as a confirmatory plan:
+- a hypothesis states what the comment questions, as the author holds it (`per_lag_max() reproduces the check of smooth 4.6.0 on the models of C1`);
+- the plan's decision rule is the comment's current test: its framework, parameters and quantities, `supported` its `withdrawn` rule and `not_supported` its `upheld` rule, unchanged; `design` is its procedure;
+- `addresses` names the comment.
+
+The verdict then says which rule of the comment's test the evidence met: `supported` means the comment's `withdrawn` rule was met, `not_supported` its `upheld` rule, `inconclusive` neither. All rules of planned tests apply (L15–L17); a test that comes out against the author is reported like any other. A plan may address several comments when one run settles them all. Tests of the framework `documentary` (decided by what a cited source states) and text rules are not run in the record: the author answers them in the response.
+
+The claimset's next version comes with the record of the previous version followed by the events written since (revision §5.4): the record is never restarted or rewritten for a revision, and the work that answers a review is appended to it.
 
 ### 5.8 `approval` (prefix `AP`)
 
@@ -536,13 +561,13 @@ Hypotheses without a final status are counted as open; they are not forced close
 | `init` | `paper.title` (the working title), `paper.origin: native` |
 | `actor`, agent | contributor of type `agent` with its models (each model defined once in `models`, `accessed` the date of the earliest event by an agent using it), `name`, `record_source`, `run_period` (dates of its first and last events) and `tools: [code_execution]` if it ran commands. Position `author` if it wrote any event other than `actor` and `check`; otherwise `contributor`, with AI task `review` |
 | `actor`, human or organisation | contributor with `name` and `orcid`, position `contributor`. Who is supervisor and guarantor is decided by people (completion list) |
-| a verdict on a planned test (§5.7.4) | a claim per decided plan and hypothesis it names, in the order of the hypotheses and then the plans: `statement` from the hypothesis as it stood when the plan was written, `hypothesis: {lab_event, outcome}` (`lab_event` is that version's ID, `outcome` the verdict), defaults `type: descriptive`, `role: supporting`, `novelty: new`, `provenance: author_stated` |
+| a verdict on a planned test (§5.7.4) | a claim per decided plan and hypothesis it names, in the order of the hypotheses and then the plans: `statement` from the hypothesis as it stood when the plan was written, `hypothesis: {lab_event, outcome}` (`lab_event` is that version's ID, `outcome` the verdict), defaults `type: descriptive`, `role: supporting`, `novelty: no_prior_found`, `provenance: author_stated` |
 | `hypothesis` named by no decided plan, with final status `supported`, `not_supported` or `inconclusive` | an exploratory claim, the same way, from the latest version of the hypothesis and its final status |
 | `hypothesis` otherwise | not a claim; counted in `paper.exploration` |
 | the runs behind a verdict or final status | one evidence object per claim, from the runs the status names as evidence, directly or through their results: `lab_runs`, `results` (one per `result` event: `quantity`, `value`, `unit`, `interval`, `conditions`), `execution` (`code_version` when the runs share one), default `profile: quant`, `design: other`, `availability: public`. The claim's support is `empirical_quant` pointing to the evidence and its results |
-| `plan` | `planning`, `planned_at`, `planned_at_anchor` and `test` on the claims of its verdicts (below). `test` is the plan's decision rule as written before the run: `framework`, `parameters`, `quantities`, `supported`, `not_supported`, `verdict` (`computed` when the rule has quantities, otherwise `judged`), `runs`, `lab_plan` (the plan's ID) and `flags` (§5.7.5) |
+| `plan` | `planning`, `planned_at`, `planned_at_anchor` and `test` on the claims of its verdicts (below). `test` is the plan's decision rule as written before the run: `framework`, `parameters`, `quantities`, `supported`, `not_supported`, `verdict` (`computed` when the rule has quantities, otherwise `judged`), `runs`, `lab_plan` (the plan's ID), `flags` (§5.7.5) and `addresses` (§5.7.7) |
 | `deviation` | `planning: confirmatory_with_deviations`, and a limitation on the affected claim: `category: analytic_flexibility`, `impact: could_bias_magnitude`, `mitigation: none`, statement naming the run, the plan, what differed and why |
-| `assumption` | assumption claim with `assumption_category` and `check`; `check_evidence` when it names a run or result used in an evidence object |
+| `assumption` | assumption claim (without novelty) with `assumption_category` and `check`; `check_evidence` when it names a run or result used in an evidence object |
 | `check` | a `checks` entry on the claim whose hypothesis, final status, or evidence run or result it targets. A check by an actor exported as an author is not exported (claimset rule 39) and is named in the completion list |
 | `artefact` | artefact with `kind`, `uri` (the path or URI), `version` (the hash), `licence`, `description` |
 | the whole record | artefact of kind `lab_record`: `uri` (for a repository on GitHub whose last event is anchored by a git commit, the log in that commit; otherwise the repository URI from `init` followed by the log's path, and the completion list asks for a fixed URI, or the path alone), `version` (the hash of `lab.jsonl`), `availability: public`, `withheld_events`; referenced from `paper.exploration.lab_record` |
@@ -575,6 +600,7 @@ The reference tool is part of the `claimset` package. Indicative commands:
 | `claimset lab status H3 supported --evidence RS12 RS13 --why "…" [--plan PL2] [--rule supported]` | status change, with L6, L7 and L17 checked |
 | `claimset lab verdict PL2` | the verdict a decided plan's rule gives, with the value bound to each quantity (§5.7.3) |
 | `claimset lab plan --kind confirmatory --hypotheses H1 --design … --analysis … --framework frequentist --parameter alpha=0.05 … --quantity p="…" --supported "p < alpha" --not-supported "…" [--runs N] [--decision FILE] [--new-data "…"] [--exclusion name="rule"]` | writes a plan with its decision rule (§5.7.1) and anchors it; warns as in §5.7.6 |
+| `claimset lab plan --kind confirmatory --hypotheses H9 --comment doi:…@v1/RV1.c6 --review RV1.json --analysis "…"` | writes a plan that runs a review comment's resolution test: the decision rule is the comment's current test and `addresses` names the comment (§5.7.7); `--design` defaults to the test's procedure |
 | `claimset lab approve PL2` | human approval |
 | `claimset lab run [--plan PL2] [--exploratory] [--param k=v] [--seed N] [--data FILE] -- <command>` | runs the command, records `run` and `result` events (§5.9.1) |
 | `claimset lab decide` / `deviate` / `check` / `artefact` | writes the corresponding event |

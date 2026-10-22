@@ -289,7 +289,7 @@ class _Exporter:
         st = self.st
         cid = f"C{len(self.claims) + 1}"
         self.mapping[cid] = version["id"]
-        claim = {"id": cid, "type": "descriptive", "role": "supporting", "novelty": "new", "support": [],
+        claim = {"id": cid, "type": "descriptive", "role": "supporting", "novelty": "no_prior_found", "support": [],
                  "provenance": "author_stated", "hypothesis": {"lab_event": version["id"], "outcome": outcome}}
         if is_withheld(version):
             self.todo(f"claims.{cid}.statement", f"hypothesis {version['id']} is withheld; write the statement of {cid}")
@@ -329,8 +329,10 @@ class _Exporter:
             self.todo(f"claims.{cid}.statement", f"{cid} is a negative result: rewrite the statement of "
                                                  f"{version['id']} to say plainly what was not found, and under what "
                                                  f"conditions")
-        self.todo(f"claims.{cid}", f"confirm the type (exported as descriptive), role and novelty of {cid}, and "
-                                   f"give its scope")
+        self.todo(f"claims.{cid}", f"confirm the type (exported as descriptive) and role of {cid}, and give its "
+                                   f"scope; its novelty is exported as no_prior_found: look for the closest earlier "
+                                   f"result and cite it (a relation with a note on the difference), or relabel the "
+                                   f"claim a replication or extension of it")
         return claim, cited_runs
 
     def add_deviation_limitation(self, claim, run, plan_version, dv):
@@ -486,14 +488,14 @@ class _Exporter:
             cur = st.latest(a["id"])
             self.mapping[cid] = cur["id"]
             if is_withheld(cur):
-                self.claims.append({"id": cid, "type": "descriptive", "role": "supporting", "novelty": "new",
+                self.claims.append({"id": cid, "type": "descriptive", "role": "supporting",
                                     "support": [{"kind": "assumption"}], "provenance": "author_stated"})
                 self.todo(f"claims.{cid}", f"assumption {cur['id']} is withheld; write the statement, category and "
                                            f"check of {cid}")
                 continue
             b = cur["body"]
             claim = {"id": cid, "statement": b.get("statement"), "type": "descriptive", "role": "supporting",
-                     "novelty": "new", "support": [{"kind": "assumption"}],
+                     "support": [{"kind": "assumption"}],
                      "assumption_category": b.get("category"), "check": b.get("check"),
                      "provenance": "author_stated"}
             ce = b.get("check_evidence")
