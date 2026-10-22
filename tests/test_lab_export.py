@@ -141,7 +141,7 @@ class TestMapping(ExportCase):
     def test_exploration_counts(self):
         ex = self.out["draft"]["paper"]["exploration"]
         self.assertEqual(ex["hypotheses"], {"total": 6, "supported": 1, "not_supported": 1, "inconclusive": 1,
-                                            "revised": 1, "abandoned": 2, "open": 0})
+                                            "revised": 1, "abandoned": 2, "open": 0, "from_exploration": 0})
         self.assertEqual(ex["tests"], {"total": 2, "supported": 1, "not_supported": 1, "inconclusive": 0})
         self.assertEqual(ex["runs"], {"total": 4, "confirmatory": 2, "exploratory": 2, "failed": 1})
         self.assertEqual(ex["questions"], 1)

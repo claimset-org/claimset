@@ -10,7 +10,7 @@ A lab record is the running log of a piece of research, kept while it happens. I
 - that every number comes from a recorded run of code, not from memory or retyping;
 - what was tried and failed, so a positive result can be weighed against the number of attempts.
 
-At the end the record is exported to a claimset (a paper for LLM readers) with the `claimset-submit` skill. The specification is `references/lab-record-v0.7.md`; read §5 (event types) and §6 (rules) when an event or a refusal is unclear.
+At the end the record is exported to a claimset (a paper for LLM readers) with the `claimset-submit` skill. The specification is `references/lab-record-v0.8.md`; read §5 (event types) and §6 (rules) when an event or a refusal is unclear.
 
 **The tool.** Use `claimset` if it is installed (`claimset --help` works); then check that this skill matches it (`claimset skill check`) and, if not, update the skills with `claimset skill install`. Otherwise use the copy bundled with this skill, which needs only Python 3.9+: `python3 <this skill>/scripts/claimset`. Below, `claimset` stands for whichever you use. Every writing command prints the new event's ID; add `--json` to see the whole event. 
 
@@ -27,6 +27,8 @@ At the end the record is exported to a claimset (a paper for LLM readers) with t
 7. **Keep secrets and personal data out of event text.** Refer to data files by path; the tool records their hashes.
 
 ## Starting
+
+Start the record before the work does: before the first design sketch, exploratory script or scratchpad check whose results will shape the study. A record assembled afterwards from scratchpad work cannot show what was tried, in what order, or which hypotheses came before their results; it reads as planned work that was not.
 
 1. **Check for an existing record.** If `claimset/` has studies (`ls claimset/*/lab/lab.jsonl`), or there is an older `lab/lab.jsonl`, and this work continues one of them, this is a continuation: go to *Resuming*. New research with its own questions is a new study, even in a repository that has others.
 2. **Create the record:** `claimset setup --study <name> --title "Working title" --repository https://…` creates the branch `claimset/<name>` with the lab and checks it out at `claimset/<name>/` (the repository URI is used when the record is published). Choose a short name with the human. Setup also adds `/claimset/` to `.gitignore` and the lines that leave `claimset/` and `claimset-code/` out of the package builds the repository has; commit those on the code branch. In a fresh clone of a repository that already has studies, `claimset setup` checks them all out. Outside a git repository, `claimset lab init --study <name> --title …` makes a plain folder.
@@ -77,18 +79,22 @@ Record events as the work happens, not afterwards from memory.
 - `--supported "…"` and `--not-supported "…"`: the rule for each conclusive outcome.
 - Recommended: `--quantity name="quantity text"` for each result your script will write that the decision uses (by its exact `quantity` text), so the rules can be expressions over them (`p < alpha and d > 0`, `abs(d) < 0.01`; only numbers, names, `+ - * /`, `abs()`, comparisons, `and`, `or`, `not`). The tool then computes the verdict. Add conditions or an interval bound with JSON: `--quantity 'd_up={"quantity": "mean MAE difference", "conditions": {"ratio": 1}, "field": "interval.upper"}'`. Each name must match exactly one result of the deciding runs. Without quantities the rules are text, and you state which one the evidence met: the claim then says the verdict was judged rather than computed.
 - `--runs N` if more than one run decides the plan (default 1); each quantity then says which run it comes from (`"run": 2`). `--decision rule.json` takes the whole rule from a file.
+- `--new-data "…"`: what this test uses that the runs which suggested its hypotheses did not. Give it for every hypothesis recorded `--from-exploration`; the tool warns when it is missing.
+- `--exclusion name="rule"` for every rule that leaves units out of the analysis (`--exclusion edge="models with max |lambda| within 1e-8 of 1"`), repeatable. Have the script report how many units each excluded, as a result whose quantity contains `excluded` or the exclusion's name (`"models excluded by edge"`); `verdict` warns when none does, and `plan` warns when a parameter looks like an exclusion (`edge_band`, `trim`, `outlier_cutoff`) and none is declared.
+
+**One plan can test several hypotheses.** When one computation decides several hypotheses, name them all in one plan (`--hypotheses H1 H2`), with quantities and rules that decide each, and run it once; record a verdict for each. Two plans running the same command on the same code record one computation twice, and `run` warns when it sees that.
 
 Write the **not supported** rule as carefully as the supported one. Failing to reach significance is not a negative result: it is `inconclusive`. A hypothesis is refuted only by what the plan says in advance would refute it, for example a confidence interval lying entirely below the smallest effect that would matter (an equivalence bound), or a significant effect in the opposite direction. Work out the sample size so that a conclusive outcome is likely, and say how in `sample`.
 
 Use computed rules whenever the outcome can be computed from numbers; text rules are for proofs, qualitative patterns and the like.
 
-**New data.** A confirmatory test needs data that did not inform the hypothesis. A new seed is new data only for what the seed generates: a fixed grid of settings, a fixed benchmark set or a deterministic computation, run again, is the same data as the exploratory run that prompted the hypothesis, whatever the seed. If part of a planned test would reuse such data, take that part out of the plan (it stays exploratory, and the claim says so) or test it on new settings, and say in the design what is new.
+**New data.** A confirmatory test needs data that did not inform the hypothesis. A new seed is new data only for what the seed generates: a fixed grid of settings, a fixed benchmark set or a deterministic computation, run again, is the same data as the exploratory run that prompted the hypothesis, whatever the seed. If part of a planned test would reuse such data, take that part out of the plan (it stays exploratory, and the claim says so) or test it on new settings, and say what is new with `--new-data`. When a result the rule uses comes out identical to the result that suggested the hypothesis (same quantity, conditions and value), the test is flagged `reproduces_prompting_result`.
 
 The tool checks that the rule is complete (L15). After that, only two things are strict:
 - **One attempt per plan.** Every confirmatory run counts, including one that fails. Once the plan has its deciding runs, further confirmatory runs under it are refused (L16), so a test cannot be repeated until it comes out favourably. Make sure the script works first, with exploratory runs on other data.
 - **Every planned test that ran is reported.** Record its verdict (see below); export refuses until you have. Other statuses, before or after, do not replace it. To test a hypothesis again (a replication, a larger sample), write a new plan; each test becomes its own claim, so both results are published.
 
-Two things are flagged, not refused, and readers see the flags: analysis code that changed after the plan was written (commit the analysis code first: the plan records the commit), and held-out data used by other runs (declare it with `--holdout FILE`, and pass inputs to runs with `--data`).
+Three things are flagged, not refused, and readers see the flags: analysis code that changed after the plan was written (commit the analysis code first: the plan records the commit), held-out data used by other runs (declare it with `--holdout FILE`, and pass inputs to runs with `--data`), and a deciding result identical to the result that suggested the hypothesis.
 
 Approvals are optional: when the human is available, ask them to approve confirmatory plans; when not, proceed. The record shows which plans were approved.
 
@@ -152,10 +158,11 @@ If you orchestrate other agents that work concurrently:
 ## Independent checks
 
 A check counts as independent only when someone other than the author makes it, and it is recorded by them. When you ask another agent to check your work (to reproduce runs, re-derive a result, review a draft):
-1. Register it as its own actor, with its model: `claimset lab actor --kind agent --name "Checker" --model … --by AC2`, then `claimset lab start --by AC5` so it writes to its own log.
-2. Tell it its actor ID and to follow this skill. Its reproductions are its own runs (`claimset lab run --by AC5 …`), including reruns with other seeds or tolerances; every number it reports comes from one of them.
-3. It records each verdict with `claimset lab check <run, result or event> --outcome … --extent … --notes "…" --by AC5`. A disputed check stays in the record with the correction that answers it.
-4. Merge its log when it finishes (`claimset lab merge --by AC2`).
+1. Register it as its own actor, with its model: `claimset lab actor --kind agent --name "Checker" --model … --by AC2`, then `claimset lab start --by AC5` so it writes to its own log. Do this before it starts, not after: work it did outside the record is its account, not a check.
+2. Tell it its actor ID and to follow this skill. Its reproductions and sensitivity analyses (reruns with other seeds, tolerances or settings) are its own runs, `claimset lab run --by AC5 …`; every number it reports comes from one of them.
+3. It records each verdict with `claimset lab check <run, result or event> --outcome … --extent … --notes "…" --by AC5`, naming in the notes the runs and results that show it (`Reproduced in AC5.RN2: RS… equal`). A disputed check stays in the record with the correction that answers it.
+4. A sensitivity analysis that tests an assumption is that assumption's check: correct the assumption to `--check sensitivity_analysed --check-evidence <the checker's run>` (`claimset lab assume "…" --supersedes AS2 … --by AC2`), so the claimset cites it.
+5. Merge its log when it finishes (`claimset lab merge --by AC2`).
 
 Do not summarise a check in a note of your own instead: export takes claims' `checks` from check events, and a check reported only by the author is the author's account.
 

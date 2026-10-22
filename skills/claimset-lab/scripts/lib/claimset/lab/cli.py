@@ -6,7 +6,8 @@ import os
 import sys
 from pathlib import Path
 
-from .core import Lab, LabError, file_hash, plan_flags, verify
+from .core import (Lab, LabError, duplicate_runs, file_hash, plan_flags, plan_warnings, uncounted_exclusions,
+                   verify)
 from . import summary as _summary
 from .run import run_command
 from . import export as _export
@@ -289,12 +290,23 @@ def cmd_plan(args):
         if not Path(h).is_file():
             raise LabError("schema", f"--holdout {h}: no such file")
         holdout.append({"path": h, "hash": file_hash(h)})
+    exclusions = []
+    for x in args.exclusion:
+        if "=" not in x:
+            raise LabError("schema", f"--exclusion '{x}': use name=\"rule\", e.g. edge=\"models within 1e-8 of the "
+                                     f"boundary\"")
+        name, rule = x.split("=", 1)
+        exclusions.append({"name": name.strip(), "rule": rule.strip()})
     commit, dirty = code_version(os.getcwd(), _lab(args).root)
-    return _write(args, "plan", {"kind": args.kind, "hypotheses": args.hypotheses, "design": args.design,
-                                 "analysis": args.analysis, "decision": _decision_from_args(args),
-                                 "runs": args.runs, "criterion": args.criterion, "data": data,
-                                 "holdout": holdout, "code_version": commit,
-                                 "dirty": dirty if commit is not None else None})
+    body = {"kind": args.kind, "hypotheses": args.hypotheses, "design": args.design, "analysis": args.analysis,
+            "new_data": args.new_data, "exclusions": exclusions or None, "decision": _decision_from_args(args),
+            "runs": args.runs, "criterion": args.criterion, "data": data, "holdout": holdout,
+            "code_version": commit, "dirty": dirty if commit is not None else None}
+    warnings = plan_warnings(_view(args), body)
+    code = _write(args, "plan", body)
+    for w in warnings:
+        print(f"claimset: warning: {w}", file=sys.stderr)
+    return code
 
 
 def cmd_verdict(args):
@@ -314,6 +326,9 @@ def cmd_verdict(args):
            "not_supported": rule.get("not_supported")}
     if d:
         out["flags"] = plan_flags(st, d[0], d[1])
+        out["warnings"] = [f"exclusion '{x}': no deciding run reports how many units it excluded (a result whose "
+                           f"quantity contains \"excluded\" or the exclusion's name)"
+                           for x in uncounted_exclusions(st, d[0], d[1])]
         if _decision.computed(rule):
             out.update(_decision.verdict(rule, [[x["body"] for x in st.results_of.get(r["id"], [])] for r in d[1]]))
         else:
@@ -336,6 +351,8 @@ def cmd_verdict(args):
     print(f"Verdict: {out['verdict']}" if out.get("verdict") else out["note"])
     for f in out.get("flags") or []:
         print(f"  flag: {f.replace('_', ' ')}")
+    for w in out.get("warnings") or []:
+        print(f"  warning: {w}")
     return 0
 
 
@@ -378,6 +395,11 @@ def cmd_run(args):
     print(msg, file=sys.stderr)
     for p in out["problems"]:
         print(f"claimset: results.json {p}", file=sys.stderr)
+    dup = duplicate_runs(lab.view(_actor(args)), run) if run["body"]["label"] == "confirmatory" else []
+    if dup:
+        print(f"claimset: warning: {run['id']} repeats {', '.join(dup)} (same command, code version, seeds and "
+              f"parameters under another plan); one plan can name several hypotheses, so one run can decide "
+              f"them all", file=sys.stderr)
     cfg = _anchor.anchoring(lab)
     if cfg and cfg.get("every") == "event":
         _auto_anchor(lab, out["results"][-1] if out["results"] else run)
@@ -658,6 +680,11 @@ def add_parser(subparsers):
                    help="hypotheses the plan tests (required for confirmatory)")
     p.add_argument("--design", required=True, help="what will be run, on what, with which settings")
     p.add_argument("--analysis", required=True, help="what will be computed from the outputs")
+    p.add_argument("--new-data", dest="new_data", metavar="TEXT",
+                   help="what this test uses that the runs which suggested its hypotheses did not")
+    p.add_argument("--exclusion", action="append", default=[], metavar="NAME=RULE",
+                   help="a rule that leaves units out of the analysis, e.g. edge=\"models within 1e-8 of the "
+                        "boundary\"; the runs should report how many it excluded; repeat for several")
     p.add_argument("--framework", choices=list(_decision.FRAMEWORKS), help="how the outcome will be decided")
     p.add_argument("--parameter", action="append", default=[], metavar="NAME=VALUE",
                    help="a parameter fixed in advance, e.g. alpha=0.05, sides=greater; repeat for several")

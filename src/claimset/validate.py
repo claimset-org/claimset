@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.19"
+SCHEMA_VERSION = "0.20"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -46,7 +46,7 @@ ENUM = {
     "anchor": {"platform", "rfc3161", "git_remote", "none"},
     "framework": {"frequentist", "equivalence", "bayesian", "deterministic", "formal", "qualitative"},
     "verdict": {"computed", "judged"},
-    "test_flag": {"code_changed_after_plan", "holdout_used_elsewhere"},
+    "test_flag": {"code_changed_after_plan", "holdout_used_elsewhere", "reproduces_prompting_result"},
     "assumption_category": {"theoretical", "statistical", "methodological", "data", "axiom",
                             "theorem_condition", "paradigmatic"},
     "check": {"tested", "sensitivity_analysed", "unchecked", "untestable"},
@@ -247,6 +247,60 @@ def check_covers(r, exp):
             r.err("55", f"paper.exploration.covers.other_papers[{i}].questions",
                   f"{', '.join(sorted(seen & set(oq)))} reported in more than one paper")
         seen |= set(oq)
+
+
+GIT_HOSTS = re.compile(r"^https?://(?:www\.)?(?:github\.com|gitlab\.com|bitbucket\.org|codeberg\.org|"
+                       r"gitlab\.[\w.-]+|git\.[\w.-]+)/", re.I)
+FULL_COMMIT = re.compile(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])")
+
+
+def process_warnings(r, doc, claims, coll, by_id, converted):
+    """Warnings W18, W20 and W21: duplicated evidence, unmitigated reversal risks of contributions, artefact
+    links that may not last."""
+    # W18: two evidence objects from the same code with the same results
+    seen = {}
+    for e in coll["evidence"]:
+        if not isinstance(e, dict):
+            continue
+        code = as_dict(e.get("execution")).get("code_version")
+        results = sorted(json.dumps([as_dict(x).get("quantity"), as_dict(x).get("value"), as_dict(x).get("conditions")],
+                                    sort_keys=True) for x in as_list(e.get("results")))
+        if not code or not results:
+            continue
+        key = (code, tuple(results))
+        if key in seen:
+            r.warn("W18", f"evidence:{e.get('id')}", f"same code and the same results as {seen[key]}: one evidence "
+                                                    f"object, cited by every claim it supports (and one plan for "
+                                                    f"several hypotheses)")
+        else:
+            seen[key] = e.get("id")
+    # W20: a contribution that a limitation could reverse, unmitigated, with its strength not calibrated to it
+    if not converted:
+        for cid, c in claims.items():
+            if c.get("role") != "principal":
+                continue
+            risky = [lid for lid in as_list(c.get("limitations"))
+                     if (by_id(lid, "limitations") or {}).get("impact") == "could_reverse"
+                     and (by_id(lid, "limitations") or {}).get("mitigation") == "none"]
+            authored = [as_dict(a) for a in as_list(c.get("assessments")) if as_dict(a).get("by") == "author"]
+            if any(a.get("strength") in ("low", "very_low") for a in authored):
+                continue
+            rationale = " ".join(str(a.get("rationale") or "") for a in authored)
+            missing = [lid for lid in risky if not re.search(rf"\b{re.escape(str(lid))}\b", rationale)]
+            if missing:
+                r.warn("W20", f"claims:{cid}", f"a contribution that {', '.join(missing)} could reverse, with no "
+                                               f"mitigation: say in the strength rationale how that risk was weighed "
+                                               f"(naming {', '.join(missing)}), or lower the strength")
+    # W21: a public artefact on a git host whose link is not pinned to a commit
+    for a in coll["artefacts"]:
+        if not isinstance(a, dict):
+            continue
+        level = as_dict(a.get("availability")).get("level", "public")
+        uri = a.get("uri") or as_dict(a.get("availability")).get("uri") or ""
+        if level == "public" and isinstance(uri, str) and GIT_HOSTS.match(uri) and not FULL_COMMIT.search(uri):
+            r.warn("W21", f"artefacts:{a.get('id')}.uri", "the link names a branch or a moving reference, not a "
+                                                           "commit: what it shows will change; pin it to the full "
+                                                           "commit hash")
 
 
 def validate(doc, published=False, local_root=None):
@@ -471,6 +525,8 @@ def validate(doc, published=False, local_root=None):
             ref("1", f"{w}.underlying_data", a["underlying_data"], "artefacts")
         if a.get("reference") is not None:
             ref("54", f"{w}.reference", a["reference"], "references")
+        if "archive_uri" in a and not (isinstance(a["archive_uri"], str) and a["archive_uri"].strip()):
+            r.err("1", f"{w}.archive_uri", "must be a persistent identifier or archive URI (a SWHID, DOI or archived URL)")
         check_availability(r, w, a.get("availability"))
         if not a.get("licence"):
             r.warn("W9", f"{w}.licence", "recommended: state the artefact's licence (SPDX identifier)")
@@ -617,6 +673,8 @@ def validate(doc, published=False, local_root=None):
     for cid, c in claims.items():
         validate_claim(r, c, cid, ids, by_id, ref, converted, author_models)
 
+    process_warnings(r, doc, claims, coll, by_id, converted)
+
     # identical scopes (warning W6)
     groups = {}
     for cid, c in claims.items():
@@ -684,6 +742,13 @@ def validate(doc, published=False, local_root=None):
                 r.err("45", f"paper.exploration.runs.{k}", "must be a non-negative integer")
         if all(nonneg(hy.get(k)) for k in ("total",) + hkeys) and hy["total"] != sum(hy[k] for k in hkeys):
             r.err("45", "paper.exploration.hypotheses.total", "must equal the sum of the other hypothesis counts")
+        for where, counts in (("paper.exploration.hypotheses", hy),
+                              ("paper.exploration.covers.lab.hypotheses",
+                               as_dict(as_dict(as_dict(exp.get("covers")).get("lab")).get("hypotheses")))):
+            if "from_exploration" in counts:
+                fe, tot = counts["from_exploration"], counts.get("total")
+                if not nonneg(fe) or (nonneg(tot) and fe > tot):
+                    r.err("58", f"{where}.from_exploration", "must be an integer from 0 to the total of hypotheses")
         if all(nonneg(rn.get(k)) for k in ("total", "confirmatory", "exploratory", "failed")):
             if rn["total"] != rn["confirmatory"] + rn["exploratory"]:
                 r.err("45", "paper.exploration.runs.total", "must equal confirmatory + exploratory")
@@ -821,6 +886,69 @@ TEST_PARAMETERS = {
     "equivalence": ("alpha", "test", "lower_bound", "upper_bound", "sample"),
     "bayesian": ("prior", "threshold", "sample"),
 }
+
+
+NUMBER_SKIP = re.compile(
+    r"\$[^$]*\$"                                                      # LaTeX
+    r"|\[\[D\d+:[^\]]*\]\]"                                            # defined-term markers
+    r"|\b[A-Za-z]{1,8}\([^()]*\)"                                       # model notation: ETS(A,N,A), AR(1)
+    r"|\b(?:Sections?|Sect\.|Tables?|Fig(?:ure)?s?\.?|Eq(?:uation)?s?\.?|Theorems?|Lemmas?|Propositions?|"
+    r"Corollar(?:y|ies)|Chapters?|Appendi(?:x|ces)|Algorithms?|§)\s*[A-Z]?\d+(?:\.\d+)*")
+
+
+def _numbers_in(x, out):
+    """Every number in a value: numbers themselves, and numbers written in strings, lists and objects."""
+    if isinstance(x, bool):
+        return out
+    if isinstance(x, (int, float)):
+        out.append(float(x))
+    elif isinstance(x, str):
+        for m in NUM_RE.finditer(NUMBER_SKIP.sub(" ", x)):
+            try:
+                out.append(float(m.group(1)) * 10 ** (int(m.group(3)) if m.group(3) else 0))
+            except ValueError:
+                pass
+    elif isinstance(x, dict):
+        for v in x.values():
+            _numbers_in(v, out)
+    elif isinstance(x, list):
+        for v in x:
+            _numbers_in(v, out)
+    return out
+
+
+def unsourced_numbers(c, support, by_id):
+    """W17: numbers in the statement of an empirical or simulation claim that no structured source holds: the
+    cited evidence's results (values, intervals, conditions) and table cells and conditions, the test's
+    parameters, the claim's scope, and the definitions the statement references. Evidence descriptions do not
+    count: a number a statement reports should be a recorded result."""
+    if not {s.get("kind") for s in support} & {"empirical_quant", "simulation"}:
+        return []
+    sources = []
+    for s in support:
+        e = by_id(s.get("evidence"), "evidence") if s.get("evidence") else None
+        if e is None:
+            continue
+        for x in as_list(e.get("results")):
+            x = as_dict(x)
+            _numbers_in([x.get("value"), x.get("interval"), x.get("conditions")], sources)
+        for t in as_list(e.get("tables")):
+            t = as_dict(t)
+            _numbers_in([t.get("conditions"), [as_dict(row).get("values") for row in as_list(t.get("rows"))],
+                         [as_dict(row).get("label") for row in as_list(t.get("rows"))]], sources)
+        _numbers_in([e.get("estimate"), e.get("interval"), e.get("n")], sources)
+    _numbers_in([as_dict(c.get("test")).get("parameters"), c.get("scope")], sources)
+    stmt = c.get("statement") or ""
+    for m in re.finditer(r"\[\[(D\d+):", stmt):
+        d = by_id(m.group(1), "definitions")
+        if d is not None:
+            _numbers_in(d.get("definition"), sources)
+    out = []
+    for m in NUM_RE.finditer(NUMBER_SKIP.sub(" ", stmt)):
+        token = m.group(0)
+        if not any(number_matches(v, token) for v in sources) and token.strip() not in out:
+            out.append(token.strip())
+    return out
 
 
 def check_test(r, test, w):
@@ -1154,6 +1282,15 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
             val = rmap.get(rid, {}).get("value")
             if isinstance(val, (int, float)) and not isinstance(val, bool) and not number_matches(val, stmt):
                 r.warn("W12", f"{w}.statement", f"cited result {ref_id} = {val:.6g} does not appear in the statement at the stated precision; check the number, or cite only the results the statement reports")
+    unsourced = unsourced_numbers(c, support, by_id)
+    if unsourced:
+        r.warn("W17", f"{w}.statement", f"{', '.join(unsourced)} in the statement match no recorded result, table "
+                                        f"cell, test parameter, scope condition or referenced definition: record the "
+                                        f"number as a result (or the setting in the scope), or check it")
+    kinds = {s.get("kind") for s in support}
+    if c.get("novelty") == "new" and kinds == {"consensus"}:
+        r.warn("W19", w, "novelty new, but the only support is established knowledge (consensus): if the claim is "
+                         "itself known, cite it or relate to it; if it is new, give the support that shows it")
     if ver == "machine_checked":
         fe = [by_id(s.get("evidence"), "evidence") for s in support if s.get("kind") == "formal_proof"]
         if not any(e is not None and e.get("proof_artefact") and e.get("checker") for e in fe):
