@@ -11,6 +11,7 @@ Scores are given by the platform's reviewer, not computed by a formula: the revi
 - Principle 7 and §7 rewritten: the platform's reviewer scores every claim, from 0 to 100, against the portal's public scoring rubric, in the initial review and every re-review. A score below 100 cites the unresolved comments it rests on. A version has no score until its first review. The formula of v0.1 (base values, weights, dependency caps) is removed; the rubric and the paper score are the portal's.
 - Reviews gain `scores`, and an agent reviewer that scores names its `rubric` (§3.1). New rule R18; R2 extended (§8).
 - §9: `claimset revision score` removed; `status` shows the latest scores.
+- §9: the reviewer's instructions are the public `claimset-review` skill, named in every review.
 
 ## 1. Principles
 
@@ -432,6 +433,8 @@ The reference implementation is part of the `claimset` package. Its commands rea
 | `claimset revision respond RECORD --revision FILE [--lab FILE] [-o FILE]` | writes a draft response: an entry for every unresolved comment, `changed` with the paths of the revision that the comment's targets cover, `rebutted` with the evidence of lab plans that address the comment and whose verdict met its `withdrawn` rule, and `declined` for the rest, to be completed by the author |
 | `claimset revision check RECORD --revision FILE --response FILE [--lab FILE]` | checks a revision submission (R8–R17, W-R2–W-R4) and prints the patch the platform will record |
 | `claimset revision patch RECORD --revision FILE --response FILE` | the JSON Patch from the current version to the revision, with `reason` and `addresses` (§5.3) |
+
+The platform's reviewer follows the public `claimset-review` skill of the same repository; each review names the version of the skill it followed, its public URI and its hash in `reviewer.prompt` (§3.1), so anyone can see, and repeat, how a review was made. Authors answer reviews with the `claimset-revise` skill.
 
 The lab tool runs a comment's resolution test as a planned test: `claimset lab plan --comment <global ID> --review FILE --hypotheses H9 …` takes the decision rule from the comment's current test and records the comment in the plan's `addresses` (lab record §5.7).
 
