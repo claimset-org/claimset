@@ -569,7 +569,11 @@ class _Exporter:
             final = self.statuses.get(h["id"])
             to = final["body"].get("to") if final else None
             counts[to if to in FINAL else "open"] += 1
-        return dict({"total": sum(counts.values())}, **counts)
+        out = dict({"total": sum(counts.values())}, **counts)
+        latest = [self.st.latest(h["id"]) or h for h in hyps]
+        out["from_exploration"] = sum(1 for h in latest if not is_withheld(h)
+                                      and (h.get("body") or {}).get("origin") == "from_exploration")
+        return out
 
     def test_counts_of(self, hyps):
         st, counts = self.st, {o: 0 for o in OUTCOMES}

@@ -1,8 +1,18 @@
-# Claimset Lab Record — Specification v0.7 (draft)
+# Claimset Lab Record — Specification v0.8 (draft)
 
-Status: working draft · Date: 2026-10-22 · Supersedes v0.6 · Companion to the claimset specification (`spec/claimset-v0.19.md`)
+Status: working draft · Date: 2026-10-22 · Supersedes v0.7 · Companion to the claimset specification (`spec/claimset-v0.20.md`)
 
-## Changes since v0.6
+## Changes since v0.7
+
+A record can follow every rule and still hide a weak test: a confirmatory run that recomputes the exploration that suggested its hypothesis, units left out of the analysis without a count, one computation run twice under two plans. The tool now says so. Nothing new is required: these are flags and warnings.
+
+- Plans gain `new_data` (what the test uses that the runs which suggested its hypotheses did not) and `exclusions` (rules that leave units out of the analysis, `{name, rule}`) (§5.7).
+- New flag `reproduces_prompting_result`: a result the decision rule uses equals a result of a run that suggested the hypothesis (§5.7.5).
+- New §5.7.6, warnings: at plan time, a hypothesis from exploration without `new_data`, and a parameter that looks like an exclusion without a declared exclusion; at the verdict, an exclusion that no deciding run counts; at a confirmatory run, the same command, code, seeds and parameters as another plan's run.
+- One plan can test several hypotheses (§5.7).
+- Export counts the hypotheses suggested by exploration, `hypotheses.from_exploration` (§9; claimset §3.1.1).
+
+## Changes in v0.7 (since v0.6)
 
 The record and the code are kept apart by the tools, not by care. A study's record copied along code branches diverged, was carried into pull requests, and stopped being kept when the work turned to implementation.
 
@@ -271,12 +281,14 @@ A revised hypothesis is a new `H` event; the old one gets a `status` event with 
 
 ### 5.7 `plan` (prefix `PL`)
 
-`{kind, hypotheses, design, analysis, decision, runs, data, holdout, code_version, dirty}`
+`{kind, hypotheses, design, analysis, new_data, exclusions, decision, runs, data, holdout, code_version, dirty}`
 
 - `kind`: `confirmatory` or `exploratory`. Required.
-- `hypotheses`: hypothesis IDs the plan tests. Required (at least one) for `confirmatory`.
+- `hypotheses`: hypothesis IDs the plan tests. Required (at least one) for `confirmatory`. One plan can test several hypotheses: when one computation decides several, they are named in one plan, with a quantity and rules that decide each (a verdict is recorded for each, §5.7.4), and the computation is run once.
 - `design`: what will be run, on what, with which settings. Required.
 - `analysis`: what will be computed from the outputs. Required.
+- `new_data`: optional text: what the test uses that the runs which suggested its hypotheses did not (new data, a seed that changes the sample, new models or settings). Recommended when a hypothesis it names is `from_exploration` (§5.7.6): a test on what the exploration already saw can only repeat it.
+- `exclusions`: optional list of `{name, rule}`: each rule that leaves units out of the analysis (models near a boundary, outliers, trimmed observations), with a name and the rule as text. The deciding runs report how many units each excluded, as a result whose `quantity` contains `excluded` or the exclusion's name (§5.7.6), so readers see how much of the sample the verdict rests on.
 - `decision`: the decision rule (§5.7.1). Required for `confirmatory`.
 - `runs`: how many successful confirmatory runs decide the plan (§5.7.2). A positive integer; default 1.
 - `data`: optional list of `{description, hash}` for data that exists when the plan is written.
@@ -340,9 +352,18 @@ A hypothesis may be tested again under a new plan (a replication, a larger sampl
 
 #### 5.7.5 Flags
 
-Two things weaken a planned test without making it invalid. The tool does not refuse them; it reports them as flags of the decided plan (in `verify`, in `verdict`, and in the exported claim's `test.flags`):
+Three things weaken a planned test without making it invalid. The tool does not refuse them; it reports them as flags of the decided plan (in `verify`, in `verdict`, and in the exported claim's `test.flags`):
 - `code_changed_after_plan`: a deciding run used a different commit from the one recorded with the plan, or the code had uncommitted changes when the plan was written or a deciding run was made. The analysis was not fixed when the plan was. Commit the analysis code before writing the plan to avoid it.
 - `holdout_used_elsewhere`: a run other than the plan's deciding runs declared a held-out file of the plan (by hash) as input data. The data meant to test the hypothesis was also used to explore it. Only inputs declared to the tool (`run --data`) can be detected.
+- `reproduces_prompting_result`: a plan names a hypothesis recorded `from_exploration`, and a result of a deciding run has the same `quantity`, the same `conditions` and the same `value` as a result of a run that suggested it (a run named in the hypothesis's `prompted_by`, or the run of a result named there). Under a rule with quantities, only the results the quantities bind are compared; under text rules every result is. Results with value 0 are not compared: a count of zero (no mismatches, no failures) is what a correct method gives on any data. The test may have recomputed the exploration (the same data, or data generated by code that a new seed did not change) rather than tested the hypothesis on anything new.
+
+#### 5.7.6 Warnings
+
+The tool warns, and records nothing, when:
+- a plan names a hypothesis recorded `from_exploration` and has no `new_data` (at `plan`);
+- a plan has no `exclusions` and a parameter of its decision rule has a name that suggests one: split at `_`, `-` and spaces, it contains `edge`, `band`, `exclude`, `exclusion`, `excluded`, `trim`, `trimmed`, `outlier`, `outliers` or `cutoff` (at `plan`);
+- a decided plan declares an exclusion and no result of its deciding runs has a `quantity` containing `excluded` or the exclusion's name (at `verdict`);
+- a confirmatory run has the same `command`, `code_version`, `seeds` and `parameters` as a successful confirmatory run of another plan (at `run`, and as a note of `verify`): one computation recorded twice; one plan naming both hypotheses would have needed one run.
 
 ### 5.8 `approval` (prefix `AP`)
 
@@ -530,7 +551,7 @@ Hypotheses without a final status are counted as open; they are not forced close
 
 **Planning label of an exported claim.** A claim from a verdict is `confirmatory`, or `confirmatory_with_deviations` if a deviation is recorded for the plan and one of its deciding runs. Its `planned_at` is the `at` of the plan version that decides the plan (the one its first deciding run names in `plan_version`), and `planned_at_anchor` is the service of the earliest anchor that covers that plan version and was made before the first deciding run started, or `none`. A claim from a hypothesis named by no decided plan is `exploratory`.
 
-**Exploration summary.** `questions` counts questions, each correction chain once; `hypotheses` counts hypotheses by final status, each correction chain once, with `open` for those without one; `tests` counts verdicts, one per decided plan and hypothesis it names; `runs` counts all run events by label, and `failed` those whose exit status is not `success`.
+**Exploration summary.** `questions` counts questions, each correction chain once; `hypotheses` counts hypotheses by final status, each correction chain once, with `open` for those without one, and `from_exploration` those whose latest version has `origin: from_exploration`; `tests` counts verdicts, one per decided plan and hypothesis it names; `runs` counts all run events by label, and `failed` those whose exit status is not `success`.
 
 **Defaults the completion list always names:** `paper.licence` and the guarantor (asked of the responsible human), `paper.contributions` and principal roles, `paper.autonomy` (exported as `unknown`), claim types, statements of negative results (to say plainly what was not found), scopes, evidence profiles and descriptions, and links from claims to assumptions.
 
@@ -553,7 +574,7 @@ The reference tool is part of the `claimset` package. Indicative commands:
 | `claimset lab question` / `hypothesis` / `assume` / `note` | writes the corresponding event |
 | `claimset lab status H3 supported --evidence RS12 RS13 --why "…" [--plan PL2] [--rule supported]` | status change, with L6, L7 and L17 checked |
 | `claimset lab verdict PL2` | the verdict a decided plan's rule gives, with the value bound to each quantity (§5.7.3) |
-| `claimset lab plan --kind confirmatory --hypotheses H1 --design … --analysis … --framework frequentist --parameter alpha=0.05 … --quantity p="…" --supported "p < alpha" --not-supported "…" [--runs N] [--decision FILE]` | writes a plan with its decision rule (§5.7.1) and anchors it |
+| `claimset lab plan --kind confirmatory --hypotheses H1 --design … --analysis … --framework frequentist --parameter alpha=0.05 … --quantity p="…" --supported "p < alpha" --not-supported "…" [--runs N] [--decision FILE] [--new-data "…"] [--exclusion name="rule"]` | writes a plan with its decision rule (§5.7.1) and anchors it; warns as in §5.7.6 |
 | `claimset lab approve PL2` | human approval |
 | `claimset lab run [--plan PL2] [--exploratory] [--param k=v] [--seed N] [--data FILE] -- <command>` | runs the command, records `run` and `result` events (§5.9.1) |
 | `claimset lab decide` / `deviate` / `check` / `artefact` | writes the corresponding event |

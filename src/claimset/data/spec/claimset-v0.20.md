@@ -1,10 +1,29 @@
-# Claimset — Specification v0.18 (draft)
+# Claimset — Specification v0.20 (draft)
 
-Status: working draft · Date: 2026-10-18 · Supersedes v0.17 (`spec/claimset-v0.17.md`) · Companion: lab record specification (`spec/lab-record-v0.5.md`)
+Status: working draft · Date: 2026-10-22 · Supersedes v0.19 (`spec/claimset-v0.19.md`) · Companion: lab record specification (`spec/lab-record-v0.8.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.17
+## Changes since v0.19
+
+Checks for problems in how a study was run and reported, found when reviewing a real claimset: numbers that no recorded result produced, the same computation recorded twice, new claims resting on established knowledge, contributions an unmitigated limitation could reverse, and links to code that move. They are warnings: nothing new is required.
+
+- New warnings 17 to 21 (§10.4).
+- New test flag `reproduces_prompting_result`: the confirmatory test gave the same result as the exploratory run that suggested its hypothesis (§3.3.3; lab record §5.7.5).
+- `exploration.hypotheses.from_exploration`: how many hypotheses exploration suggested (§3.1.1); new rule 58 (§10).
+- Artefacts gain `archive_uri`, a persistent copy of the exact version; links to code on a git host name a commit, and the platform archives that commit at publication (§3.6, §11).
+
+## Changes in v0.19 (since v0.18)
+
+A repository can hold several studies and several papers, which may build on each other before they are published.
+
+- New §2.4: papers live in `claimset/<study>/<paper>.claimset.json`, with their reading view beside them; a version submitted or published is marked by a git tag, not by renaming the file.
+- `paper.study`: the name of the study a paper comes from (§3.1).
+- `exploration.covers`: a paper that reports some of its lab's questions says which, gives the whole lab's counts and names the other papers (§3.1.1).
+- New identifier type `claimset_local`: a claim or paper of the same repository that is not yet published, replaced by its global ID at publication (§4, §3.7, §3.13).
+- New rules 55, 56 and 57 (§10).
+
+## Changes in v0.18 (since v0.17)
 
 Claims are not all equal: a reader needs the contributions and what they rest on in full, and the rest briefly. Prior work a paper uses as data, software or an implementation is linked like other prior work.
 
@@ -203,6 +222,24 @@ A claimset is stored and exchanged as JSON: the canonical file, which tools vali
 
 The reading view is made mechanically from a valid file (`claimset render`); it adds nothing and is never edited. Its layout is the reference rendering in Appendix D. A reader that needs a field left out (a source span to check a claim against its source, an artefact's location) reads the canonical file.
 
+### 2.4 Files in a repository
+
+A paper written alongside its research lives in the research's repository, in the folder of its study (lab record specification §3):
+
+```
+claimset/
+  <study>/
+    lab/                         the study's lab record
+    code/                        code only this study uses (optional)
+    <paper>.claimset.json        the paper
+    <paper>.claimset.txt         its reading view (claimset render)
+```
+
+- A study and a paper are named with lower-case letters, digits and hyphens, starting with a letter (`eigen-checker`, `eigen-checker-cpp`). A study can give several papers; each reports whole questions of the study's lab (lab record §5.17). Papers from different studies are independent unless their claims link to each other.
+- A paper may cite or relate to a paper of the same repository that is not yet published, with `id_type: claimset_local` and the target `<study>/<paper>.claimset.json#C3` (a claim) or `<study>/<paper>.claimset.json` (the paper), relative to `claimset/` (§4). The validator checks that the file and the claim exist when the file lies in a `claimset/` folder. At publication the platform replaces each local reference with the global ID of the published claim, so the cited paper is published first, or both are submitted together.
+- The file keeps its name through revisions: the date and version of a submitted or published version are recorded by the platform (§9) and in git. A version is marked with the git tag `claimset/<study>/<paper>/v<n>` (`claimset tag`), made on the commit that holds it.
+- The `claimset/` folder is left out of package builds (lab record §3.3).
+
 ## 3. Object types
 
 ### 3.1 Paper
@@ -225,6 +262,7 @@ The reading view is made mechanically from a valid file (`claimset render`); it 
 | `contribution_record` | enum | Required. `complete` · `partial` · `unknown`. For converted papers, refers to the conversion |
 | `origin` | enum | Required. `native` · `converted` |
 | `exploration` | object | Required when any claim has `hypothesis`: summary of the research process (§3.1.1) |
+| `study` | string | The name of the study the paper comes from, when it is written in a repository (§2.4) |
 | `converted_from` | object | Required if `converted` (below) |
 
 **`converted_from`**
@@ -269,15 +307,25 @@ Contributors are listed in the top-level `contributors` list (§3.11), not in th
 "exploration": {
   "lab_record": "A10",
   "questions": 2,
-  "hypotheses": {"total": 10, "supported": 3, "not_supported": 2, "inconclusive": 1, "revised": 2, "abandoned": 1, "open": 1},
+  "hypotheses": {"total": 10, "supported": 3, "not_supported": 2, "inconclusive": 1, "revised": 2, "abandoned": 1, "open": 1,
+                 "from_exploration": 4},
   "tests": {"total": 5, "supported": 2, "not_supported": 2, "inconclusive": 1},
   "runs": {"total": 214, "confirmatory": 18, "exploratory": 196, "failed": 11}
 }
 ```
 
-- `hypotheses` counts recorded hypotheses by their final status; `open` counts those never closed. `total` is the sum of the other hypothesis counts.
+- `hypotheses` counts recorded hypotheses by their final status; `open` counts those never closed. `total` is the sum of the status counts.
+- `hypotheses.from_exploration` (optional, also in `covers.lab.hypotheses`): how many of the `total` hypotheses were recorded as suggested by exploration (lab record: `origin: from_exploration`). It is not a status and is not part of `total`. A hypothesis that exploration suggested is tested only by data the exploration did not use, so readers weigh its test by what was new.
 - `tests` counts planned tests that have run, by verdict: one per plan and hypothesis it names. `total` is the sum of the three verdicts.
 - `runs.total` is the sum of `confirmatory` and `exploratory`; `failed` counts runs of either kind whose exit status was not `success`.
+- `covers`, when the paper reports only some of its lab's questions: `questions` (their IDs in the lab record), `lab` (the whole lab's counts of `questions`, `hypotheses` and `tests`, in the same form) and `other_papers` (each other paper drawn from the lab, `{name, questions}`). `questions`, `hypotheses` and `tests` then count the paper's questions only; `runs` is always the whole lab's, since a run is not tied to a question. Readers can see what the lab tried that this paper does not report, and where it is reported.
+
+```json
+"covers": {"questions": ["Q1"],
+           "lab": {"questions": 2, "hypotheses": {"total": 9, "supported": 6, "not_supported": 1, "inconclusive": 1, "revised": 0, "abandoned": 1, "open": 0},
+                   "tests": {"total": 7, "supported": 6, "not_supported": 1, "inconclusive": 0}},
+           "other_papers": [{"name": "eigen-checker-cpp", "questions": ["Q2"]}]}
+```
 
 The counts cover what was recorded. Exploration is recorded where its results informed decisions, not step by step, so the counts are lower bounds of the exploration; the counts of planned tests are complete.
 
@@ -377,7 +425,7 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
 - `supported`, `not_supported`: the two rules: expressions over quantities and numeric parameters (lab record §5.7.3), or text saying what observation decides.
 - `verdict`: `computed` (the rules are expressions and the outcome was computed from the recorded results by the lab tool) · `judged` (the rules are text and the outcome was stated by the writer, who said which rule the evidence met).
 - `runs`: how many runs decided the test. `lab_plan`: the plan's lab-record ID, when there is one. `registration`: the URI of an external pre-registration, when there is one.
-- `flags`: optional list of weaknesses of the test, from the lab record (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs).
+- `flags`: optional list of weaknesses of the test, from the lab record (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs) · `reproduces_prompting_result` (a result the decision rule uses has the same quantity, conditions and value as a result of a run that suggested the hypothesis: the test may have repeated the exploration rather than tested the hypothesis on anything new).
 
 `planned_at_anchor` says how far `planned_at` can be trusted (lab record §7): from strongest, `platform` (receipt from the Claimset platform), `rfc3161` (trusted timestamp authority), `git_remote` (pushed commit), to `none`.
 
@@ -490,8 +538,11 @@ Warrants are for informal argument. Mathematical proofs use proof steps (§3.4).
 | `description` | string | Required for `figure` and `table`: what it shows, self-contained |
 | `underlying_data` | artefact ID | For `figure`: the data plotted |
 | `reference` | reference ID | The cited work this artefact is taken from (a data set, software or an implementation published by others), as an entry of `references` (§3.13) |
+| `archive_uri` | string | A persistent copy of exactly this version: a Software Heritage identifier (SWHID), a DOI or an archived URL. Optional; the platform adds it at publication for public artefacts pinned to a commit (§11) |
 
 Tables are stored as data (CSV or JSON), not images. Prompts are stored verbatim, including system prompts. A `trace` is the log of an agent's run (prompts, tool calls, outputs) as recorded by the system that ran it; it may contain confidential material and uses the availability levels in §3.10. A `manuscript` is a human-readable version of the same work (e.g. a LaTeX or PDF draft) from which the claimset was prepared. An artefact taken from prior work (a public data set, a package the paper's evidence uses) points to its `reference`; its `uri` and `version` are given when the paper gives them.
+
+A `uri` on a git host (GitHub, GitLab, Bitbucket, Codeberg and the like) names a full commit hash, e.g. `https://github.com/org/repo/tree/<40 hex digits>/path`, not a branch: a branch moves, so the link would later show other content than the evidence used (warning 21). A repository can still be deleted; `archive_uri` keeps a copy that outlives it.
 
 ### 3.7 Relations (cross-paper)
 
@@ -500,7 +551,7 @@ Links from a claim to a claim or work outside this paper: `{type, reference, tar
 - `type`: `supports` · `contradicts` · `extends` · `refines` · `replicates` · `fails_to_replicate` · `supersedes` · `addresses` (the claim answers a problem, gap or limitation that the target states).
 - `reference`: the ID of the cited work in `references` (§3.13). Either `reference`, or `target` with `id_type`, is given.
 - `target`: a global claim ID when the target is a claimset; otherwise the identifier of the work (paper, book, software release).
-- `id_type`: `claimset` · `doi` · `arxiv` · `handle` · `pmid` · `isbn` · `url` · `physical`.
+- `id_type`: `claimset` · `doi` · `arxiv` · `handle` · `pmid` · `isbn` · `url` · `physical` · `claimset_local` (a claim of a paper in the same repository not yet published, §2.4).
 - `locator`: optional; where in the target the related result is, e.g. `"eq. 29 and B.6"`, `"Section 4.2"`, `"function adam(), lognormal scale"`.
 - `archive_uri`: required for `url` targets: an archived snapshot.
 - `self`: true when the target work shares a human supervisor, guarantor or contributor with this paper.
@@ -620,7 +671,7 @@ Each model used anywhere in the paper is defined once.
 
 Each work the paper cites is listed once, in the top-level `references`, and cited by its ID from support entries, relations, definitions and artefacts. `{id, target, id_type, archive_uri}`
 - `id`: `B1`, `B2`, ….
-- `target` and `id_type`: as for cited support (§4): an identifier (`doi`, `arxiv`, …), a global claim ID of a claimset (`id_type: claimset`), or the reference as printed in the paper's reference list (`id_type: reference`).
+- `target` and `id_type`: as for cited support (§4): an identifier (`doi`, `arxiv`, …), a global claim ID of a claimset (`id_type: claimset`), a paper or claim of the same repository not yet published (`id_type: claimset_local`, §2.4), or the reference as printed in the paper's reference list (`id_type: reference`).
 - `archive_uri`: required for `url` targets.
 Only works that a support entry, relation, definition or artefact points to are listed.
 
@@ -645,7 +696,7 @@ Each support entry: `{kind, <required pointer>, …attributes}`.
 Attributes:
 - On any empirical kind: optional `artefacts` (e.g. "supported by Figure 15" → `{"kind": "empirical_quant", "evidence": "E3", "artefacts": ["A15"]}`).
 - On `empirical_quant` and `simulation`: optional `results`, the specific results the claim reports: result entries, result tables or table rows (e.g. `{"kind": "simulation", "evidence": "E20", "results": ["E20.R1", "E20.T1.r2"]}`). Recommended whenever the statement quotes numbers, so readers can check each number against the structured result.
-- On `cited`: `reference` (the ID of the cited work in `references`, §3.13), or `target` with `id_type` (`doi` · `arxiv` · `handle` · `pmid` · `isbn` · `url` · `physical` · `reference`) and `archive_uri` (required for `url`: an archived snapshot); optional `locator` (where in the cited work, e.g. `"Theorem 3.1"`); `self` (boolean, below). Where a claimset of the cited work exists, `target` may be its global claim ID.
+- On `cited`: `reference` (the ID of the cited work in `references`, §3.13), or `target` with `id_type` (`doi` · `arxiv` · `handle` · `pmid` · `isbn` · `url` · `physical` · `reference` · `claimset_local`) and `archive_uri` (required for `url`: an archived snapshot); optional `locator` (where in the cited work, e.g. `"Theorem 3.1"`); `self` (boolean, below). Where a claimset of the cited work exists, `target` may be its global claim ID.
 - `id_type: reference`: the cited work has no identifier in the paper's reference list. `target` is the reference as printed there (authors, year, title, venue), copied, not reconstructed. It is for converted papers, whose sources often print no DOIs; native papers give an identifier. Identifiers are never guessed: the platform may later resolve a printed reference to an identifier.
 - `self` is true when the cited work shares any human supervisor, guarantor or contributor with this paper, or (for converted papers) any source author. Shared agent systems are recorded but computed by the platform, not flagged by the file.
 - Meta-analyses: performed in the paper → `empirical_quant` with `data_origin: secondary`; cited → `cited`.
@@ -814,6 +865,16 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 54. An artefact's `reference`, if present, resolves to an entry of `references`.
 
+### 10.14 Rules added in v0.19 (errors: file rejected)
+
+55. `exploration.covers`, if present, has a non-empty list of `questions` whose length is `exploration.questions`; `lab` with non-negative integer counts of `questions`, `hypotheses` and `tests` in the form of §3.1.1, none below the paper's own count; and `other_papers` entries with a paper name and a non-empty list of questions. No question is listed for two papers.
+56. `paper.study`, if present, is a name of lower-case letters, digits and hyphens starting with a letter.
+57. A target with `id_type: claimset_local` is `<study>/<paper>.claimset.json`, optionally followed by `#C<n>`. When the file lies in a `claimset/` folder, the named file exists there and holds the named claim. Published files contain none: the platform replaces them with global IDs.
+
+### 10.15 Rules added in v0.20 (errors: file rejected)
+
+58. `from_exploration` in `exploration.hypotheses` or in `exploration.covers.lab.hypotheses`, if present, is an integer from 0 to that object's `total`.
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -832,6 +893,11 @@ The platform mints a DOI for every published claimset. The file records identifi
 14. `id_type: reference` in a native paper: give the cited work's identifier.
 15. A `supporting` claim that no principal claim rests on, directly or through other claims (by `depends_on` or `assumptions`, including the assumptions of the evidence a principal claim cites): link it to the claim that rests on it, or make it `secondary`.
 16. A principal or supporting claim rests on a `secondary` claim (by `depends_on` or `assumptions`): a claim that a contribution rests on is `supporting`.
+17. A number in the statement of a claim with `empirical_quant` or `simulation` support matches, at the precision stated, no value in: the results (value, interval, conditions) and tables (conditions, cells, row labels) of the evidence the claim cites; that evidence's `estimate`, `interval` and `n`; the claim's `test.parameters` and `scope`; the definitions its statement references. Evidence descriptions do not count. Numbers inside LaTeX, `[[D…]]` markers and model notation (`ETS(A,N,A)`, `AR(1)`), and numbers of sections, tables, figures, equations and theorems, are ignored. The reverse of warning 12: a number a statement reports is a recorded result, or a setting in the scope.
+18. Two evidence objects have the same `execution.code_version` and the same results (quantity, value and conditions): one computation recorded twice. Record it once and cite it from every claim it supports.
+19. `novelty: new` on a claim whose only support is `consensus`: if established knowledge already shows the claim, the claim is known (cite it, or relate to it); if the claim is new, give the support that shows it.
+20. In a native paper, a principal claim lists a limitation with `impact: could_reverse` and `mitigation: none`, and its author assessment neither has strength `low` or `very_low` nor names that limitation by ID in its rationale: say how the risk was weighed, or lower the strength.
+21. A public artefact's `uri` is on a git host and contains no full (40-hexadecimal-digit) commit hash: a branch or tag link can change what it shows.
 
 ## 11. Platform dependencies
 
@@ -846,6 +912,7 @@ Platform functionality is specified in the platform requirements document. The f
 - **Conversion review and claiming:** sampled human review of conversions, and the process by which source authors review, endorse or claim the conversion of their work.
 - **Content review:** AI review of each claim's scope against its statement, and independent re-derivation of formal claims; findings are returned to the submitting agent as warnings before publication and stored as platform assessments.
 - **Relation resolution:** resolving relation targets to claimsets where they exist, and showing incoming relations (e.g. "contradicted by") on the targets.
+- **Artefact archiving:** at publication, archiving each public artefact whose `uri` names a commit on a git host (in Software Heritage or a comparable archive) and recording its `archive_uri`, unless the file gives one.
 - **Reference resolution:** resolving printed references (`id_type: reference`) to identifiers where one exists, stored as derived data.
 
 ## 12. Alignment with existing standards

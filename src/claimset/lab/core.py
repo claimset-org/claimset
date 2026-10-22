@@ -539,7 +539,7 @@ def _check_confirmatory_run(state, plan_id, plan):
                               f"run it as exploratory")
 
 
-FLAGS = ("code_changed_after_plan", "holdout_used_elsewhere")
+FLAGS = ("code_changed_after_plan", "holdout_used_elsewhere", "reproduces_prompting_result")
 
 
 def plan_flags(state, plan_version, runs):
@@ -560,7 +560,131 @@ def plan_flags(state, plan_version, runs):
                     sealed & {d.get("hash") for d in body.get("data") or [] if isinstance(d, dict)}:
                 flags.append("holdout_used_elsewhere")
                 break
+    if reproduced_results(state, plan_version, runs):
+        flags.append("reproduces_prompting_result")
     return flags
+
+
+def prompting_runs(state, hypothesis_ids):
+    """Runs that suggested the hypotheses recorded from exploration among these: the runs they name in
+    prompted_by, and the runs of the results they name."""
+    out = set()
+    for h in hypothesis_ids:
+        hyp = state.latest(h) if isinstance(h, str) else None
+        if hyp is None or is_withheld(hyp) or hyp["body"].get("origin") != "from_exploration":
+            continue
+        for ref in hyp["body"].get("prompted_by") or []:
+            e = state.get(ref) if isinstance(ref, str) else None
+            if e is None or is_withheld(e):
+                continue
+            if e["type"] == "run":
+                out.add(e["id"])
+            elif e["type"] == "result" and isinstance(e["body"].get("run"), str):
+                out.add(e["body"]["run"])
+    return out
+
+
+def _conditions(body):
+    return body.get("conditions") if isinstance(body.get("conditions"), dict) else {}
+
+
+def reproduced_results(state, plan_version, runs):
+    """[(result of a deciding run, result of a prompting run)] with the same quantity, the same conditions and
+    the same value (§5.7.5): the confirmatory run may have repeated the exploration rather than tested it
+    on anything new. Under a computed rule only the results its quantities bind are compared; under text
+    rules every result is. Zeros are not compared: a count of zero (no mismatches, no failures) is what a
+    correct method gives on any data."""
+    b = plan_version["body"]
+    prompting = prompting_runs(state, b.get("hypotheses") or [])
+    earlier = [r for p in sorted(prompting) for r in state.results_of.get(p, []) if not is_withheld(r)]
+    if not earlier:
+        return []
+    rule = b.get("decision") if isinstance(b.get("decision"), dict) else {}
+    specs = None
+    if _decision.computed(rule):
+        qs = rule.get("quantities") if isinstance(rule.get("quantities"), dict) else {}
+        specs = [q for q in qs.values() if isinstance(q, dict)]
+    out = []
+    for run in runs:
+        for r in state.results_of.get(run["id"], []):
+            if is_withheld(r):
+                continue
+            rb = r["body"]
+            if rb.get("value") == 0:
+                continue
+            if specs is not None and not any(rb.get("quantity") == q.get("quantity") and
+                         all(_conditions(rb).get(k) == v for k, v in _conditions(q).items()) for q in specs):
+                continue
+            for e in earlier:
+                eb = e["body"]
+                if eb.get("quantity") == rb.get("quantity") and eb.get("value") == rb.get("value") and \
+                        _conditions(eb) == _conditions(rb):
+                    out.append((r["id"], e["id"]))
+                    break
+    return out
+
+
+EXCLUSION_WORDS = {"edge", "band", "exclude", "exclusion", "excluded", "trim", "trimmed", "outlier", "outliers",
+                   "cutoff"}
+
+
+def plan_warnings(state, body):
+    """Warnings about a plan as it is written (§5.7.6); they do not refuse it."""
+    out = []
+    hyps = [h for h in body.get("hypotheses") or [] if isinstance(h, str)]
+    explored = [h for h in hyps if state.latest(h) is not None and not is_withheld(state.latest(h))
+                and state.latest(h)["body"].get("origin") == "from_exploration"]
+    if explored and not body.get("new_data"):
+        runs = sorted(prompting_runs(state, explored), key=lambda x: state.pos.get(x, 0))
+        via = f" ({', '.join(runs)})" if runs else ""
+        out.append(f"{', '.join(explored)} came from exploration{via}; say with --new-data what "
+                   f"this test uses that those runs did not (new data, a new seed that changes the sample, "
+                   f"new models), or the confirmatory run may only repeat them")
+    rule = body.get("decision") if isinstance(body.get("decision"), dict) else {}
+    params = rule.get("parameters") if isinstance(rule.get("parameters"), dict) else {}
+    if not body.get("exclusions"):
+        hits = [k for k in params if EXCLUSION_WORDS & set(re.split(r"[_\-\s]+", str(k).lower()))]
+        if hits:
+            out.append(f"parameter {', '.join(hits)} looks like it leaves units out of the analysis; declare the "
+                       f"rule with --exclusion name=\"rule\" and have the runs report how many units it "
+                       f"excluded")
+    return out
+
+
+def uncounted_exclusions(state, plan_version, runs):
+    """Names of the plan's exclusions that no result of the deciding runs counts (§5.7.6): a result whose
+    quantity contains "excluded" or the exclusion's name."""
+    out = []
+    quantities = [str(r["body"].get("quantity", "")).lower() for run in runs
+                  for r in state.results_of.get(run["id"], []) if not is_withheld(r)]
+    for ex in plan_version["body"].get("exclusions") or []:
+        if not isinstance(ex, dict) or not isinstance(ex.get("name"), str):
+            continue
+        name = ex["name"].lower()
+        words = {name, name.replace("_", " "), name.replace("-", " ")}
+        if not any("excluded" in q or any(w in q for w in words) for q in quantities):
+            out.append(ex["name"])
+    return out
+
+
+def duplicate_runs(state, run):
+    """Confirmatory runs of other plans with the same command, code version, seeds and parameters as this
+    one (§5.7.6): the same computation recorded twice."""
+    b = run["body"]
+    if b.get("label") != "confirmatory" or b.get("code_version") is None:
+        return []
+    key = (b.get("command"), b.get("code_version"), b.get("seeds"), b.get("parameters"))
+    root = state.root(b["plan"]) if isinstance(b.get("plan"), str) else None
+    out = []
+    for other, rs in state.plan_runs.items():
+        if other == root:
+            continue
+        for r in rs:
+            rb = r["body"]
+            if r["id"] != run["id"] and not is_withheld(r) and r["body"].get("exit_status") == "success" and \
+                    (rb.get("command"), rb.get("code_version"), rb.get("seeds"), rb.get("parameters")) == key:
+                out.append(r["id"])
+    return out
 
 
 def _cited_runs(state, evidence):
@@ -698,6 +822,20 @@ def check_plan(state, body, by, eid):
             raise LabError("schema", "plan: each data entry needs a description")
         if d.get("hash") and not HASH_RE.match(str(d["hash"])):
             raise LabError("schema", "plan: data hash must be sha256: followed by 64 hex digits")
+    if body.get("new_data") is not None and (not isinstance(body["new_data"], str) or not body["new_data"].strip()):
+        raise LabError("schema", "plan: new_data must be non-empty text")
+    exclusions = body.get("exclusions")
+    if exclusions is not None:
+        if not isinstance(exclusions, list):
+            raise LabError("schema", "plan: exclusions must be a list of {name, rule}")
+        names = []
+        for ex in exclusions:
+            if not isinstance(ex, dict) or not isinstance(ex.get("name"), str) or not ex["name"].strip() \
+                    or not isinstance(ex.get("rule"), str) or not ex["rule"].strip():
+                raise LabError("schema", "plan: each exclusion needs a name and a rule (text)")
+            names.append(ex["name"])
+        if len(set(names)) != len(names):
+            raise LabError("schema", "plan: exclusion names must be distinct")
     holdout = body.get("holdout")
     if holdout is not None:
         if not isinstance(holdout, list):
@@ -1393,6 +1531,12 @@ def verify(lab, check_files=True, remote=False):
         if d:
             for f in plan_flags(st, d[0], d[1]):
                 rep["notes"].append(f"plan {root}: {f.replace('_', ' ')}")
+    for root, runs in st.plan_runs.items():
+        for r in runs:
+            dup = [x for x in duplicate_runs(st, r) if st.pos[x] < st.pos[r["id"]]]
+            if dup and not is_withheld(r):
+                rep["notes"].append(f"run {r['id']} repeats {', '.join(dup)}: same command, code version, seeds and "
+                                    f"parameters under another plan")
     if remote:
         r = verify_remote(lab)
         rep["errors"] += r["errors"]
