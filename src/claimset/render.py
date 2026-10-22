@@ -100,7 +100,8 @@ def _claim(c):
         target = rel.get("reference") or f"{rel.get('id_type', '')} {rel.get('target', '')}".strip()
         loc = f", at {rel['locator']}" if rel.get("locator") else ""
         note = f": {rel['note']}" if rel.get("note") else ""
-        lines.append(f"  {rel.get('type')} {target}{loc}{note}")
+        own = ", own earlier work" if rel.get("self") else ""
+        lines.append(f"  {rel.get('type')} {target}{loc}{own}{note}")
     t = c.get("test")
     if isinstance(t, dict):
         params = "; ".join(f"{k} {_s(v)}" for k, v in (t.get("parameters") or {}).items())

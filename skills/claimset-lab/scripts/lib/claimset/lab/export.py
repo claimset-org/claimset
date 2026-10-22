@@ -6,6 +6,7 @@ results...) are left at neutral defaults or left out, and listed in a separate
 completion list: a claimset never contains instructions.
 """
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -35,8 +36,27 @@ def _repo_path(path):
         return None
 
 
+def select_paper(lab, name=None):
+    """The body of the paper to export: the named one, the only one, or None (the whole record)."""
+    st = lab.state()
+    papers = {(e.get("body") or {}).get("name"): e for e in st.papers.values()}
+    if name:
+        if name not in papers:
+            known = ", ".join(sorted(n for n in papers if n)) or "none recorded"
+            raise LabError("export", f"no paper '{name}' in the record (papers: {known}); record it with "
+                                     f"`claimset lab paper {name} --questions …`")
+        return dict(papers[name]["body"], _id=st.root(papers[name]["id"]))
+    if len(papers) == 1:
+        e = next(iter(papers.values()))
+        return dict(e["body"], _id=st.root(e["id"]))
+    if len(papers) > 1:
+        raise LabError("export", f"the record names several papers ({', '.join(sorted(papers))}): choose one "
+                                 f"with --paper NAME")
+    return None
+
+
 class _Exporter:
-    def __init__(self, lab):
+    def __init__(self, lab, paper=None):
         self.lab = lab
         rep = verify(lab)
         if not rep["ok"]:
@@ -51,7 +71,15 @@ class _Exporter:
         if unmerged:
             raise LabError("export", f"agent logs of {', '.join(unmerged)} are not merged; run `claimset lab merge`")
         self.roots = [e for e in st.events if e["id"] == st.root(e["id"])]
-        self.hyps = [e for e in self.roots if e["type"] == "hypothesis"]
+        self.all_hyps = [e for e in self.roots if e["type"] == "hypothesis"]
+        self.paper = paper
+        if paper:
+            self.questions = [st.root(q) for q in paper.get("questions") or []]
+            self.hyps = [h for h in self.all_hyps if st.root(str((st.latest(h["id"]) or h).get("body", {})
+                                                                 .get("question"))) in self.questions]
+        else:
+            self.questions = None
+            self.hyps = self.all_hyps
         self.statuses = final_statuses(st)
         # Verdicts: the latest status naming each (hypothesis, plan), corrections in their original's place.
         self.verdicts = {}
@@ -74,7 +102,7 @@ class _Exporter:
                                      f"`claimset lab status {h} … --plan {root}`. Every planned test that ran is "
                                      f"reported")
         self.anchors = read_anchors(lab)
-        # Where each merged agent log started in the main log (§3.1), to know what its agent saw.
+        # Where each merged agent log started in the main log (§3.5), to know what its agent saw.
         self.bases = {}
         for a in st.merged:
             try:
@@ -401,6 +429,21 @@ class _Exporter:
             if dv is not None:
                 self.add_deviation_limitation(claim, r, pv, dv)
 
+    def pinned_lab_uri(self, repo, rel):
+        """A URI of exactly this version of the log: the git anchor commit of its last event, for a repository
+        on GitHub. None if the last event is not anchored by a git commit, or the host is not known."""
+        if not repo or not repo.startswith("https://github.com/"):
+            return None
+        lines = [l for l in self.lab.log_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        if not lines:
+            return None
+        head = json.loads(lines[-1]).get("seq")
+        for a in reversed(read_anchors(self.lab)):
+            commit = (a.get("receipt") or {}).get("commit") if isinstance(a, dict) else None
+            if a.get("service") == "git_remote" and a.get("seq") == head and isinstance(commit, str) and commit:
+                return f"{repo.rstrip('/')}/blob/{commit}/{rel}"
+        return None
+
     def export_checks(self):
         st = self.st
         for e in self.roots:
@@ -431,6 +474,9 @@ class _Exporter:
 
     def export_assumptions(self):
         st = self.st
+        if self.paper and any(a["type"] == "assumption" for a in self.roots):
+            self.todo("claims[] (assumptions)", "assumptions are exported from the whole record; remove those that "
+                                                "no claim of this paper rests on")
         for a in self.roots:
             if a["type"] != "assumption":
                 continue
@@ -492,7 +538,9 @@ class _Exporter:
         init = self.body("INIT")
         rel = _repo_path(self.lab.log_path) or f"{self.lab.root.name}/{self.lab.log_path.name}"
         repo = init.get("repository")
-        art = {"id": lab_aid, "kind": "lab_record", "uri": f"{repo.rstrip('/')}/{rel}" if repo else rel,
+        pinned = self.pinned_lab_uri(repo, rel)
+        art = {"id": lab_aid, "kind": "lab_record",
+               "uri": pinned or (f"{repo.rstrip('/')}/{rel}" if repo else rel),
                "version": file_hash(self.lab.log_path), "availability": {"level": "public"},
                "description": "Lab record of the study: questions, hypotheses, plans, runs, results and decisions, "
                               "as an append-only, hash-chained event log (Claimset lab record specification v0.5)."}
@@ -505,35 +553,66 @@ class _Exporter:
         if not repo:
             self.todo(f"artefacts.{lab_aid}.uri", "give the public URI of the lab record (the record names no "
                                                   "repository)")
+        elif not pinned:
+            self.todo(f"artefacts.{lab_aid}.uri",
+                      f"the URI names no fixed version of the lab record, and the file there changes as the record "
+                      f"grows, so it will not match the version hash: anchor the record (`claimset lab anchor`) "
+                      f"and export again, or give a URI of this version ({art['version']})")
         for x in self.artefacts:
             if "licence" not in x:
                 self.todo(f"artefacts.{x['id']}.licence", f"give the licence of {x['id']}")
         return lab_aid
 
-    def export_paper(self, lab_aid):
+    def hypothesis_counts(self, hyps):
         counts = {k: 0 for k in ("supported", "not_supported", "inconclusive", "revised", "abandoned", "open")}
-        for h in self.hyps:
+        for h in hyps:
             final = self.statuses.get(h["id"])
             to = final["body"].get("to") if final else None
             counts[to if to in FINAL else "open"] += 1
+        return dict({"total": sum(counts.values())}, **counts)
+
+    def test_counts_of(self, hyps):
+        st, counts = self.st, {o: 0 for o in OUTCOMES}
+        for h in hyps:
+            for root in (st.decided_plans_for(h["id"]) if st.strict else {}):
+                v = self.verdicts.get((h["id"], root))
+                if v is not None and v["body"].get("to") in counts:
+                    counts[v["body"]["to"]] += 1
+        return dict({"total": sum(counts.values())}, **counts)
+
+    def export_paper(self, lab_aid):
         runs = [e for e in self.st.events if e["type"] == "run"]
         visible = [r for r in runs if not is_withheld(r)]
         confirmatory = sum(r["body"].get("label") == "confirmatory" for r in visible)
         if len(visible) < len(runs):
             self.todo("paper.exploration.runs", f"{len(runs) - len(visible)} runs are withheld; they are counted as "
                                                 f"exploratory and not failed; correct the counts if needed")
+        all_questions = sum(1 for e in self.roots if e["type"] == "question")
         exploration = {
             "lab_record": lab_aid,
-            "questions": sum(1 for e in self.roots if e["type"] == "question"),
-            "hypotheses": dict({"total": sum(counts.values())}, **counts),
+            "questions": len(self.questions) if self.questions is not None else all_questions,
+            "hypotheses": self.hypothesis_counts(self.hyps),
             "tests": dict({"total": sum(self.test_counts.values())}, **self.test_counts),
             "runs": {"total": len(runs), "confirmatory": confirmatory, "exploratory": len(runs) - confirmatory,
                      "failed": sum(r["body"].get("exit_status") != "success" for r in visible)},
         }
+        if self.paper:
+            others = [{"name": (e.get("body") or {}).get("name"),
+                       "questions": [self.st.root(q) for q in (e.get("body") or {}).get("questions") or []]}
+                      for root, e in self.st.papers.items() if root != self.paper.get("_id")]
+            exploration["covers"] = {
+                "questions": self.questions,
+                "lab": {"questions": all_questions, "hypotheses": self.hypothesis_counts(self.all_hyps),
+                        "tests": self.test_counts_of(self.all_hyps)},
+            }
+            if others:
+                exploration["covers"]["other_papers"] = sorted(others, key=lambda x: x["name"] or "")
         paper = {"contributions": [], "autonomy": "unknown",
                  "contribution_record": "partial" if self.withheld_actors else "complete",
                  "origin": "native", "exploration": exploration}
-        title = self.body("INIT").get("working_title")
+        if self.st.study:
+            paper["study"] = self.st.study
+        title = (self.paper or {}).get("title") or self.body("INIT").get("working_title")
         if title:
             paper = dict({"title": title}, **paper)
         else:
@@ -568,6 +647,7 @@ class _Exporter:
         return {"draft": draft, "completion": self.completion, "mapping": self.mapping}
 
 
-def export(lab):
-    """Return {"draft", "completion", "mapping"}. Raises LabError if a precondition of §9 fails."""
-    return _Exporter(lab).run()
+def export(lab, paper=None):
+    """Return {"draft", "completion", "mapping"}. Raises LabError if a precondition of §9 fails.
+    `paper`: the body of a paper event (see select_paper): only its questions are exported."""
+    return _Exporter(lab, paper).run()

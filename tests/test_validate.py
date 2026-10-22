@@ -741,7 +741,7 @@ class TestReadingView(Base):
         self.assertLess(len(self.render(d)), len(json.dumps(d, separators=(",", ":"))))
 
     def test_appendix_d_matches_the_renderer(self):
-        spec = (ROOT / "spec" / "claimset-v0.18.md").read_text(encoding="utf-8")
+        spec = (ROOT / "spec" / "claimset-v0.19.md").read_text(encoding="utf-8")
         self.assertIn(self.render(load("submission-native.json")), spec)
 
     def test_render_command_refuses_invalid_file(self):
@@ -817,6 +817,12 @@ class TestReadingViewV018(Base):
         self.assertLess(pos["C2"], pos["C1"])
         self.assertLess(pos["C1"], pos["C3"])
         self.assertLess(pos["C3"], pos["C4"])
+
+    def test_self_relation_shown_as_own_earlier_work(self):
+        d = load("submission-native.json")
+        claim(d, "C2")["relations"] = [{"type": "contradicts", "target": "10.1000/own.1", "id_type": "doi",
+                                        "self": True, "note": "The earlier paper states the opposite."}]
+        self.assertIn("contradicts doi 10.1000/own.1, own earlier work: The earlier paper", self.render(d))
 
     def test_claims_without_evidence_grouped_last(self):
         d = load("submission-native.json")

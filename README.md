@@ -34,6 +34,15 @@ claimset skill install         # install or update the skills in .claude/skills 
 claimset skill check           # are the installed skills this version's?
 ```
 
+Studies and papers live in the research repository under `claimset/` (see the lab record specification §3):
+
+```
+claimset/<study>/lab/                     the study's lab record   (claimset lab init --study <study> …)
+claimset/<study>/code/                    code only this study uses
+claimset/<study>/<paper>.claimset.json    a paper drawn from it    (claimset lab export [--paper <paper>])
+claimset tag claimset/<study>/<paper>.claimset.json    # mark a submitted version: git tag claimset/<study>/<paper>/v<n>
+```
+
 Skills copied into a project do not follow later versions of the package; `claimset skill check` finds an out-of-date copy and `claimset skill install` replaces it.
 
 ## Use

@@ -14,10 +14,11 @@ from . import decision as _decision
 from . import anchor as _anchor
 from . import guard as _guard
 from . import protect as _protect
+from . import layout as _layout
 
 
 def _lab(args):
-    return Lab(args.lab or os.environ.get("CLAIMSET_LAB") or "lab")
+    return Lab(_layout.find_lab(args.lab, getattr(args, "study", None)))
 
 
 def _actor(args, required=True):
@@ -63,8 +64,104 @@ def _write(args, etype, body, by=None):
 # ---------------------------------------------------------------- handlers
 
 def cmd_init(args):
-    lab = Lab.create(args.lab or os.environ.get("CLAIMSET_LAB") or "lab", args.title, args.repository)
+    explicit = args.lab or os.environ.get("CLAIMSET_LAB")
+    if explicit:
+        root = Path(explicit)
+    elif args.study:
+        root = _layout.study_dir(args.study) / "lab"
+    else:
+        raise LabError("layout", "name the study: `claimset lab init --study NAME --title …` creates "
+                                 "claimset/NAME/lab (or give the directory with --lab)")
+    if args.study:
+        _layout.check_name(args.study, "study")
+    lab = Lab.create(root, args.title, args.repository, study=args.study)
     print(f"INIT {lab.log_path}")
+    top = _layout.studies_top(lab.root)
+    if top is not None:
+        for name, line in _layout.add_ignores(top):
+            print(f"added '{line}' to {name}, so package builds leave {_layout.FOLDER}/ out")
+    return 0
+
+
+def cmd_paper(args):
+    lab = _lab(args)
+    body = {"name": _layout.check_name(args.name, "paper"), "questions": args.questions, "title": args.title}
+    event = lab.append("paper", _clean(body), _actor(args), args.supersedes)
+    _emit(args, event)
+    return 0
+
+
+def _rel(path, top):
+    try:
+        return Path(path).resolve().relative_to(top.resolve()).as_posix()
+    except ValueError:
+        return str(Path(path).resolve())
+
+
+def cmd_move(args):
+    """Move the lab (and files the record names) to a new place, and record the move (§3.4)."""
+    import shutil
+
+    lab = _lab(args)
+    st = lab.state()
+    if any(a not in st.merged and lab.read_agent(a) for a in lab.agent_logs()):
+        raise LabError("move", "merge the open agent logs before moving the lab")
+    study = args.study or st.study
+    if args.to:
+        dest = Path(args.to)
+    elif study:
+        dest = _layout.study_dir(study, lab.root) / "lab"
+    else:
+        raise LabError("move", "give the new place with --to, or the study's name with --study")
+    if dest.exists() and any(dest.iterdir()):
+        raise LabError("move", f"{dest} exists and is not empty")
+    top = _layout.repo_top(lab.root) or Path.cwd()
+    moves = []
+    for spec in args.also:
+        if "=" not in spec:
+            raise LabError("move", f"--also '{spec}': use OLD=NEW")
+        old, new = spec.split("=", 1)
+        if not Path(old).exists():
+            raise LabError("move", f"--also: {old} does not exist")
+        if Path(new).exists():
+            raise LabError("move", f"--also: {new} exists")
+        moves.append((Path(old), Path(new)))
+    absolute = lambda x: x if x.is_absolute() else Path.cwd() / x
+    body = {"from": _rel(lab.root, top), "to": _rel(absolute(dest), top),
+            "study": study if study != st.study else None,
+            "moved": [{"from": _rel(o, top), "to": _rel(absolute(n), top)}
+                      for o, n in moves] or None}
+    body = _clean(body)
+    by = _actor(args)
+    st.check("relocation", st.next_id("relocation"), by, body, None)    # refuse before moving anything
+    cfg = _anchor.load_config(lab)
+    if cfg.get("anchor") and not cfg["anchor"].get("branch"):
+        cfg["anchor"]["branch"] = _anchor.default_branch(lab)      # keep the branch the anchors are on
+        _anchor.save_config(lab, cfg)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        dest.rmdir()
+    shutil.move(str(lab.root), str(dest))
+    done = []
+    try:
+        for old, new in moves:
+            new.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(old), str(new))
+            done.append((old, new))
+        moved = Lab(dest, clock=lab.clock)
+        event = moved.append("relocation", body, by)
+    except Exception:
+        for old, new in reversed(done):
+            shutil.move(str(new), str(old))
+        shutil.move(str(dest), str(lab.root))
+        raise
+    _emit(args, event)
+    print(f"moved {body['from']} to {body['to']}; commit the move (git add -A) so history follows it",
+          file=sys.stderr)
+    t = _layout.studies_top(dest)
+    if t is not None:
+        for name, line in _layout.add_ignores(t):
+            print(f"added '{line}' to {name}, so package builds leave {_layout.FOLDER}/ out", file=sys.stderr)
     return 0
 
 
@@ -369,10 +466,18 @@ def cmd_merge(args):
 def cmd_export(args):
     from ..validate import validate
 
-    out_path = Path(args.output)
+    lab = _lab(args)
+    paper = _export.select_paper(lab, args.paper)
+    if args.output:
+        out_path = Path(args.output)
+    else:
+        st = lab.state()
+        name = (paper or {}).get("name") or st.study
+        out_path = (_layout.paper_path(st.study, name, lab.root) if st.study and name
+                    else Path("claimset.draft.json"))
     if out_path.exists() and not args.force:
         raise LabError("export", f"{out_path} exists; choose another --output or add --force")
-    out = _export.export(_lab(args))
+    out = _export.export(lab, paper)
     try:
         out_path.write_text(json.dumps(out["draft"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     except OSError as exc:
@@ -443,7 +548,9 @@ def add_parser(subparsers):
     lab_sub = lab.add_subparsers(dest="lab_command", metavar="lab-command")
 
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--lab", help="lab directory (default: $CLAIMSET_LAB or ./lab)")
+    common.add_argument("--lab", help="lab directory (default: $CLAIMSET_LAB, else the study's lab)")
+    common.add_argument("--study", help="the study whose lab to use (claimset/STUDY/lab; default: "
+                                        "$CLAIMSET_STUDY, or the only study in the repository)")
     common.add_argument("--json", action="store_true", help="print JSON")
 
     writer = argparse.ArgumentParser(add_help=False, parents=[common])
@@ -462,6 +569,16 @@ def add_parser(subparsers):
     p.add_argument("--title", required=True, help="working title of the research")
     p.add_argument("--repository", help="URI of the project repository")
     p.set_defaults(func=cmd_init)
+
+    p = cmd("paper", cmd_paper, "record a paper drawn from the record and the questions it reports")
+    p.add_argument("name", help="the paper's name (lower-case letters, digits, hyphens): "
+                                "claimset/<study>/<name>.claimset.json")
+    p.add_argument("--questions", nargs="+", required=True, metavar="ID", help="the questions it reports")
+    p.add_argument("--title", help="working title of the paper")
+
+    p = cmd("move", cmd_move, "move the lab (and files it names) to a new place, recording the move")
+    p.add_argument("--to", help="new lab directory (default claimset/<study>/lab)")
+    p.add_argument("--also", nargs="+", default=[], metavar="OLD=NEW", help="other files or folders to move")
 
     p = cmd("actor", cmd_actor, "register an agent, person or organisation")
     p.add_argument("--kind", required=True, choices=["agent", "human", "organisation"])
@@ -588,7 +705,9 @@ def add_parser(subparsers):
     p.add_argument("--remote", action="store_true", help="also check the log against the anchor branch on the remote")
 
     p = cmd("export", cmd_export, "draft a claimset submission from the record", parents=(common,))
-    p.add_argument("-o", "--output", default="claimset.draft.json", help="draft file (default claimset.draft.json)")
+    p.add_argument("--paper", help="the paper to export (a `claimset lab paper` name): its questions only")
+    p.add_argument("-o", "--output", help="draft file (default claimset/<study>/<paper>.claimset.json, or "
+                                          "claimset.draft.json for a lab without a study)")
     p.add_argument("--force", action="store_true", help="overwrite the draft file")
 
     p = cmd("anchor", cmd_anchor, "record the head of the log outside the agent's reach", parents=(common,))

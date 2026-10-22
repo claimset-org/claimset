@@ -1,10 +1,30 @@
-# Claimset — Specification v0.17 (draft)
+# Claimset — Specification v0.19 (draft)
 
-Status: working draft · Date: 2026-10-16 · Supersedes v0.16 (`spec/claimset-v0.16.md`) · Companion: lab record specification (`spec/lab-record-v0.5.md`)
+Status: working draft · Date: 2026-10-22 · Supersedes v0.18 (`spec/claimset-v0.18.md`) · Companion: lab record specification (`spec/lab-record-v0.6.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.16
+## Changes since v0.18
+
+A repository can hold several studies and several papers, which may build on each other before they are published.
+
+- New §2.4: papers live in `claimset/<study>/<paper>.claimset.json`, with their reading view beside them; a version submitted or published is marked by a git tag, not by renaming the file.
+- `paper.study`: the name of the study a paper comes from (§3.1).
+- `exploration.covers`: a paper that reports some of its lab's questions says which, gives the whole lab's counts and names the other papers (§3.1.1).
+- New identifier type `claimset_local`: a claim or paper of the same repository that is not yet published, replaced by its global ID at publication (§4, §3.7, §3.13).
+- New rules 55, 56 and 57 (§10).
+
+## Changes in v0.18 (since v0.17)
+
+Claims are not all equal: a reader needs the contributions and what they rest on in full, and the rest briefly. Prior work a paper uses as data, software or an implementation is linked like other prior work.
+
+- New claim role `secondary`: a finding of the paper that no contribution rests on (a side result, a negative or null result reported in its own right). `supporting` now means only a claim that a contribution rests on, directly or through other claims (§3.3).
+- §3.3.4: prior work enters in four ways, the fourth being data, software or an implementation the evidence uses (an artefact pointing to the reference); what the paper cites as an example or as background is left out. A claim the paper makes in several places (abstract, introduction, body, conclusions) is one claim; a conclusion broader than what the body establishes is its own claim. In converted papers, secondary claims are kept only when they report results.
+- Artefacts gain `reference`: the cited work the artefact is taken from (§3.6, §3.13).
+- Reading view: claims are grouped by role, principal first; non-principal claims whose only support is argument or none are grouped last, under CLAIMS WITHOUT EVIDENCE (§2.3, Appendix D).
+- New rule 54; rules 4 and 51 revised; new warnings 15 and 16 (§10).
+
+## Changes in v0.17 (since v0.16)
 
 A claimset is stored as JSON for tools and read by models as plain text. The file of a converted paper carries only what its source says, not the converter's judgements.
 
@@ -189,7 +209,27 @@ A claimset is stored and exchanged as JSON: the canonical file, which tools vali
 - **Kept:** the title, licence, source of a converted paper, contributions and exploration counts; definitions; claims with their type, role, novelty (when not `new`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes, and test; evidence with its description, design fields, estimate, results, tables and proof steps; warrants; limitations; artefact descriptions; references.
 - **Left out:** `provenance`, `field_provenance`, `source_spans`, `corrections`, availability, artefact locations, versions and licences, contributors, models, execution records, lab-record identifiers, `schema_version` and the platform's publication fields.
 
+- **Order:** claims are grouped by role: principal claims, then supporting claims, then secondary claims, each group in file order. Claims that are not principal and whose support is only `argument` or `unstated` follow, under CLAIMS WITHOUT EVIDENCE, so a reader sees at once what the paper asserts or argues without evidence. Principal claims stay with the principal claims whatever their support.
+
 The reading view is made mechanically from a valid file (`claimset render`); it adds nothing and is never edited. Its layout is the reference rendering in Appendix D. A reader that needs a field left out (a source span to check a claim against its source, an artefact's location) reads the canonical file.
+
+### 2.4 Files in a repository
+
+A paper written alongside its research lives in the research's repository, in the folder of its study (lab record specification §3):
+
+```
+claimset/
+  <study>/
+    lab/                         the study's lab record
+    code/                        code only this study uses (optional)
+    <paper>.claimset.json        the paper
+    <paper>.claimset.txt         its reading view (claimset render)
+```
+
+- A study and a paper are named with lower-case letters, digits and hyphens, starting with a letter (`eigen-checker`, `eigen-checker-cpp`). A study can give several papers; each reports whole questions of the study's lab (lab record §5.17). Papers from different studies are independent unless their claims link to each other.
+- A paper may cite or relate to a paper of the same repository that is not yet published, with `id_type: claimset_local` and the target `<study>/<paper>.claimset.json#C3` (a claim) or `<study>/<paper>.claimset.json` (the paper), relative to `claimset/` (§4). The validator checks that the file and the claim exist when the file lies in a `claimset/` folder. At publication the platform replaces each local reference with the global ID of the published claim, so the cited paper is published first, or both are submitted together.
+- The file keeps its name through revisions: the date and version of a submitted or published version are recorded by the platform (§9) and in git. A version is marked with the git tag `claimset/<study>/<paper>/v<n>` (`claimset tag`), made on the commit that holds it.
+- The `claimset/` folder is left out of package builds (lab record §3.3).
 
 ## 3. Object types
 
@@ -213,6 +253,7 @@ The reading view is made mechanically from a valid file (`claimset render`); it 
 | `contribution_record` | enum | Required. `complete` · `partial` · `unknown`. For converted papers, refers to the conversion |
 | `origin` | enum | Required. `native` · `converted` |
 | `exploration` | object | Required when any claim has `hypothesis`: summary of the research process (§3.1.1) |
+| `study` | string | The name of the study the paper comes from, when it is written in a repository (§2.4) |
 | `converted_from` | object | Required if `converted` (below) |
 
 **`converted_from`**
@@ -266,6 +307,14 @@ Contributors are listed in the top-level `contributors` list (§3.11), not in th
 - `hypotheses` counts recorded hypotheses by their final status; `open` counts those never closed. `total` is the sum of the other hypothesis counts.
 - `tests` counts planned tests that have run, by verdict: one per plan and hypothesis it names. `total` is the sum of the three verdicts.
 - `runs.total` is the sum of `confirmatory` and `exploratory`; `failed` counts runs of either kind whose exit status was not `success`.
+- `covers`, when the paper reports only some of its lab's questions: `questions` (their IDs in the lab record), `lab` (the whole lab's counts of `questions`, `hypotheses` and `tests`, in the same form) and `other_papers` (each other paper drawn from the lab, `{name, questions}`). `questions`, `hypotheses` and `tests` then count the paper's questions only; `runs` is always the whole lab's, since a run is not tied to a question. Readers can see what the lab tried that this paper does not report, and where it is reported.
+
+```json
+"covers": {"questions": ["Q1"],
+           "lab": {"questions": 2, "hypotheses": {"total": 9, "supported": 6, "not_supported": 1, "inconclusive": 1, "revised": 0, "abandoned": 1, "open": 0},
+                   "tests": {"total": 7, "supported": 6, "not_supported": 1, "inconclusive": 0}},
+           "other_papers": [{"name": "eigen-checker-cpp", "questions": ["Q2"]}]}
+```
 
 The counts cover what was recorded. Exploration is recorded where its results informed decisions, not step by step, so the counts are lower bounds of the exploration; the counts of planned tests are complete.
 
@@ -289,7 +338,7 @@ A definition explains in full only a term the paper introduces or uses in its ow
 | `id` | string | `C1` … |
 | `statement` | string | Self-contained sentence (rules in §8) |
 | `type` | enum | `descriptive` · `associational` · `causal` · `predictive` · `interpretive` · `formal` · `methodological` (choosing: §3.3.1) |
-| `role` | enum | `principal` (a contribution) · `supporting` (one of the paper's own claims that a contribution rests on) |
+| `role` | enum | `principal` (a contribution) · `supporting` (one of the paper's own claims that a contribution rests on, directly or through other claims, by `depends_on` or `assumptions`) · `secondary` (a finding of the paper that no contribution rests on: a side result, a negative or null result reported in its own right) |
 | `novelty` | enum | `new` · `replication` · `extension` · `refutation` |
 | `scope` | object | `population`, `setting`, `geography`, `language`, `period`, `data_type`, `conditions` (list), `excludes` (list: where it explicitly does not apply). Describes this claim only (§3.3.2) |
 | `support` | list | Kinds of support (§4); at least one entry |
@@ -376,15 +425,20 @@ A claimset contains the paper's own claims, with what they need: definitions of 
 1. **Attribution:** whose is it, as the paper's own citations say? What the paper introduces is its own. What it attributes to others (it cites them) is theirs, and enters the claimset only by reference, in one of the three ways below.
 2. **Function:** does the paper's argument use it? A general statement the paper makes without attributing it is kept only if one of the paper's claims rests on it (then it is an assumption, §3.8, or `consensus` support of that claim) or the paper contrasts its contribution with it (then the claim's statement says so). Justifications of routine choices (which accuracy measure, which software) that no finding depends on are left out, or belong in the evidence's `description`.
 
-Prior work enters a claimset in three ways, each linked to the paper's own content, never as a claim of its own:
+Prior work enters a claimset in four ways, each linked to the paper's own content, never as a claim of its own. Each is a function a citation has in the paper; a work cited for several functions is linked for each.
 
 | The paper uses prior work … | Recorded as |
 |---|---|
-| as a premise of one of its claims (a theorem it applies, a result it builds on) | `cited` support of that claim, pointing to the reference, with a `locator` (§4) |
+| as a premise of one of its claims (a theorem it applies, a result it builds on): the claim fails if the cited work is wrong | `cited` support of that claim, pointing to the reference, with a `locator` (§4) |
 | to position a claim: what the claim answers, extends, refines, supports or contradicts | a relation of that claim (§3.7), with a one-sentence `note` saying what the target states |
+| as data, software or an implementation that its evidence uses | an artefact of that evidence (§3.6) with `reference` pointing to the cited work |
 | as vocabulary | a borrowed definition (§3.2) |
 
-Prior work that the paper mentions but none of its claims uses (general motivation, surveys of the field) is left out. When the tests do not decide, the item is kept: an unnecessary item costs length, a missing one loses content.
+Prior work that the paper cites as an example or an illustration ("used, e.g., in retail"), or as background (general motivation, surveys of the field), is left out: none of its claims uses it. When the tests do not decide, the item is kept: an unnecessary item costs length, a missing one loses content.
+
+**One claim, several places.** Papers state their findings more than once: in the abstract, the introduction, the body and the conclusions. Each assertion is one claim, with source spans for every place the paper makes it, worded as precisely as its most specific statement (usually the body's, with its conditions). The introduction's and abstract's statements show which claims are contributions. A statement in the conclusions (or abstract) that is broader than what the body establishes (more general data, a stronger verb, a recommendation) is not merged into the claim it generalises: that would make the narrower claim stronger, or hide what the paper concludes. It is a claim of its own, with the scope the paper gives it, that depends on the claims it generalises.
+
+**Secondary claims in converted papers.** The paper's side results, including negative and null results, are kept as `secondary` claims. Its side remarks, illustrations and explanations that it neither tests nor uses for a contribution are left out.
 
 ### 3.4 Evidence
 
@@ -472,8 +526,9 @@ Warrants are for informal argument. Mathematical proofs use proof steps (§3.4).
 | `availability` | object | §3.10 |
 | `description` | string | Required for `figure` and `table`: what it shows, self-contained |
 | `underlying_data` | artefact ID | For `figure`: the data plotted |
+| `reference` | reference ID | The cited work this artefact is taken from (a data set, software or an implementation published by others), as an entry of `references` (§3.13) |
 
-Tables are stored as data (CSV or JSON), not images. Prompts are stored verbatim, including system prompts. A `trace` is the log of an agent's run (prompts, tool calls, outputs) as recorded by the system that ran it; it may contain confidential material and uses the availability levels in §3.10. A `manuscript` is a human-readable version of the same work (e.g. a LaTeX or PDF draft) from which the claimset was prepared.
+Tables are stored as data (CSV or JSON), not images. Prompts are stored verbatim, including system prompts. A `trace` is the log of an agent's run (prompts, tool calls, outputs) as recorded by the system that ran it; it may contain confidential material and uses the availability levels in §3.10. A `manuscript` is a human-readable version of the same work (e.g. a LaTeX or PDF draft) from which the claimset was prepared. An artefact taken from prior work (a public data set, a package the paper's evidence uses) points to its `reference`; its `uri` and `version` are given when the paper gives them.
 
 ### 3.7 Relations (cross-paper)
 
@@ -482,7 +537,7 @@ Links from a claim to a claim or work outside this paper: `{type, reference, tar
 - `type`: `supports` · `contradicts` · `extends` · `refines` · `replicates` · `fails_to_replicate` · `supersedes` · `addresses` (the claim answers a problem, gap or limitation that the target states).
 - `reference`: the ID of the cited work in `references` (§3.13). Either `reference`, or `target` with `id_type`, is given.
 - `target`: a global claim ID when the target is a claimset; otherwise the identifier of the work (paper, book, software release).
-- `id_type`: `claimset` · `doi` · `arxiv` · `handle` · `pmid` · `isbn` · `url` · `physical`.
+- `id_type`: `claimset` · `doi` · `arxiv` · `handle` · `pmid` · `isbn` · `url` · `physical` · `claimset_local` (a claim of a paper in the same repository not yet published, §2.4).
 - `locator`: optional; where in the target the related result is, e.g. `"eq. 29 and B.6"`, `"Section 4.2"`, `"function adam(), lognormal scale"`.
 - `archive_uri`: required for `url` targets: an archived snapshot.
 - `self`: true when the target work shares a human supervisor, guarantor or contributor with this paper.
@@ -600,11 +655,11 @@ Each model used anywhere in the paper is defined once.
 
 ### 3.13 References
 
-Each work the paper cites is listed once, in the top-level `references`, and cited by its ID from support entries, relations and definitions. `{id, target, id_type, archive_uri}`
+Each work the paper cites is listed once, in the top-level `references`, and cited by its ID from support entries, relations, definitions and artefacts. `{id, target, id_type, archive_uri}`
 - `id`: `B1`, `B2`, ….
-- `target` and `id_type`: as for cited support (§4): an identifier (`doi`, `arxiv`, …), a global claim ID of a claimset (`id_type: claimset`), or the reference as printed in the paper's reference list (`id_type: reference`).
+- `target` and `id_type`: as for cited support (§4): an identifier (`doi`, `arxiv`, …), a global claim ID of a claimset (`id_type: claimset`), a paper or claim of the same repository not yet published (`id_type: claimset_local`, §2.4), or the reference as printed in the paper's reference list (`id_type: reference`).
 - `archive_uri`: required for `url` targets.
-Only works that a support entry, relation or definition points to are listed.
+Only works that a support entry, relation, definition or artefact points to are listed.
 
 ## 4. Support kinds
 
@@ -627,7 +682,7 @@ Each support entry: `{kind, <required pointer>, …attributes}`.
 Attributes:
 - On any empirical kind: optional `artefacts` (e.g. "supported by Figure 15" → `{"kind": "empirical_quant", "evidence": "E3", "artefacts": ["A15"]}`).
 - On `empirical_quant` and `simulation`: optional `results`, the specific results the claim reports: result entries, result tables or table rows (e.g. `{"kind": "simulation", "evidence": "E20", "results": ["E20.R1", "E20.T1.r2"]}`). Recommended whenever the statement quotes numbers, so readers can check each number against the structured result.
-- On `cited`: `reference` (the ID of the cited work in `references`, §3.13), or `target` with `id_type` (`doi` · `arxiv` · `handle` · `pmid` · `isbn` · `url` · `physical` · `reference`) and `archive_uri` (required for `url`: an archived snapshot); optional `locator` (where in the cited work, e.g. `"Theorem 3.1"`); `self` (boolean, below). Where a claimset of the cited work exists, `target` may be its global claim ID.
+- On `cited`: `reference` (the ID of the cited work in `references`, §3.13), or `target` with `id_type` (`doi` · `arxiv` · `handle` · `pmid` · `isbn` · `url` · `physical` · `reference` · `claimset_local`) and `archive_uri` (required for `url`: an archived snapshot); optional `locator` (where in the cited work, e.g. `"Theorem 3.1"`); `self` (boolean, below). Where a claimset of the cited work exists, `target` may be its global claim ID.
 - `id_type: reference`: the cited work has no identifier in the paper's reference list. `target` is the reference as printed there (authors, year, title, venue), copied, not reconstructed. It is for converted papers, whose sources often print no DOIs; native papers give an identifier. Identifiers are never guessed: the platform may later resolve a printed reference to an identifier.
 - `self` is true when the cited work shares any human supervisor, guarantor or contributor with this paper, or (for converted papers) any source author. Shared agent systems are recorded but computed by the platform, not flagged by the file.
 - Meta-analyses: performed in the paper → `empirical_quant` with `data_origin: secondary`; cited → `cited`.
@@ -711,7 +766,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 1. All IDs are unique; all references resolve.
 2. Every claim has at least one support entry.
 3. `assumption` is the sole support kind of its claim; the claim carries no strength assessments and has `assumption_category` and `check`. `assumption_category: axiom` ⇒ `check: untestable`.
-4. Claims are the paper's own: `role` is `principal` or `supporting`, and `novelty` is not `restatement` (both removed in v0.16; prior work is cited, related or defined, §3.3.4). (Revised in v0.16.)
+4. Claims are the paper's own: `role` is `principal`, `supporting` or `secondary`, and `novelty` is not `restatement` (`background` and `restatement` removed in v0.16; prior work is cited, related, defined or an artefact, §3.3.4). (Revised in v0.16 and v0.18.)
 5. `contributions` lists only `principal` claims; every `principal` claim appears in `contributions`.
 6. `type: interpretive` ⇒ `warrant` present.
 7. `formal_proof` support ⇒ `verification` present; evidence has `foundation` and either `steps` or `proof_artefact`, or, in converted papers, `source_spans` locating the derivation. (Revised in v0.14.)
@@ -785,12 +840,22 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 ### 10.11 Rules added in v0.16 (errors: file rejected)
 
-51. `references`: each entry has an `id` (`B1`, `B2`, …) unique in the file, a `target` and an `id_type` from the list for cited support, and `archive_uri` when `id_type` is `url`. Every `reference` in a support entry or relation, and every definition `source` that looks like a reference ID, resolves to an entry; every entry is pointed to at least once.
+51. `references`: each entry has an `id` (`B1`, `B2`, …) unique in the file, a `target` and an `id_type` from the list for cited support, and `archive_uri` when `id_type` is `url`. Every `reference` in a support entry or relation, and every definition `source` that looks like a reference ID, resolves to an entry; every entry is pointed to at least once (by a support entry, relation, definition or artefact; artefacts since v0.18).
 52. Each entry of `converted_from.corrections` whose `field` names a claim field corresponds to that field's provenance being `inferred` (through `field_provenance`, or the claim's `provenance`).
 
 ### 10.12 Rules added in v0.17 (errors: file rejected)
 
 53. Assessments have `by: author` or `by: reviewer` (`converter` removed in v0.17); in converted papers, only `by: author`.
+
+### 10.13 Rules added in v0.18 (errors: file rejected)
+
+54. An artefact's `reference`, if present, resolves to an entry of `references`.
+
+### 10.14 Rules added in v0.19 (errors: file rejected)
+
+55. `exploration.covers`, if present, has a non-empty list of `questions` whose length is `exploration.questions`; `lab` with non-negative integer counts of `questions`, `hypotheses` and `tests` in the form of §3.1.1, none below the paper's own count; and `other_papers` entries with a paper name and a non-empty list of questions. No question is listed for two papers.
+56. `paper.study`, if present, is a name of lower-case letters, digits and hyphens starting with a letter.
+57. A target with `id_type: claimset_local` is `<study>/<paper>.claimset.json`, optionally followed by `#C<n>`. When the file lies in a `claimset/` folder, the named file exists there and holds the named claim. Published files contain none: the platform replaces them with global IDs.
 
 ### 10.4 Warnings (file accepted, warning recorded)
 
@@ -808,6 +873,8 @@ The platform mints a DOI for every published claimset. The file records identifi
 12. A number in a claim's statement cannot be matched to the results the claim cites, at the precision stated (heuristic; percentages are compared as fractions). Applies to cited result entries; cited tables and rows are not checked.
 13. `planning: exploratory` on a principal claim: exploratory findings can be principal, but readers should be told so in the claim's assessment rationale.
 14. `id_type: reference` in a native paper: give the cited work's identifier.
+15. A `supporting` claim that no principal claim rests on, directly or through other claims (by `depends_on` or `assumptions`, including the assumptions of the evidence a principal claim cites): link it to the claim that rests on it, or make it `secondary`.
+16. A principal or supporting claim rests on a `secondary` claim (by `depends_on` or `assumptions`): a claim that a contribution rests on is `supporting`.
 
 ## 11. Platform dependencies
 
@@ -998,13 +1065,13 @@ DEFINITIONS
 D1 forecast skill: Relative reduction in mean absolute scaled error against a seasonal naive benchmark.
 
 CLAIMS
+C2 [descriptive; principal; support: empirical_quant E1 artefacts A2; assumes C1, C3; limitations L1; strength moderate (author)]
+  Method M improves [[D1:forecast skill]] over the seasonal naive benchmark on monthly retail sales series.
+  scope: population: monthly retail sales series | geography: United Kingdom | language: not applicable | period: 2010-2024 | data_type: aggregate sales counts | conditions: horizon of 1 to 12 months | excludes: series shorter than 36 observations
 C1 [descriptive; supporting; assumption (data, unchecked)]
   Monthly retail sales series exhibit annual seasonality.
 C3 [descriptive; supporting; assumption (statistical, unchecked)]
   Forecast errors of method M are independent across series.
-C2 [descriptive; principal; support: empirical_quant E1 artefacts A2; assumes C1, C3; limitations L1; strength moderate (author)]
-  Method M improves [[D1:forecast skill]] over the seasonal naive benchmark on monthly retail sales series.
-  scope: population: monthly retail sales series | geography: United Kingdom | language: not applicable | period: 2010-2024 | data_type: aggregate sales counts | conditions: horizon of 1 to 12 months | excludes: series shorter than 36 observations
 
 EVIDENCE
 E1 [quant; design benchmark; data_origin secondary; n 1200] Benchmark of method M against the seasonal naive method on 1,200 monthly retail sales series, rolling origin, horizons 1 to 12.
