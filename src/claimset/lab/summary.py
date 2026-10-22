@@ -99,6 +99,9 @@ def build(events):
 
     return {
         "title": _text(init) if init else None,
+        "study": st.study,
+        "papers": [{"id": st.root(e["id"]), "name": e["body"].get("name"), "questions": e["body"].get("questions")}
+                   for e in st.papers.values()],
         "events": len(st.events),
         "counts": counts,
         "actors": [{"id": a["id"], "kind": st.latest(a["id"])["body"].get("kind"), "name": _text(st.latest(a["id"]))}
@@ -127,7 +130,9 @@ def build(events):
 
 def render(s):
     """Plain-text rendering of a summary."""
-    out = [f"Lab: {s['title']}  ({s['events']} events)"]
+    out = [f"Lab: {s['title']}  ({s['events']} events)" + (f"; study {s['study']}" if s.get("study") else "")]
+    if s.get("papers"):
+        out.append("Papers: " + "; ".join(f"{p['name']} ({', '.join(p['questions'] or [])})" for p in s["papers"]))
     v = s.get("view")
     if v:
         out.append(f"Agent log of {v['actor']}: {v['own_events']} own events on top of main seq {v['base']}"

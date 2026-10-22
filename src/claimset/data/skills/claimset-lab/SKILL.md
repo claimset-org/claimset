@@ -1,6 +1,6 @@
 ---
 name: claimset-lab
-description: Keep a Claimset lab record (an append-only, hash-chained log of questions, hypotheses, plans, runs, results and decisions) while doing computational research, so that planned tests can be told apart from exploration and every reported number traces back to the code that produced it. Use when starting or continuing research such as experiments, simulations, benchmarks or data analyses; when a project has a lab/ directory with lab.jsonl; or when asked to keep a lab record, research log or pre-registration.
+description: Keep a Claimset lab record (an append-only, hash-chained log of questions, hypotheses, plans, runs, results and decisions) while doing computational research, so that planned tests can be told apart from exploration and every reported number traces back to the code that produced it. Use when starting or continuing research such as experiments, simulations, benchmarks or data analyses; when a project has a claimset/<study>/lab/ (or lab/) directory with lab.jsonl; or when asked to keep a lab record, research log or pre-registration.
 ---
 
 # Keeping a lab record
@@ -10,9 +10,11 @@ A lab record is the running log of a piece of research, kept while it happens. I
 - that every number comes from a recorded run of code, not from memory or retyping;
 - what was tried and failed, so a positive result can be weighed against the number of attempts.
 
-At the end the record is exported to a claimset (a paper for LLM readers) with the `claimset-submit` skill. The specification is `references/lab-record-v0.5.md`; read §5 (event types) and §6 (rules) when an event or a refusal is unclear.
+At the end the record is exported to a claimset (a paper for LLM readers) with the `claimset-submit` skill. The specification is `references/lab-record-v0.6.md`; read §5 (event types) and §6 (rules) when an event or a refusal is unclear.
 
-**The tool.** Use `claimset` if it is installed (`claimset --help` works); then check that this skill matches it (`claimset skill check`) and, if not, update the skills with `claimset skill install`. Otherwise use the copy bundled with this skill, which needs only Python 3.9+: `python3 <this skill>/scripts/claimset`. Below, `claimset` stands for whichever you use. Every writing command prints the new event's ID; add `--json` to see the whole event. The lab lives in `./lab` unless `--lab DIR` or `$CLAIMSET_LAB` says otherwise.
+**The tool.** Use `claimset` if it is installed (`claimset --help` works); then check that this skill matches it (`claimset skill check`) and, if not, update the skills with `claimset skill install`. Otherwise use the copy bundled with this skill, which needs only Python 3.9+: `python3 <this skill>/scripts/claimset`. Below, `claimset` stands for whichever you use. Every writing command prints the new event's ID; add `--json` to see the whole event. 
+
+**Where things live.** Each study (a piece of research with its own record) has a folder `claimset/<study>/` at the top of the repository: its lab in `lab/`, code only it uses in `code/`, and the papers drawn from it as `<paper>.claimset.json`. Names are lower-case letters, digits and hyphens (`eigen-checker`). A repository can hold several studies; commands find the lab of the only study, or of the one named by `--study NAME` (or `$CLAIMSET_STUDY`); `--lab DIR` names a lab directly. Below, `lab/` means the study's lab folder.
 
 ## Rules you never break
 
@@ -26,8 +28,8 @@ At the end the record is exported to a claimset (a paper for LLM readers) with t
 
 ## Starting
 
-1. **Check for an existing record.** If `lab/lab.jsonl` exists, this is a continuation: go to *Resuming*.
-2. **Create the record:** `claimset lab init --title "Working title" --repository https://…` (the repository URI is used when the record is published).
+1. **Check for an existing record.** If `claimset/` has studies (`ls claimset/*/lab/lab.jsonl`), or there is an older `lab/lab.jsonl`, and this work continues one of them, this is a continuation: go to *Resuming*. New research with its own questions is a new study, even in a repository that has others.
+2. **Create the record:** `claimset lab init --study <name> --title "Working title" --repository https://…` creates `claimset/<name>/lab/` (the repository URI is used when the record is published). Choose a short name with the human. Init also adds the lines that leave `claimset/` out of the package builds the repository has (`.Rbuildignore`, `MANIFEST.in`, `.npmignore`, `.gitattributes`); commit them. Put code that only this study uses in `claimset/<name>/code/`.
 3. **Register the actors.** Ask the human for their name (and ORCID iD, if they have one). Register them first, then yourself:
    ```
    claimset lab actor --kind human --name "A. Researcher" --orcid 0000-0002-1825-0097      # -> AC1
@@ -37,10 +39,10 @@ At the end the record is exported to a claimset (a paper for LLM readers) with t
    Take provider, model name, version and identifier from your system prompt or environment, and never guess them. `--record-source harness` only if the values come from the system that runs you; otherwise `self_reported`.
 4. **Use `--by AC2` (your ID) on every writing command.** Setting `CLAIMSET_ACTOR` also works, but environment variables often do not persist between separate shell calls.
 5. **Protection.** Offer the human these steps; together they make the record tamper-proof rather than only tamper-evident (spec §4.5):
-   - `claimset lab anchor --git` pushes the record to a `claimset-lab` branch after every plan, so plans are timestamped outside your reach. It needs a git remote. Afterwards, a confirmatory run is refused if its plan cannot be pushed.
+   - `claimset lab anchor --git` pushes the record to a `claimset-lab/<study>` branch after every plan, so plans are timestamped outside your reach. It needs a git remote. Afterwards, a confirmatory run is refused if its plan cannot be pushed.
    - The guard hook stops tool calls that would modify `lab/`: add the output of `claimset lab guard --print-config` to `.claude/settings.json`. Because it restricts you, let the human decide whether to install it.
    - `sudo claimset lab protect` makes the log files append-only at the operating-system level (Linux). It needs the human, because it needs an administrator.
-   - On the git host, protect the `claimset-lab` branch against force-pushes and deletion.
+   - On the git host, protect the `claimset-lab/*` branches against force-pushes and deletion.
 
 ## The research loop
 
@@ -157,6 +159,10 @@ A check counts as independent only when someone other than the author makes it, 
 
 Do not summarise a check in a note of your own instead: export takes claims' `checks` from check events, and a check reported only by the author is the author's account.
 
+## A record in an older place
+
+A record begun before studies had their own folders (`lab/` at the top of the repository, or elsewhere such as `.claude/lab`) is moved, with the human's agreement, by the tool, never by hand: `claimset lab move --lab <old lab> --study <name> --also <old code folder>=claimset/<name>/code --by AC2`. The tool moves the folders, records a `relocation` event, and keeps anchoring on the branch the record was anchored on. Commit the move as a whole (`git add -A`), then check it with `claimset lab verify` (and `--remote` if anchoring is set up). Paths in earlier events keep their old values; the relocation maps them.
+
 ## Resuming after a break or a context reset
 
 The record is your memory. Before doing anything else:
@@ -191,8 +197,10 @@ Never work around a refusal by editing files or by writing as another actor.
 
 ## Finishing
 
+**Papers.** A study may give one paper or several (the method, later its implementation). Decide with the human before exporting, and record each paper with the questions it reports: `claimset lab paper eigen-checker --questions Q1 --by AC2`, `claimset lab paper eigen-checker-cpp --questions Q2 --by AC2`. A question is reported in one paper, and a paper takes whole questions, never chosen hypotheses: results are never split so that some go unreported. If a paper needs only part of a question's hypotheses, the question was too broad; record a narrower question and say so in a note. With one paper, recording it is optional. `claimset lab verify` names hypotheses with a result that no paper reports.
+
 1. Record the verdict of every planned test that has run; export refuses while one is missing. Give hypotheses you decided something about a final status (`supported`, `not_supported`, `inconclusive`, `revised` or `abandoned`); the rest are counted as open, which is fine.
 2. Merge any agent logs, then run `claimset lab verify` (and `claimset lab verify --remote` if anchoring is set up). Fix nothing by hand. If verification fails, tell the human exactly what it reports.
    If anchoring is set up, anchor the record now (`claimset lab anchor`), after its last event: export then points the lab record at that fixed version (for a repository on GitHub) instead of a branch whose file keeps changing. Export again if events are added later.
-3. `claimset lab export -o claimset.json` writes the draft claimset and prints the completion list. Continue with the `claimset-submit` skill. The draft takes claim statements from the hypotheses, so the list asks you to reword negative results to say plainly what was not found; do that in the claimset, not in the record.
+3. `claimset lab export [--paper NAME]` writes the draft claimset to `claimset/<study>/<paper>.claimset.json` and prints the completion list. With several papers, export each with `--paper`; its exploration summary gives the whole lab's counts beside its own and names the other papers. Continue with the `claimset-submit` skill. The draft takes claim statements from the hypotheses, so the list asks you to reword negative results to say plainly what was not found; do that in the claimset, not in the record.
 4. Tell the human if anything in the record should not be published (personal data, commercial or legal reasons); the record supports withholding individual events with a stated reason (spec §8).

@@ -43,6 +43,12 @@ def lab_dir(cwd):
     return Path(cwd) / (os.environ.get("CLAIMSET_LAB") or "lab")
 
 
+def lab_dirs(cwd):
+    """Every lab the agent could reach: $CLAIMSET_LAB, ./lab and the labs of all studies (claimset/*/lab)."""
+    from .layout import lab_dirs as _all
+    return _all(cwd)
+
+
 def _lab_subcommand(command):
     """For a plain `claimset lab <sub> ...` command, (sub, remaining tokens); else None.
 
@@ -94,9 +100,14 @@ def _mentions(command, root, cwd):
 def _anchor_branch(root):
     try:
         cfg = json.loads((Path(root) / "config.json").read_text(encoding="utf-8"))
-        return (cfg.get("anchor") or {}).get("branch") or DEFAULT_BRANCH
+        branch = (cfg.get("anchor") or {}).get("branch")
     except (OSError, ValueError, AttributeError):
-        return DEFAULT_BRANCH
+        branch = None
+    if branch:
+        return branch
+    from .anchor import default_branch
+    from .core import Lab
+    return default_branch(Lab(root)) if (Path(root) / "lab.jsonl").exists() else DEFAULT_BRANCH
 
 
 def decide(payload, branch=None):
@@ -104,9 +115,15 @@ def decide(payload, branch=None):
     tool = payload.get("tool_name")
     inp = payload.get("tool_input") or {}
     cwd = payload.get("cwd") or os.getcwd()
-    root = lab_dir(cwd)
-    branch = branch or _anchor_branch(root)
+    roots = lab_dirs(cwd)
+    for root in roots:
+        reason = _decide_for(tool, inp, cwd, root, branch or _anchor_branch(root))
+        if reason:
+            return reason
+    return None
 
+
+def _decide_for(tool, inp, cwd, root, branch):
     if tool in FILE_TOOLS:
         path = inp.get(FILE_TOOLS[tool])
         if path and _inside(Path(cwd) / path, root):

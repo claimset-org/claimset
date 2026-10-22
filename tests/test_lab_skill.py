@@ -35,7 +35,8 @@ class TestBundledTool(unittest.TestCase):
                 return subprocess.run([sys.executable, "-I", str(LAUNCHER), "lab", *args], cwd=tmp, env=env,
                                       capture_output=True, text=True)
 
-            self.assertEqual(run("init", "--title", "T").returncode, 0)
+            self.assertEqual(run("init", "--study", "demo", "--title", "T").returncode, 0)
+            self.assertTrue((Path(tmp) / "claimset" / "demo" / "lab" / "lab.jsonl").exists())
             self.assertEqual(run("actor", "--kind", "human", "--name", "R").stdout.strip(), "AC1")
             self.assertEqual(run("question", "Q?", "--by", "AC1").stdout.strip(), "Q1")
             out = run("verify")

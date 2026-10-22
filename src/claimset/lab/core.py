@@ -1,7 +1,7 @@
-"""The lab record: an append-only, hash-chained event log (lab record spec v0.4).
+"""The lab record: an append-only, hash-chained event log (lab record spec v0.6).
 
 This module reads, writes and verifies `lab/lab.jsonl` and the per-agent logs
-`lab/agents/<actor>.jsonl` (§3.1). Everything that writes goes through
+`lab/agents/<actor>.jsonl` (§3.5). Everything that writes goes through
 `Lab.append` or `Lab.merge`, which take the lock, check the new events against
 the log so far and refuse them if they break a rule.
 """
@@ -25,16 +25,17 @@ PREFIX = {
     "actor": "AC", "question": "Q", "hypothesis": "H", "status": "ST", "assumption": "AS",
     "plan": "PL", "approval": "AP", "run": "RN", "result": "RS", "decision": "DC",
     "deviation": "DV", "check": "CK", "artefact": "AR", "note": "NT", "merge": "MG",
+    "paper": "PA", "relocation": "MV",
 }
 INIT_ID = "INIT"
 
 #: Event types whose bodies this version of the tool can write and fully check.
 IMPLEMENTED = {"init", "actor", "question", "hypothesis", "status", "assumption",
                "decision", "check", "artefact", "note", "plan", "approval", "run", "result",
-               "deviation", "merge"}
+               "deviation", "merge", "paper", "relocation"}
 
-#: Event types that are written only to the main log, never to an agent log (§3.1).
-MAIN_ONLY = {"init", "actor", "merge"}
+#: Event types that are written only to the main log, never to an agent log (§3.5).
+MAIN_ONLY = {"init", "actor", "merge", "paper", "relocation"}
 AGENTS_DIR = "agents"
 
 ENUM = {
@@ -69,6 +70,8 @@ def version_tuple(v):
 HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 ORCID_RE = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
 ID_RE = re.compile(r"^(?:(AC\d+)\.)?([A-Z]+)(\d+)$")
+#: Names of studies and papers: lower-case letters, digits and hyphens, starting with a letter (§3).
+NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,59}$")
 AT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
 LOCK_STALE_SECONDS = 60
 LOCK_TIMEOUT_SECONDS = 10
@@ -134,7 +137,7 @@ class State:
 
     `owner` is None for the main log. For an agent log it is the agent's actor ID:
     the state then holds the main log up to where the agent started, followed by
-    the agent's own events, and new IDs carry the actor prefix (§3.1).
+    the agent's own events, and new IDs carry the actor prefix (§3.5).
     """
 
     def __init__(self, owner=None):
@@ -156,6 +159,10 @@ class State:
         self.superseded_by = {}
         self.root_of = {}
         self.actors = set()
+        self.study = None        # the study's name: from init, or the latest relocation that names one
+        self.lab_path = None     # where the lab lives, as the latest relocation records it
+        self.relocations = []    # relocation bodies, in order
+        self.papers = {}         # paper root -> latest visible paper event
 
     # -- lookups
     def get(self, eid):
@@ -256,6 +263,14 @@ class State:
             self.has_withheld = True
         if event["type"] == "init" and visible:
             self.spec_version = version_tuple(body.get("lab_spec_version"))
+            if isinstance(body.get("study"), str):
+                self.study = body["study"]
+        if event["type"] == "relocation" and visible:
+            self.relocations.append(body)
+            if isinstance(body.get("study"), str):
+                self.study = body["study"]
+            if isinstance(body.get("to"), str):
+                self.lab_path = body["to"]
         if event["type"] == "plan" and event.get("supersedes") is None:
             self.plan_roots.append(eid)
         if event["type"] == "run" and visible and body.get("label") == "confirmatory" \
@@ -273,6 +288,12 @@ class State:
             self.root_of[eid] = self.root(sup)
         if event["type"] == "actor":
             self.actors.add(eid)
+        if event["type"] == "paper":
+            root = self.root(eid)
+            if visible:
+                self.papers[root] = event
+            else:
+                self.papers.pop(root, None)
         body = event.get("body")
         if event["type"] == "merge":
             self._last_merge = eid
@@ -392,9 +413,55 @@ def _ref(state, eid, etype, field, types=None):
     return _refs(state, [eid], etype, field, types)[0]
 
 
+def _name(body, field, etype, required=True):
+    v = body.get(field)
+    if v is None and not required:
+        return None
+    if not isinstance(v, str) or not NAME_RE.match(v):
+        raise LabError("schema", f"{etype}: '{field}' must be a name of lower-case letters, digits and hyphens, "
+                                 f"starting with a letter (e.g. eigen-checker)")
+    return v
+
+
 def check_init(state, body, by, eid):
     _req(body, "lab_spec_version", "init")
     _req(body, "working_title", "init")
+    _name(body, "study", "init", required=False)
+
+
+def check_paper(state, body, by, eid):
+    """A paper drawn from the record: its name and the questions it reports (rule L18)."""
+    name = _name(body, "name", "paper")
+    qs = _req(body, "questions", "paper")
+    if not isinstance(qs, list) or not qs:
+        raise LabError("schema", "paper: 'questions' must be a non-empty list of question IDs")
+    _refs(state, qs, "paper", "questions", {"question"})
+    sup = state.checking.get("supersedes")
+    replaced = state.root(sup) if sup else None
+    for root, other in state.papers.items():
+        if root == replaced:
+            continue
+        ob = other.get("body") or {}
+        if ob.get("name") == name:
+            raise LabError("L18", f"paper: '{name}' is already the name of {root}; correct that event instead")
+        shared = sorted({state.root(q) for q in qs} & {state.root(q) for q in ob.get("questions") or []
+                                                      if isinstance(q, str)})
+        if shared:
+            raise LabError("L18", f"paper: {', '.join(shared)} already belong to paper '{ob.get('name')}' "
+                                  f"({root}); a question is reported in one paper")
+
+
+def check_relocation(state, body, by, eid):
+    """The lab moved (and possibly files the record names): from, to, optional study and moved files."""
+    for f in ("from", "to"):
+        v = _req(body, f, "relocation")
+        if not isinstance(v, str) or not v.strip():
+            raise LabError("schema", f"relocation: '{f}' must be a path")
+    _name(body, "study", "relocation", required=False)
+    moved = body.get("moved")
+    if moved is not None and not (isinstance(moved, list) and all(
+            isinstance(m, dict) and isinstance(m.get("from"), str) and isinstance(m.get("to"), str) for m in moved)):
+        raise LabError("schema", "relocation: 'moved' must be a list of {from, to} paths")
 
 
 def check_actor(state, body, by, eid):
@@ -717,7 +784,7 @@ BODY_CHECKS = {
     "hypothesis": check_hypothesis, "status": check_status, "assumption": check_assumption,
     "decision": check_decision, "check": check_check, "artefact": check_artefact, "note": check_note,
     "plan": check_plan, "approval": check_approval, "run": check_run, "result": check_result,
-    "deviation": check_deviation, "merge": check_merge,
+    "deviation": check_deviation, "merge": check_merge, "paper": check_paper, "relocation": check_relocation,
 }
 
 
@@ -734,7 +801,7 @@ class Lab:
 
     # -- creation and reading
     @classmethod
-    def create(cls, root, title, repository=None, clock=utc_now):
+    def create(cls, root, title, repository=None, clock=utc_now, study=None):
         lab = cls(root, clock=clock)
         if lab.log_path.exists():
             raise LabError("init", f"{lab.log_path} already exists")
@@ -744,8 +811,13 @@ class Lab:
         # Receipts from several working copies are combined when their branches are merged (§7.1).
         (lab.root / ".gitattributes").write_text("anchors.jsonl merge=union\n", encoding="utf-8")
         now = clock()
-        lab.append("init", {"lab_spec_version": LAB_SPEC_VERSION, "working_title": title,
-                            "repository": repository, "started_at": now}, by=None)
+        if study is None and lab.root.resolve().parent.parent.name == "claimset" and lab.root.name == "lab":
+            study = lab.root.resolve().parent.name          # claimset/<study>/lab (§3)
+        body = {"lab_spec_version": LAB_SPEC_VERSION, "working_title": title, "repository": repository,
+                "started_at": now}
+        if study is not None:
+            body["study"] = study
+        lab.append("init", body, by=None)
         return lab
 
     def exists(self):
@@ -767,7 +839,8 @@ class Lab:
     def read(self):
         """All events in the main log, parsed. Raises LabError on unreadable lines."""
         if not self.log_path.exists():
-            raise LabError("init", f"no lab record at {self.log_path}; run `claimset lab init` first")
+            raise LabError("init", f"no lab record at {self.log_path}; create one with `claimset lab init --study "
+                                   f"NAME --title …`, or name the lab with --study or --lab")
         return self._read_path(self.log_path, "lab.jsonl")
 
     def state(self):
@@ -777,7 +850,7 @@ class Lab:
             st.apply(e)
         return st
 
-    # -- agent logs (§3.1)
+    # -- agent logs (§3.5)
     def agent_log_path(self, actor):
         return self.root / AGENTS_DIR / f"{actor}.jsonl"
 
@@ -841,7 +914,7 @@ class Lab:
     def append(self, etype, body, by, supersedes=None):
         """Check and append one event to the writer's log; return it. Raises LabError if refused.
 
-        Events by an actor with an open agent log go to that log (§3.1); all others to the main log.
+        Events by an actor with an open agent log go to that log (§3.5); all others to the main log.
         """
         with self._lock():
             main = self.read() if self.log_path.exists() else []
@@ -867,7 +940,7 @@ class Lab:
             return event
 
     def merge(self, by, actors=None):
-        """Merge agent logs into the main log (§3.1). Returns the merge event.
+        """Merge agent logs into the main log (§3.5). Returns the merge event.
 
         The merge event is written first, followed by the merged events in order of `at`
         (each agent's own order kept; ties broken by actor, then seq). Either all of them
@@ -1113,7 +1186,7 @@ def _merge_order_key(e, actor, seq):
 
 
 def _merge_order_errors(group):
-    """The merged events of one merge: each log complete from seq 1 in its own order, interleaved as §3.1 says."""
+    """The merged events of one merge: each log complete from seq 1 in its own order, interleaved as §3.5 says."""
     items = group["items"]
     if any(not isinstance(s, int) for _, _, s in items):
         return []  # reported already as a malformed origin
@@ -1131,7 +1204,7 @@ def _merge_order_errors(group):
             streams.items(), key=lambda kv: _actor_num(kv[0]))], key=lambda t: t[:3])]
     if expected != [e["id"] for e, _, _ in items]:
         errors.append({"seq": items[0][0]["seq"], "id": group["id"], "rule": "L10",
-                       "message": f"the events merged by {group['id']} are not in the order of §3.1 "
+                       "message": f"the events merged by {group['id']} are not in the order of §3.5 "
                                   f"(by time, each agent's own order kept)"})
     return errors
 
@@ -1234,6 +1307,46 @@ def verify_run_files(lab, events):
     return errors
 
 
+def verify_layout(lab, st):
+    """L19: a lab in claimset/<study>/lab belongs to that study."""
+    folder = lab.root.resolve()
+    if folder.name == "lab" and folder.parent.parent.name == "claimset":
+        name = folder.parent.name
+        if st.study is None and (st.spec_version or (0, 0)) >= (0, 6):
+            return [{"seq": 1, "id": INIT_ID, "rule": "L19",
+                     "message": f"the lab is in claimset/{name}/ but names no study"}]
+        if st.study is not None and st.study != name:
+            return [{"seq": None, "id": None, "rule": "L19",
+                     "message": f"the lab is in claimset/{name}/ but its study is '{st.study}': move it with "
+                                f"`claimset lab move` or name the study in a relocation"}]
+    return []
+
+
+def layout_notes(lab, st):
+    """Hypotheses with a result that no paper reports, once the record names papers; build files that would
+    ship the studies inside a package."""
+    from .layout import FOLDER, missing_ignores, studies_top
+    notes = []
+    if st.papers:
+        covered = set()
+        for p in st.papers.values():
+            covered |= {st.root(q) for q in (p.get("body") or {}).get("questions") or [] if isinstance(q, str)}
+        finals = final_statuses(st)
+        for root in [e["id"] for e in st.events if e.get("type") == "hypothesis" and e["id"] == st.root(e["id"])]:
+            h = st.latest(root)
+            q = (h.get("body") or {}).get("question") if h else None
+            final = (finals.get(root) or {}).get("body") or {}
+            decided = final.get("to") in ("supported", "not_supported", "inconclusive") \
+                or bool(st.strict and st.decided_plans_for(root))
+            if decided and (not isinstance(q, str) or st.root(q) not in covered):
+                notes.append(f"{root} has a result but its question {q} is in no paper: it is reported nowhere")
+    top = studies_top(lab.root)
+    if top is not None:
+        for name, line in missing_ignores(top):
+            notes.append(f"{name} does not leave {FOLDER}/ out of package builds: add the line '{line}'")
+    return notes
+
+
 def verify(lab, check_files=True, remote=False):
     try:
         events = lab.read()
@@ -1271,6 +1384,8 @@ def verify(lab, check_files=True, remote=False):
     st = State()
     for e in events:
         st.apply(e)
+    rep["errors"] += verify_layout(lab, st)
+    rep["notes"] += layout_notes(lab, st)
     for root in st.plan_roots:
         d = st.deciding_runs(root)
         if d:

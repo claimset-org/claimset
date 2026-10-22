@@ -237,6 +237,27 @@ def anchor_git(lab, remote="origin", branch=DEFAULT_BRANCH):
     return entry
 
 
+def default_branch(lab):
+    """The anchor branch when the configuration names none: one per study (§7.1)."""
+    try:
+        with open(lab.log_path, encoding="utf-8") as fh:
+            first = json.loads(fh.readline() or "{}")
+        study = (first.get("body") or {}).get("study")
+    except (OSError, ValueError, AttributeError):
+        study = None
+    try:
+        from .core import State
+        st = State()
+        for e in lab.read():
+            st.apply(e)
+        study = st.study or study
+    except Exception:  # an unreadable log is reported by verify, not here
+        pass
+    if isinstance(study, str) and study:
+        return f"{DEFAULT_BRANCH}/{study}"
+    return DEFAULT_BRANCH
+
+
 def anchor(lab):
     """Anchor using the configured service. Raises LabError if not configured or if it fails."""
     cfg = anchoring(lab)
@@ -244,7 +265,7 @@ def anchor(lab):
         raise LabError("anchor", "anchoring is not configured; run `claimset lab anchor --git` once")
     if cfg.get("service") != "git_remote":
         raise LabError("anchor", f"anchoring service '{cfg.get('service')}' is not supported by this version")
-    return anchor_git(lab, cfg.get("remote", "origin"), cfg.get("branch", DEFAULT_BRANCH))
+    return anchor_git(lab, cfg.get("remote", "origin"), cfg.get("branch") or default_branch(lab))
 
 
 def ensure_covered(lab, event, owner=None):
@@ -341,6 +362,21 @@ def _parsed(lines):
     return out
 
 
+def _former_logs(lab, top):
+    """Paths of the main log, relative to the repository, before each relocation, latest first."""
+    out = []
+    try:
+        events = lab.read()
+    except LabError:
+        return out
+    for e in reversed(events):
+        b = e.get("body") if isinstance(e, dict) else None
+        if isinstance(e, dict) and e.get("type") == "relocation" and isinstance(b, dict) \
+                and isinstance(b.get("from"), str):
+            out.append(f"{b['from'].rstrip('/')}/lab.jsonl")
+    return out
+
+
 def verify_remote(lab):
     """Check the local logs against the anchor branch on the remote (spec §7.1).
 
@@ -354,7 +390,7 @@ def verify_remote(lab):
     if not cfg:
         return {"errors": [fail("anchoring is not configured")], "notes": []}
     top = _repo_top(lab)
-    remote, branch = cfg.get("remote", "origin"), cfg.get("branch", DEFAULT_BRANCH)
+    remote, branch = cfg.get("remote", "origin"), cfg.get("branch") or default_branch(lab)
     try:
         exists = _fetch(top, remote, branch)
     except LabError as exc:
@@ -386,8 +422,12 @@ def verify_remote(lab):
             errors.append(fail(f"anchor {n}: commit {commit[:12]} is not on {remote}/{branch}: "
                                f"the branch was rewritten", seq=a.get("seq")))
             continue
-        errors += _check_position(_parsed(_remote_file(top, main_rel, commit)), a, n,
-                                  what=f"lab.jsonl in commit {commit[:12]}")
+        anchored = _remote_file(top, main_rel, commit)
+        for old in _former_logs(lab, top):          # anchored before the lab moved (relocation, §3.4)
+            if anchored is not None:
+                break
+            anchored = _remote_file(top, old, commit)
+        errors += _check_position(_parsed(anchored), a, n, what=f"lab.jsonl in commit {commit[:12]}")
         agents = a.get("agents") if isinstance(a.get("agents"), dict) else {}
         for actor, pos in sorted(agents.items()):
             name = lab.agent_log_name(actor)
