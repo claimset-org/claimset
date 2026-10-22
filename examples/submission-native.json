@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.21",
+  "schema_version": "0.22",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -93,7 +93,6 @@
       "statement": "Monthly retail sales series exhibit annual seasonality.",
       "type": "descriptive",
       "role": "supporting",
-      "novelty": "new",
       "support": [
         {
           "kind": "assumption"
@@ -108,7 +107,6 @@
       "statement": "Forecast errors of method M are independent across series.",
       "type": "descriptive",
       "role": "supporting",
-      "novelty": "new",
       "support": [
         {
           "kind": "assumption"
@@ -123,7 +121,7 @@
       "statement": "Method M improves [[D1:forecast skill]] over the seasonal naive benchmark on monthly retail sales series.",
       "type": "descriptive",
       "role": "principal",
-      "novelty": "new",
+      "novelty": "no_prior_found",
       "scope": {
         "population": "monthly retail sales series",
         "geography": "United Kingdom",

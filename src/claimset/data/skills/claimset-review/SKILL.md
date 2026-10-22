@@ -58,14 +58,38 @@ Work claim by claim, principal claims first, then what they rest on. For each:
 - An unchecked assumption that could plausibly fail here is an `assumption` comment; its test says how to check it.
 
 **Prior work.**
-- Before accepting `novelty: new` or `refutation`, look for the closest prior result: the paper's own references first, then whatever search is available to you. A claim that prior work already states is a `prior_work` comment, citing that work in `references`, with a `documentary` test ("upheld if <work> states <claim> under <conditions>; withdrawn if it does not").
-- Missing or misattributed prior work that a claim builds on is a `prior_work` comment.
+- Missing or misattributed earlier work that a claim builds on or uses is a `prior_work` comment.
+
+**Novelty** (a dimension of its own; see *Assessing novelty* below).
 
 **Reproducibility.**
 - Are the artefacts available at the links given, pinned to a version (a commit, not a branch), and enough to rerun the evidence? If you can, rerun a principal result in your own lab record; a result that does not reproduce is a `measurement` or `reproducibility` comment with your runs as `evidence`.
 
 **Limitations.**
 - Does each limitation name the right claims and an honest impact? A threat to a claim that no limitation states is a comment on that claim.
+
+## Assessing novelty
+
+Novelty is judged apart from credibility: a true claim is no less credible for being known, but a label that earlier work contradicts is a problem. For every claim that is not an assumption:
+
+1. **Search** for the closest earlier result: the platform's published claims first (they are single statements with scope and definitions, so they compare directly), then the claimset's own references, the works they cite and the works citing them, then literature databases, with queries built from the claim's statement, defined terms and scope.
+2. **Compare** the closest results with the claim, statement and scope: does an earlier result state this claim, under these conditions?
+3. **Record** what you found in the review's `novelty` list:
+
+```json
+{"claim": "C1", "closest": [{"target": "doi:…", "id_type": "doi", "locator": "Theorem 2",
+                             "note": "Derives the region for one seasonal lag, not for several."}],
+ "searched": {"sources": ["claimset", "openalex", "references of the claimset"], "date": "YYYY-MM-DD"},
+ "comments": []}
+```
+
+4. **Comment** when the label is contradicted, with a `novelty` comment (no severity; the earlier work in `references`; usually a `documentary` test):
+   - `no_prior_found`, but an earlier result states the claim;
+   - the claim replicates or extends an earlier result and is not labelled or related as such;
+   - it repeats a claim of the same authors' earlier claimset without relating to it.
+   A claim that matches an independent earlier result is not wrong: the comment asks for the label `replication` and the relation, which is a valuable result in its own right. List the comment in the claim's `novelty` entry.
+
+Novelty comments never lower a credibility score.
 
 ## Writing a comment
 
@@ -81,14 +105,14 @@ Work claim by claim, principal claims first, then what they rest on. For each:
 ```
 
 - **One problem, one comment.** Name every claim it affects in `claims`, including the claims that rest on the object at fault; do not repeat the problem in another comment.
-- **Severity** is what happens to the claims if the comment is right: `could_reverse` (the claim may be false), `could_bias_magnitude` (its size may be wrong), `reduces_precision`, `reduces_transferability` (it may not hold beyond the setting tested), `presentation` (nothing in the content is in question). Not how much work the fix takes.
+- **Severity** (every category except `novelty`) is what happens to the claims if the comment is right: `could_reverse` (the claim may be false), `could_bias_magnitude` (its size may be wrong), `reduces_precision`, `reduces_transferability` (it may not hold beyond the setting tested), `presentation` (nothing in the content is in question). Not how much work the fix takes.
 - **The comment** is self-contained, plain and specific: what is wrong, where, and why it matters to the claim. No rhetoric, no instructions to a model.
 - **The resolution test** is the heart of the comment. Prefer a computable test: a `procedure` someone else would run the same way, `quantities` named by the exact text a script would write, and `upheld` and `withdrawn` rules over them that do not overlap. Use the frameworks and parameters of the lab record (`deterministic` for a count or a fixed computation; `frequentist`, `equivalence` or `bayesian` with all their parameters when sampling matters). Use `documentary` only when what a source states decides it. Ask yourself: what result would make me withdraw this comment? If no result would, the comment is an opinion; drop it or sharpen it.
 - **Evidence and references.** If you ran something, add your runs as `evidence` and your lab record to the review (`lab_record`). Cite prior work in `references`.
 
 ## Re-review: judging the answers
 
-A re-review gives a verdict on every comment that was unresolved on the previous version, from every review of it (`claimset revision status` lists them), then scores every claim of the revision again.
+A re-review gives a verdict on every comment that was unresolved on the previous version, from every review of it (`claimset revision status` lists them), then scores and assesses the novelty of every claim of the revision again.
 
 For each comment, read the response entry that answers it and the revision:
 
@@ -104,16 +128,16 @@ Give `rule` (`met`, and for computed tests the values bound to the quantities) a
 
 New comments in a re-review are only on what the revision changed, or could reverse a claim.
 
-## Scoring
+## Scoring credibility
 
-Score every claim of the version from 0 to 100 with the rubric you were given; an additional review scores only the claims its own comments name.
+Score every claim of the version from 0 to 100 with the rubric you were given; an additional review scores only the claims its own comments name. Novelty is recorded separately (*Assessing novelty*).
 
 ```json
 {"claim": "C1", "score": 72, "comments": ["<global ID of c4>", "<global ID of c6>"],
  "reason": "The refutation holds on the models tested (c4 biases the count, not its sign), but rests on C13, which no run has checked against smooth 4.6.0 (c6)."}
 ```
 
-- Every point below 100 rests on comments that are unresolved once your review is published (your own, and earlier ones after your verdicts) and that name the claim or a claim it rests on. Cite them by global ID, and say in `reason` how they bear on the claim.
+- Every point below 100 rests on comments, other than `novelty` comments, that are unresolved once your review is published (your own, and earlier ones after your verdicts) and that name the claim or a claim it rests on. Cite them by global ID, and say in `reason` how they bear on the claim.
 - A claim is only as credible as what it rests on: a comment on an assumption can lower the claims built on it. One problem lowers a claim once.
 - A settled comment (`resolved`, `withdrawn`) no longer lowers anything. A claim with no unresolved comment on it or on what it rests on scores 100.
 - Use the rubric's levels; never score by feel. If the rubric gives no guidance for a case, say so in `reason`.
@@ -127,7 +151,7 @@ Score every claim of the version from 0 to 100 with the rubric you were given; a
               "prompt": {"version": "<version of this skill>", "uri": "<public URI of this SKILL.md>", "hash": "<its sha256>"},
               "system": {"name": "claimset-review", "version": "…"},
               "rubric": {"version": "…", "uri": "…", "hash": "…"}},
- "date": "YYYY-MM-DD", "comments": [], "verdicts": [], "scores": [], "lab_record": null}
+ "date": "YYYY-MM-DD", "comments": [], "verdicts": [], "scores": [], "novelty": [], "lab_record": null}
 ```
 
 Take the target's hash and the review's ID from `claimset revision status` (review IDs are numbered across the claimset: RV1, RV2, …). Take the models from your system prompt or environment and never guess them. Then check it:
@@ -142,4 +166,4 @@ Before handing over, reread every comment as the author will: is the problem cle
 
 ## Human reviewers and resolvers
 
-A human writing an additional review follows the same steps, with `reviewer: {type: human, name, orcid, competing_interests}` and no scores. A human resolver settling a disputed comment writes a resolution (`schema: claimset-resolution`, revision spec §6.4): a verdict of `withdrawn` or `upheld` for each comment, naming the rule of the current test the evidence met. A resolver is not an author, guarantor, supervisor or contributor of the claimset, nor the reviewer who raised the comment.
+A human writing an additional review follows the same steps, with `reviewer: {type: human, name, orcid, competing_interests}`, and no scores or novelty assessments (novelty comments are welcome). A human resolver settling a disputed comment writes a resolution (`schema: claimset-resolution`, revision spec §6.4): a verdict of `withdrawn` or `upheld` for each comment, naming the rule of the current test the evidence met. A resolver is not an author, guarantor, supervisor or contributor of the claimset, nor the reviewer who raised the comment.

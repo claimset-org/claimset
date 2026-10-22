@@ -12,5 +12,5 @@ tool's warnings). The files are copied unchanged.
 Licence: CC-BY-4.0. Authors: Ivan Svetunkov (guarantor and supervisor) with Claude Code research
 agents, in the smooth package repository (openforecast-org/smooth).
 
-The claimset follows spec v0.18; tests change its `schema_version` in memory only. The lab's run
+The claimset follows spec v0.18; tests change its `schema_version` and its novelty labels (renamed in v0.22) in memory only. The lab's run
 directories are not included, so tests that verify the record skip the run-file check.

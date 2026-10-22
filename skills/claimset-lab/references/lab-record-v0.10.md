@@ -1,8 +1,12 @@
-# Claimset Lab Record — Specification v0.9 (draft)
+# Claimset Lab Record — Specification v0.10 (draft)
 
-Status: working draft · Date: 2026-10-22 · Supersedes v0.8 · Companion to the claimset specification (`spec/claimset-v0.21.md`) and the revision specification (`spec/claimset-revision-v0.1.md`)
+Status: working draft · Date: 2026-10-22 · Supersedes v0.9 · Companion to the claimset specification (`spec/claimset-v0.22.md`) and the revision specification (`spec/claimset-revision-v0.2.md`)
 
-## Changes since v0.8
+## Changes since v0.9
+
+- Export follows claimset v0.22: claims get `novelty: no_prior_found` by default (the authors found no earlier result stating the claim; the completion list asks for the closest one they found), and assumption claims get no novelty (§9).
+
+## Changes in v0.9 (since v0.8)
 
 A published claimset is reviewed, and every review comment says in advance what evidence would settle it (its resolution test, revision §3.4). The lab record is where the author runs that test, so the verdict is computed against a rule the author did not write, at a time the record anchors.
 
@@ -557,13 +561,13 @@ Hypotheses without a final status are counted as open; they are not forced close
 | `init` | `paper.title` (the working title), `paper.origin: native` |
 | `actor`, agent | contributor of type `agent` with its models (each model defined once in `models`, `accessed` the date of the earliest event by an agent using it), `name`, `record_source`, `run_period` (dates of its first and last events) and `tools: [code_execution]` if it ran commands. Position `author` if it wrote any event other than `actor` and `check`; otherwise `contributor`, with AI task `review` |
 | `actor`, human or organisation | contributor with `name` and `orcid`, position `contributor`. Who is supervisor and guarantor is decided by people (completion list) |
-| a verdict on a planned test (§5.7.4) | a claim per decided plan and hypothesis it names, in the order of the hypotheses and then the plans: `statement` from the hypothesis as it stood when the plan was written, `hypothesis: {lab_event, outcome}` (`lab_event` is that version's ID, `outcome` the verdict), defaults `type: descriptive`, `role: supporting`, `novelty: new`, `provenance: author_stated` |
+| a verdict on a planned test (§5.7.4) | a claim per decided plan and hypothesis it names, in the order of the hypotheses and then the plans: `statement` from the hypothesis as it stood when the plan was written, `hypothesis: {lab_event, outcome}` (`lab_event` is that version's ID, `outcome` the verdict), defaults `type: descriptive`, `role: supporting`, `novelty: no_prior_found`, `provenance: author_stated` |
 | `hypothesis` named by no decided plan, with final status `supported`, `not_supported` or `inconclusive` | an exploratory claim, the same way, from the latest version of the hypothesis and its final status |
 | `hypothesis` otherwise | not a claim; counted in `paper.exploration` |
 | the runs behind a verdict or final status | one evidence object per claim, from the runs the status names as evidence, directly or through their results: `lab_runs`, `results` (one per `result` event: `quantity`, `value`, `unit`, `interval`, `conditions`), `execution` (`code_version` when the runs share one), default `profile: quant`, `design: other`, `availability: public`. The claim's support is `empirical_quant` pointing to the evidence and its results |
 | `plan` | `planning`, `planned_at`, `planned_at_anchor` and `test` on the claims of its verdicts (below). `test` is the plan's decision rule as written before the run: `framework`, `parameters`, `quantities`, `supported`, `not_supported`, `verdict` (`computed` when the rule has quantities, otherwise `judged`), `runs`, `lab_plan` (the plan's ID), `flags` (§5.7.5) and `addresses` (§5.7.7) |
 | `deviation` | `planning: confirmatory_with_deviations`, and a limitation on the affected claim: `category: analytic_flexibility`, `impact: could_bias_magnitude`, `mitigation: none`, statement naming the run, the plan, what differed and why |
-| `assumption` | assumption claim with `assumption_category` and `check`; `check_evidence` when it names a run or result used in an evidence object |
+| `assumption` | assumption claim (without novelty) with `assumption_category` and `check`; `check_evidence` when it names a run or result used in an evidence object |
 | `check` | a `checks` entry on the claim whose hypothesis, final status, or evidence run or result it targets. A check by an actor exported as an author is not exported (claimset rule 39) and is named in the completion list |
 | `artefact` | artefact with `kind`, `uri` (the path or URI), `version` (the hash), `licence`, `description` |
 | the whole record | artefact of kind `lab_record`: `uri` (for a repository on GitHub whose last event is anchored by a git commit, the log in that commit; otherwise the repository URI from `init` followed by the log's path, and the completion list asks for a fixed URI, or the path alone), `version` (the hash of `lab.jsonl`), `availability: public`, `withheld_events`; referenced from `paper.exploration.lab_record` |

@@ -1,10 +1,28 @@
-# Claimset — Specification v0.20 (draft)
+# Claimset — Specification v0.22 (draft)
 
-Status: working draft · Date: 2026-10-22 · Supersedes v0.19 (`spec/claimset-v0.19.md`) · Companion: lab record specification (`spec/lab-record-v0.8.md`)
+Status: working draft · Date: 2026-10-22 · Supersedes v0.21 (`spec/claimset-v0.21.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.19
+## Changes since v0.21
+
+Novelty is a statement about a search, not a fact: a claim is new only as far as its authors looked. Models read labels literally, so the label says what is known.
+
+- `novelty: new` is renamed `no_prior_found`: the authors found no earlier result stating the claim. A claim with this label cites the closest earlier result they found, as a relation with a note on how the claim differs, when there is one (§3.3).
+- Assumption claims have no novelty: they are taken as given, not found. New rule 60 (§10).
+- Novelty is judged in review apart from credibility (revision specification §7); §6 corrected: review scores are given by the reviewer, not computed.
+
+## Changes in v0.21 (since v0.20)
+
+A published claimset is reviewed, and its author may answer the review with a revised version. Reviews, responses and resolutions are documents beside the claimset, specified in the revision specification (`spec/claimset-revision-v0.1.md`); this specification changes only where the claimset file meets them.
+
+- Versions arise by correction or by revision (§9). A revision submission names the claimset in `paper.id` without a `correction_reason`; rule 25 revised (§10).
+- New platform-assigned field `paper.answers`, the response a revision carries; the operations of `paper.changes` gain `addresses`, the review comments they answer (§2.2).
+- `test.addresses`: the review comments whose resolution test a planned test ran (§3.3.3).
+- §6: reviews, responses, resolutions and scores are platform records; the reading view the platform serves may add their state (§2.3).
+- New rule 59 (§10).
+
+## Changes in v0.20 (since v0.19)
 
 Checks for problems in how a study was run and reported, found when reviewing a real claimset: numbers that no recorded result produced, the same computation recorded twice, new claims resting on established knowledge, contributions an unmitigated limitation could reverse, and links to code that move. They are warnings: nothing new is required.
 
@@ -180,10 +198,11 @@ The same format exists in two forms:
 
 | Field | Assigned when |
 |---|---|
-| `paper.id` | At publication: the platform mints a DOI. Exception: a correction submission names the existing claimset's `paper.id` (§9) |
-| `paper.version` | At publication: 1 for a new paper; incremented for corrections |
-| `paper.previous_version` | At publication of a correction |
-| `paper.changes` | At publication of a correction: JSON Patch computed by the platform |
+| `paper.id` | At publication: the platform mints a DOI. Exception: a correction or revision submission names the existing claimset's `paper.id` (§9) |
+| `paper.version` | At publication: 1 for a new paper; incremented for corrections and revisions |
+| `paper.previous_version` | At publication of a correction or revision |
+| `paper.changes` | At publication of a correction or revision: JSON Patch computed by the platform, each operation with `reason` and, for a revision, `addresses` (the global IDs of the review comments it answers) |
+| `paper.answers` | At publication of a revision: the global ID of the response it carries (revision §5.3) |
 | `paper.date` | At publication: the publication date |
 | `paper.status` | At publication (`active`), and later by governance actions |
 | `paper.status_notice` | When status changes from `active` |
@@ -215,12 +234,12 @@ Top-level layout:
 
 A claimset is stored and exchanged as JSON: the canonical file, which tools validate, the platform publishes and corrections patch. A model that reads the paper is given its **reading view**: a plain-text rendering of the same claimset. JSON field names, quotation marks and the fields that serve tools, audit and publication take a large share of a file and carry nothing a reader needs; the reading view leaves them out.
 
-- **Kept:** the title, licence, source of a converted paper, contributions and exploration counts; definitions; claims with their type, role, novelty (when not `new`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes, and test; evidence with its description, design fields, estimate, results, tables and proof steps; warrants; limitations; artefact descriptions; references.
+- **Kept:** the title, licence, source of a converted paper, contributions and exploration counts; definitions; claims with their type, role, novelty (when not `no_prior_found`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes, and test; evidence with its description, design fields, estimate, results, tables and proof steps; warrants; limitations; artefact descriptions; references.
 - **Left out:** `provenance`, `field_provenance`, `source_spans`, `corrections`, availability, artefact locations, versions and licences, contributors, models, execution records, lab-record identifiers, `schema_version` and the platform's publication fields.
 
 - **Order:** claims are grouped by role: principal claims, then supporting claims, then secondary claims, each group in file order. Claims that are not principal and whose support is only `argument` or `unstated` follow, under CLAIMS WITHOUT EVIDENCE, so a reader sees at once what the paper asserts or argues without evidence. Principal claims stay with the principal claims whatever their support.
 
-The reading view is made mechanically from a valid file (`claimset render`); it adds nothing and is never edited. Its layout is the reference rendering in Appendix D. A reader that needs a field left out (a source span to check a claim against its source, an artefact's location) reads the canonical file.
+The reading view is made mechanically from a valid file (`claimset render`); it adds nothing and is never edited. The reading view the platform serves may append, under REVIEW STATUS, each claim's unresolved review comments with their category, severity and state; that is derived data, and `claimset render` of the file alone does not add it. Its layout is the reference rendering in Appendix D. A reader that needs a field left out (a source span to check a claim against its source, an artefact's location) reads the canonical file.
 
 ### 2.4 Files in a repository
 
@@ -350,7 +369,7 @@ A definition explains in full only a term the paper introduces or uses in its ow
 | `statement` | string | Self-contained sentence (rules in §8) |
 | `type` | enum | `descriptive` · `associational` · `causal` · `predictive` · `interpretive` · `formal` · `methodological` (choosing: §3.3.1) |
 | `role` | enum | `principal` (a contribution) · `supporting` (one of the paper's own claims that a contribution rests on, directly or through other claims, by `depends_on` or `assumptions`) · `secondary` (a finding of the paper that no contribution rests on: a side result, a negative or null result reported in its own right) |
-| `novelty` | enum | `new` · `replication` · `extension` · `refutation` |
+| `novelty` | enum | `no_prior_found` · `replication` · `extension` · `refutation`. Not on assumption claims (§3.8) |
 | `scope` | object | `population`, `setting`, `geography`, `language`, `period`, `data_type`, `conditions` (list), `excludes` (list: where it explicitly does not apply). Describes this claim only (§3.3.2) |
 | `support` | list | Kinds of support (§4); at least one entry |
 | `assumptions` | list of claim IDs | Assumption claims (§3.8) this claim relies on |
@@ -425,6 +444,7 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
 - `supported`, `not_supported`: the two rules: expressions over quantities and numeric parameters (lab record §5.7.3), or text saying what observation decides.
 - `verdict`: `computed` (the rules are expressions and the outcome was computed from the recorded results by the lab tool) · `judged` (the rules are text and the outcome was stated by the writer, who said which rule the evidence met).
 - `runs`: how many runs decided the test. `lab_plan`: the plan's lab-record ID, when there is one. `registration`: the URI of an external pre-registration, when there is one.
+- `addresses`: optional list of the global IDs of review comments (`doi:…@v1/RV1.c6`) whose resolution test this test ran (revision §4.2). The test's rules are then the comment's: `supported` its `withdrawn` rule, `not_supported` its `upheld` rule.
 - `flags`: optional list of weaknesses of the test, from the lab record (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs) · `reproduces_prompting_result` (a result the decision rule uses has the same quantity, conditions and value as a result of a run that suggested the hypothesis: the test may have repeated the exploration rather than tested the hypothesis on anything new).
 
 `planned_at_anchor` says how far `planned_at` can be trusted (lab record §7): from strongest, `platform` (receipt from the Claimset platform), `rfc3161` (trusted timestamp authority), `git_remote` (pushed commit), to `none`.
@@ -557,11 +577,13 @@ Links from a claim to a claim or work outside this paper: `{type, reference, tar
 - `self`: true when the target work shares a human supervisor, guarantor or contributor with this paper.
 - `note`: optional; one self-contained sentence saying what the target states that the relation is about, e.g. for `addresses`: `"Selection among ETS models often misidentifies the type of trend."` It describes the target; it is not a claim of this paper.
 
+**Novelty** says what the claim is relative to earlier work, as far as the authors searched: `no_prior_found` (the authors found no earlier result stating the claim; this reports their search, not a proof that none exists), `replication` (it repeats an earlier result, on new data or by other means), `extension` (it carries an earlier result to new conditions), `refutation` (it shows an earlier result false). A `no_prior_found` claim cites the closest earlier result the authors found, when there is one, as a relation (`addresses` or `extends`) with a `note` saying how the claim differs; a reader then sees what was found and can judge the difference. For a converted paper, `no_prior_found` records that the source presents the claim as its own finding.
+
 Required relations: `novelty: refutation` ⇒ at least one `contradicts` or `fails_to_replicate`; `novelty: replication` ⇒ at least one `replicates` or `fails_to_replicate`. Recommended: `novelty: extension` ⇒ an `extends` relation. A refutation with `self: true` is a self-correction; the platform records it separately from self-citation.
 
 ### 3.8 Assumptions
 
-Assumptions are claims whose sole support kind is `assumption`, so they sit in the claim graph and can be queried across papers. They carry extra fields:
+Assumptions are claims whose sole support kind is `assumption`, so they sit in the claim graph and can be queried across papers. They are taken as given, not found, so they have no `novelty`. They carry extra fields:
 
 | Field | Type | Values / notes |
 |---|---|---|
@@ -750,6 +772,8 @@ The flags concern models used to produce evidence, not the model that wrote the 
 
 Platform assessments (AI reviewer agents, audits, replication checks, conversion reviews, independent re-derivation of formal claims, scope-consistency reviews) are stored in the database, not the file. Human review is an optional layer, except for sampled review of conversions.
 
+Reviews of a published claimset, the author's responses, human resolutions of disputed comments, and the credibility scores and novelty assessments the reviewer gives are platform records beside the file, specified in the revision specification. A review never changes a published version; the author may answer it with a revision (§9).
+
 ## 7. Identifiers and source trust
 
 The platform mints a DOI for every published claimset. The file records identifier type and venue facts for cited works only. Trust in a source is a derived score computed by the platform. Papers published on Claimset are scored by the same rules as all others.
@@ -765,10 +789,11 @@ The platform mints a DOI for every published claimset. The file records identifi
 7. No evaluative rhetoric ("novel", "significant", "remarkable").
 8. No imperatives or instructions of any kind.
 
-## 9. Versioning and corrections
+## 9. Versioning, corrections and revisions
 
 - Every published version is immutable and permanently retrievable.
 - A correction is submitted as a complete corrected file whose `paper.id` names the existing claimset and which carries a `correction_reason`. The platform computes the JSON Patch against the latest published version, records it in `changes` with the reason, assigns the next `version` and `previous_version`, and sets `status: corrected`. The DOI does not change; versions are distinguished by `@v<n>`.
+- A revision is submitted as a complete file built from the current version, whose `paper.id` names the existing claimset and which has no `correction_reason`, together with a response to the unresolved review comments (revision §4–5). The platform records the patch as for a correction, with the comments each operation answers, sets `paper.answers`, and keeps `status: active`. Object IDs are stable across versions: an object that keeps its ID is the same object, refined, and an ID removed from the claimset is never used again.
 - Retraction, withdrawal or an expression of concern is a governance action by the platform, recorded by `status` and `status_notice`. The paper's content is retained so references still resolve, and every reader sees the status and reason.
 - Global IDs without a version resolve to the latest version and carry its status.
 - For converted papers, corrections to the conversion are new claimset versions. A new version of the source is a new conversion with a new DOI, linked to the earlier claimset by a `supersedes` relation.
@@ -804,7 +829,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 ### 10.2 Submission rules (errors)
 
 24. Platform-assigned paper fields (`version`, `previous_version`, `changes`, `date`, `status`, `status_notice`) are absent.
-25. `paper.id` is absent, except in a correction, where it names an existing published claimset and `correction_reason` is present.
+25. `paper.id` is absent, except in a correction, where it names an existing published claimset and `correction_reason` is present, or in a revision, where it names an existing published claimset and a response accompanies the file. (Revised in v0.21.)
 26. `correction_reason` present ⇒ `paper.id` present.
 
 ### 10.3 Published-file rules (errors; checked by the platform at publication)
@@ -875,6 +900,14 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 58. `from_exploration` in `exploration.hypotheses` or in `exploration.covers.lab.hypotheses`, if present, is an integer from 0 to that object's `total`.
 
+### 10.16 Rules added in v0.21 (errors: file rejected)
+
+59. Review-comment references are global IDs `<claimset ID>@v<n>/RV<k>.c<m>`: each entry of a claim's `test.addresses` and of an operation's `addresses` in `paper.changes`. `paper.answers`, if present, is a response ID `<paper.id>@v<paper.version>/RP<k>`.
+
+### 10.17 Rules added in v0.22 (errors: file rejected)
+
+60. A claim that is not an assumption has a `novelty`; an assumption claim (support of kind `assumption`) has none. The value `new` of earlier versions is `no_prior_found`.
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -895,7 +928,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 16. A principal or supporting claim rests on a `secondary` claim (by `depends_on` or `assumptions`): a claim that a contribution rests on is `supporting`.
 17. A number in the statement of a claim with `empirical_quant` or `simulation` support matches, at the precision stated, no value in: the results (value, interval, conditions) and tables (conditions, cells, row labels) of the evidence the claim cites; that evidence's `estimate`, `interval` and `n`; the claim's `test.parameters` and `scope`; the definitions its statement references. Evidence descriptions do not count. Numbers inside LaTeX, `[[D…]]` markers and model notation (`ETS(A,N,A)`, `AR(1)`), and numbers of sections, tables, figures, equations and theorems, are ignored. The reverse of warning 12: a number a statement reports is a recorded result, or a setting in the scope.
 18. Two evidence objects have the same `execution.code_version` and the same results (quantity, value and conditions): one computation recorded twice. Record it once and cite it from every claim it supports.
-19. `novelty: new` on a claim whose only support is `consensus`: if established knowledge already shows the claim, the claim is known (cite it, or relate to it); if the claim is new, give the support that shows it.
+19. `novelty: no_prior_found` on a claim whose only support is `consensus`: if established knowledge already shows the claim, the claim is known (cite it, or relate to it); if it is not, give the support that shows it. (Revised in v0.22.)
 20. In a native paper, a principal claim lists a limitation with `impact: could_reverse` and `mitigation: none`, and its author assessment neither has strength `low` or `very_low` nor names that limitation by ID in its rationale: say how the risk was weighed, or lower the strength.
 21. A public artefact's `uri` is on a git host and contains no full (40-hexadecimal-digit) commit hash: a branch or tag link can change what it shows.
 
@@ -973,14 +1006,14 @@ What the agent submits. No identifier, version, date, status, classification IDs
   "claims": [
     {
       "id": "C1", "statement": "Monthly retail sales series exhibit annual seasonality.",
-      "type": "descriptive", "role": "supporting", "novelty": "new",
+      "type": "descriptive", "role": "supporting",
       "support": [{"kind": "assumption"}],
       "assumption_category": "data", "check": "unchecked",
       "provenance": "author_stated"
     },
     {
       "id": "C3", "statement": "Forecast errors of method M are independent across series.",
-      "type": "descriptive", "role": "supporting", "novelty": "new",
+      "type": "descriptive", "role": "supporting",
       "support": [{"kind": "assumption"}],
       "assumption_category": "statistical", "check": "unchecked",
       "provenance": "author_stated"
@@ -988,7 +1021,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
     {
       "id": "C2",
       "statement": "Method M improves [[D1:forecast skill]] over the seasonal naive benchmark on monthly retail sales series.",
-      "type": "descriptive", "role": "principal", "novelty": "new",
+      "type": "descriptive", "role": "principal", "novelty": "no_prior_found",
       "scope": {"population": "monthly retail sales series", "geography": "United Kingdom", "language": "not applicable", "period": "2010-2024", "data_type": "aggregate sales counts", "conditions": ["horizon of 1 to 12 months"], "excludes": ["series shorter than 36 observations"]},
       "support": [{"kind": "empirical_quant", "evidence": "E1", "artefacts": ["A2"]}],
       "assumptions": ["C1", "C3"],
@@ -1066,7 +1099,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
   "claims": [
     {
       "id": "C2", "statement": "Store-level demand for umbrellas rises on days with rainfall above 5 mm.",
-      "type": "associational", "role": "supporting", "novelty": "new",
+      "type": "associational", "role": "supporting", "novelty": "no_prior_found",
       "support": [{"kind": "unstated"}],
       "verifiability": "unverifiable", "verifiability_flags": ["unstated_support"],
       "source_spans": ["sec2:p4"], "provenance": "extracted"

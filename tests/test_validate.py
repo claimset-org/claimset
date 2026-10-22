@@ -122,7 +122,7 @@ class TestRulesEveryFile(Base):
         self.d["evidence"].append({"id": "E2", "profile": "formal", "description": "Derivation.",
                                    "steps": [{"id": "S1", "statement": "$x=x$", "by": [], "rule": "identity"}]})
         self.d["claims"].append({"id": "C4", "statement": "Identity holds for every real $x$.",
-                                 "type": "formal", "role": "supporting", "novelty": "new",
+                                 "type": "formal", "role": "supporting", "novelty": "no_prior_found",
                                  "support": [{"kind": "formal_proof", "evidence": "E2"}],
                                  "verification": "unchecked", "provenance": "author_stated"})
         self.assertRule(self.d, "7")
@@ -282,7 +282,7 @@ class TestRulesV09V10(Base):
                                    "foundation": "ZFC",
                                    "steps": [{"id": "S1", "statement": "$x=x$", "by": [], "rule": "identity"}]})
         c = {"id": "C4", "statement": "Identity holds for every real $x$.", "type": "formal",
-             "role": "supporting", "novelty": "new",
+             "role": "supporting", "novelty": "no_prior_found",
              "support": [{"kind": "formal_proof", "evidence": "E2"}],
              "verification": "unchecked", "provenance": "author_stated"}
         c.update(extra)
@@ -576,7 +576,7 @@ class TestRulesV014(Base):
         d["evidence"].append({"id": "E2", "profile": "formal", "description": "Derivation of the identity.",
                               "foundation": "real analysis", "source_spans": ["p3.4", "p3.5"]})
         d["claims"].append({"id": "C4", "statement": "Identity holds for every real $x$.", "type": "formal",
-                            "role": "supporting", "novelty": "new",
+                            "role": "supporting", "novelty": "no_prior_found",
                             "support": [{"kind": "formal_proof", "evidence": "E2"}],
                             "verification": "unchecked", "provenance": "extracted", "source_spans": ["p3.4"]})
         errors, _ = self.rules(d)
@@ -588,7 +588,7 @@ class TestRulesV014(Base):
         self.d["evidence"].append({"id": "E2", "profile": "formal", "description": "Derivation.",
                                    "foundation": "ZFC", "source_spans": ["sec2:p1"]})
         self.d["claims"].append({"id": "C4", "statement": "Identity holds for every real $x$.", "type": "formal",
-                                 "role": "supporting", "novelty": "new",
+                                 "role": "supporting", "novelty": "no_prior_found",
                                  "support": [{"kind": "formal_proof", "evidence": "E2"}],
                                  "verification": "unchecked", "provenance": "author_stated"})
         self.assertRule(self.d, "7")
@@ -741,7 +741,7 @@ class TestReadingView(Base):
         self.assertLess(len(self.render(d)), len(json.dumps(d, separators=(",", ":"))))
 
     def test_appendix_d_matches_the_renderer(self):
-        spec = (ROOT / "spec" / "claimset-v0.21.md").read_text(encoding="utf-8")
+        spec = (ROOT / "spec" / "claimset-v0.22.md").read_text(encoding="utf-8")
         self.assertIn(self.render(load("submission-native.json")), spec)
 
     def test_render_command_refuses_invalid_file(self):
@@ -827,13 +827,37 @@ class TestReadingViewV018(Base):
     def test_claims_without_evidence_grouped_last(self):
         d = load("submission-native.json")
         d["claims"].append({"id": "C9", "statement": "Method M is likely to work for weekly sales as well.",
-                            "type": "predictive", "role": "secondary", "novelty": "new",
+                            "type": "predictive", "role": "secondary", "novelty": "no_prior_found",
                             "support": [{"kind": "unstated"}]})
         claim(d, "C2")["support"] = [{"kind": "unstated"}]       # a principal claim stays with the principals
         text = self.render(d)
         self.assertIn("CLAIMS WITHOUT EVIDENCE\nC9 [", text)
         self.assertLess(text.index("C2 ["), text.index("CLAIMS WITHOUT EVIDENCE"))
         self.assertLess(text.index("CLAIMS WITHOUT EVIDENCE"), text.index("EVIDENCE\nE1"))
+
+
+class TestRulesV022(Base):
+    """Rule 60: novelty is the claim's label relative to earlier work; assumptions have none."""
+
+    def setUp(self):
+        self.d = load("submission-native.json")
+
+    def test_60_valid(self):
+        self.assertEqual(claim(self.d, "C2")["novelty"], "no_prior_found")
+        self.assertNotIn("novelty", claim(self.d, "C1"))
+        self.assertValid(self.d)
+
+    def test_60_assumption_with_novelty(self):
+        claim(self.d, "C1")["novelty"] = "no_prior_found"
+        self.assertRule(self.d, "60")
+
+    def test_60_old_label(self):
+        claim(self.d, "C2")["novelty"] = "new"
+        self.assertRule(self.d, "60")
+
+    def test_60_claim_without_novelty(self):
+        del claim(self.d, "C2")["novelty"]
+        self.assertRule(self.d, "1")
 
 
 if __name__ == "__main__":

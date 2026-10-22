@@ -71,7 +71,7 @@ def _scope(sc):
 
 def _claim(c):
     head = [c.get("type"), c.get("role")]
-    if c.get("novelty") and c.get("novelty") != "new":
+    if c.get("novelty") and c.get("novelty") != "no_prior_found":
         head.append(c["novelty"])
     if c.get("assumption_category"):
         head.append(f"assumption ({c['assumption_category']}, {c.get('check', 'unchecked')})")

@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.21"
+SCHEMA_VERSION = "0.22"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -32,7 +32,7 @@ ENUM = {
     "contribution_record": {"complete", "partial", "unknown"},
     "claim_type": {"descriptive", "associational", "causal", "predictive", "interpretive", "formal", "methodological"},
     "role": {"principal", "supporting", "secondary"},
-    "novelty": {"new", "replication", "extension", "refutation"},
+    "novelty": {"no_prior_found", "replication", "extension", "refutation"},
     "provenance": {"author_stated", "extracted", "inferred"},
     "verification": {"machine_checked", "agent_checked", "peer_checked", "disputed", "unchecked"},
     "check_outcome": {"confirmed", "disputed", "inconclusive"},
@@ -1107,7 +1107,14 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
                       "cite prior work as support, relate to it, or define borrowed terms (spec §3.3.4)")
     else:
         check_enum(r, "1", f"{w}.role", c.get("role"), "role", required=True)
-        check_enum(r, "1", f"{w}.novelty", c.get("novelty"), "novelty", required=True)
+        if is_assumption(c):
+            if "novelty" in c:
+                r.err("60", f"{w}.novelty", "an assumption is taken as given, not found: it has no novelty")
+        elif c.get("novelty") == "new":
+            r.err("60", f"{w}.novelty", "'new' is renamed 'no_prior_found' (v0.22): the authors found no earlier "
+                                        "result stating the claim")
+        else:
+            check_enum(r, "1", f"{w}.novelty", c.get("novelty"), "novelty", required=True)
     if c.get("provenance") is not None:
         check_enum(r, "1", f"{w}.provenance", c.get("provenance"), "provenance")
     if c.get("verification") is not None:
@@ -1315,8 +1322,8 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
                                         f"cell, test parameter, scope condition or referenced definition: record the "
                                         f"number as a result (or the setting in the scope), or check it")
     kinds = {s.get("kind") for s in support}
-    if c.get("novelty") == "new" and kinds == {"consensus"}:
-        r.warn("W19", w, "novelty new, but the only support is established knowledge (consensus): if the claim is "
+    if c.get("novelty") == "no_prior_found" and kinds == {"consensus"}:
+        r.warn("W19", w, "novelty no_prior_found, but the only support is established knowledge (consensus): if the claim is "
                          "itself known, cite it or relate to it; if it is new, give the support that shows it")
     if ver == "machine_checked":
         fe = [by_id(s.get("evidence"), "evidence") for s in support if s.get("kind") == "formal_proof"]
