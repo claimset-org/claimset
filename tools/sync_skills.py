@@ -20,22 +20,25 @@ SPEC = ROOT / "spec"
 COPIES = {
     "claimset-submit": [
         ("src/claimset/validate.py", "skills/claimset-submit/scripts/validate.py"),
-        ("spec/claimset-v0.20.md", "skills/claimset-submit/references/spec-v0.20.md"),
-        ("spec/lab-record-v0.8.md", "skills/claimset-submit/references/lab-record-v0.8.md"),
+        ("spec/claimset-v0.21.md", "skills/claimset-submit/references/spec-v0.21.md"),
+        ("spec/lab-record-v0.9.md", "skills/claimset-submit/references/lab-record-v0.9.md"),
+        ("spec/claimset-revision-v0.1.md", "skills/claimset-submit/references/revision-v0.1.md"),
         ("examples/submission-native.json", "skills/claimset-submit/examples/submission-native.json"),
         ("examples/published-native.json", "skills/claimset-submit/examples/published-native.json"),
         ("examples/submission-from-lab.json", "skills/claimset-submit/examples/submission-from-lab.json"),
     ],
     "claimset-lab": [
         ("src/claimset", "skills/claimset-lab/scripts/lib/claimset"),   # the whole package
-        ("spec/lab-record-v0.8.md", "skills/claimset-lab/references/lab-record-v0.8.md"),
+        ("spec/lab-record-v0.9.md", "skills/claimset-lab/references/lab-record-v0.9.md"),
+        ("spec/claimset-revision-v0.1.md", "skills/claimset-lab/references/revision-v0.1.md"),
     ],
     # The package carries the specs, examples and skill texts, so that an installed package can print its
     # spec and install skills that match it (`claimset spec`, `claimset skill install`). No .py files here:
     # the package's own modules are the skills' scripts.
     "package-data": [
-        ("spec/claimset-v0.20.md", "src/claimset/data/spec/claimset-v0.20.md"),
-        ("spec/lab-record-v0.8.md", "src/claimset/data/spec/lab-record-v0.8.md"),
+        ("spec/claimset-v0.21.md", "src/claimset/data/spec/claimset-v0.21.md"),
+        ("spec/lab-record-v0.9.md", "src/claimset/data/spec/lab-record-v0.9.md"),
+        ("spec/claimset-revision-v0.1.md", "src/claimset/data/spec/claimset-revision-v0.1.md"),
         ("examples/submission-native.json", "src/claimset/data/examples/submission-native.json"),
         ("examples/published-native.json", "src/claimset/data/examples/published-native.json"),
         ("examples/submission-from-lab.json", "src/claimset/data/examples/submission-from-lab.json"),

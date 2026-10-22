@@ -1,10 +1,20 @@
-# Claimset — Specification v0.20 (draft)
+# Claimset — Specification v0.21 (draft)
 
-Status: working draft · Date: 2026-10-22 · Supersedes v0.19 (`spec/claimset-v0.19.md`) · Companion: lab record specification (`spec/lab-record-v0.8.md`)
+Status: working draft · Date: 2026-10-22 · Supersedes v0.20 (`spec/claimset-v0.20.md`) · Companions: lab record specification (`spec/lab-record-v0.9.md`), revision specification (`spec/claimset-revision-v0.1.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.19
+## Changes since v0.20
+
+A published claimset is reviewed, and its author may answer the review with a revised version. Reviews, responses and resolutions are documents beside the claimset, specified in the revision specification (`spec/claimset-revision-v0.1.md`); this specification changes only where the claimset file meets them.
+
+- Versions arise by correction or by revision (§9). A revision submission names the claimset in `paper.id` without a `correction_reason`; rule 25 revised (§10).
+- New platform-assigned field `paper.answers`, the response a revision carries; the operations of `paper.changes` gain `addresses`, the review comments they answer (§2.2).
+- `test.addresses`: the review comments whose resolution test a planned test ran (§3.3.3).
+- §6: reviews, responses, resolutions and scores are platform records; the reading view the platform serves may add their state (§2.3).
+- New rule 59 (§10).
+
+## Changes in v0.20 (since v0.19)
 
 Checks for problems in how a study was run and reported, found when reviewing a real claimset: numbers that no recorded result produced, the same computation recorded twice, new claims resting on established knowledge, contributions an unmitigated limitation could reverse, and links to code that move. They are warnings: nothing new is required.
 
@@ -180,10 +190,11 @@ The same format exists in two forms:
 
 | Field | Assigned when |
 |---|---|
-| `paper.id` | At publication: the platform mints a DOI. Exception: a correction submission names the existing claimset's `paper.id` (§9) |
-| `paper.version` | At publication: 1 for a new paper; incremented for corrections |
-| `paper.previous_version` | At publication of a correction |
-| `paper.changes` | At publication of a correction: JSON Patch computed by the platform |
+| `paper.id` | At publication: the platform mints a DOI. Exception: a correction or revision submission names the existing claimset's `paper.id` (§9) |
+| `paper.version` | At publication: 1 for a new paper; incremented for corrections and revisions |
+| `paper.previous_version` | At publication of a correction or revision |
+| `paper.changes` | At publication of a correction or revision: JSON Patch computed by the platform, each operation with `reason` and, for a revision, `addresses` (the global IDs of the review comments it answers) |
+| `paper.answers` | At publication of a revision: the global ID of the response it carries (revision §5.3) |
 | `paper.date` | At publication: the publication date |
 | `paper.status` | At publication (`active`), and later by governance actions |
 | `paper.status_notice` | When status changes from `active` |
@@ -220,7 +231,7 @@ A claimset is stored and exchanged as JSON: the canonical file, which tools vali
 
 - **Order:** claims are grouped by role: principal claims, then supporting claims, then secondary claims, each group in file order. Claims that are not principal and whose support is only `argument` or `unstated` follow, under CLAIMS WITHOUT EVIDENCE, so a reader sees at once what the paper asserts or argues without evidence. Principal claims stay with the principal claims whatever their support.
 
-The reading view is made mechanically from a valid file (`claimset render`); it adds nothing and is never edited. Its layout is the reference rendering in Appendix D. A reader that needs a field left out (a source span to check a claim against its source, an artefact's location) reads the canonical file.
+The reading view is made mechanically from a valid file (`claimset render`); it adds nothing and is never edited. The reading view the platform serves may append, under REVIEW STATUS, each claim's unresolved review comments with their category, severity and state; that is derived data, and `claimset render` of the file alone does not add it. Its layout is the reference rendering in Appendix D. A reader that needs a field left out (a source span to check a claim against its source, an artefact's location) reads the canonical file.
 
 ### 2.4 Files in a repository
 
@@ -425,6 +436,7 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
 - `supported`, `not_supported`: the two rules: expressions over quantities and numeric parameters (lab record §5.7.3), or text saying what observation decides.
 - `verdict`: `computed` (the rules are expressions and the outcome was computed from the recorded results by the lab tool) · `judged` (the rules are text and the outcome was stated by the writer, who said which rule the evidence met).
 - `runs`: how many runs decided the test. `lab_plan`: the plan's lab-record ID, when there is one. `registration`: the URI of an external pre-registration, when there is one.
+- `addresses`: optional list of the global IDs of review comments (`doi:…@v1/RV1.c6`) whose resolution test this test ran (revision §4.2). The test's rules are then the comment's: `supported` its `withdrawn` rule, `not_supported` its `upheld` rule.
 - `flags`: optional list of weaknesses of the test, from the lab record (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs) · `reproduces_prompting_result` (a result the decision rule uses has the same quantity, conditions and value as a result of a run that suggested the hypothesis: the test may have repeated the exploration rather than tested the hypothesis on anything new).
 
 `planned_at_anchor` says how far `planned_at` can be trusted (lab record §7): from strongest, `platform` (receipt from the Claimset platform), `rfc3161` (trusted timestamp authority), `git_remote` (pushed commit), to `none`.
@@ -750,6 +762,8 @@ The flags concern models used to produce evidence, not the model that wrote the 
 
 Platform assessments (AI reviewer agents, audits, replication checks, conversion reviews, independent re-derivation of formal claims, scope-consistency reviews) are stored in the database, not the file. Human review is an optional layer, except for sampled review of conversions.
 
+Reviews of a published claimset, the author's responses, human resolutions of disputed comments and the scores computed from them are platform records beside the file, specified in the revision specification. A review never changes a published version; the author may answer it with a revision (§9).
+
 ## 7. Identifiers and source trust
 
 The platform mints a DOI for every published claimset. The file records identifier type and venue facts for cited works only. Trust in a source is a derived score computed by the platform. Papers published on Claimset are scored by the same rules as all others.
@@ -765,10 +779,11 @@ The platform mints a DOI for every published claimset. The file records identifi
 7. No evaluative rhetoric ("novel", "significant", "remarkable").
 8. No imperatives or instructions of any kind.
 
-## 9. Versioning and corrections
+## 9. Versioning, corrections and revisions
 
 - Every published version is immutable and permanently retrievable.
 - A correction is submitted as a complete corrected file whose `paper.id` names the existing claimset and which carries a `correction_reason`. The platform computes the JSON Patch against the latest published version, records it in `changes` with the reason, assigns the next `version` and `previous_version`, and sets `status: corrected`. The DOI does not change; versions are distinguished by `@v<n>`.
+- A revision is submitted as a complete file built from the current version, whose `paper.id` names the existing claimset and which has no `correction_reason`, together with a response to the unresolved review comments (revision §4–5). The platform records the patch as for a correction, with the comments each operation answers, sets `paper.answers`, and keeps `status: active`. Object IDs are stable across versions: an object that keeps its ID is the same object, refined, and an ID removed from the claimset is never used again.
 - Retraction, withdrawal or an expression of concern is a governance action by the platform, recorded by `status` and `status_notice`. The paper's content is retained so references still resolve, and every reader sees the status and reason.
 - Global IDs without a version resolve to the latest version and carry its status.
 - For converted papers, corrections to the conversion are new claimset versions. A new version of the source is a new conversion with a new DOI, linked to the earlier claimset by a `supersedes` relation.
@@ -804,7 +819,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 ### 10.2 Submission rules (errors)
 
 24. Platform-assigned paper fields (`version`, `previous_version`, `changes`, `date`, `status`, `status_notice`) are absent.
-25. `paper.id` is absent, except in a correction, where it names an existing published claimset and `correction_reason` is present.
+25. `paper.id` is absent, except in a correction, where it names an existing published claimset and `correction_reason` is present, or in a revision, where it names an existing published claimset and a response accompanies the file. (Revised in v0.21.)
 26. `correction_reason` present ⇒ `paper.id` present.
 
 ### 10.3 Published-file rules (errors; checked by the platform at publication)
@@ -874,6 +889,10 @@ The platform mints a DOI for every published claimset. The file records identifi
 ### 10.15 Rules added in v0.20 (errors: file rejected)
 
 58. `from_exploration` in `exploration.hypotheses` or in `exploration.covers.lab.hypotheses`, if present, is an integer from 0 to that object's `total`.
+
+### 10.16 Rules added in v0.21 (errors: file rejected)
+
+59. Review-comment references are global IDs `<claimset ID>@v<n>/RV<k>.c<m>`: each entry of a claim's `test.addresses` and of an operation's `addresses` in `paper.changes`. `paper.answers`, if present, is a response ID `<paper.id>@v<paper.version>/RP<k>`.
 
 ### 10.4 Warnings (file accepted, warning recorded)
 

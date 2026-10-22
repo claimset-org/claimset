@@ -10,7 +10,7 @@ A lab record is the running log of a piece of research, kept while it happens. I
 - that every number comes from a recorded run of code, not from memory or retyping;
 - what was tried and failed, so a positive result can be weighed against the number of attempts.
 
-At the end the record is exported to a claimset (a paper for LLM readers) with the `claimset-submit` skill. The specification is `references/lab-record-v0.8.md`; read §5 (event types) and §6 (rules) when an event or a refusal is unclear.
+At the end the record is exported to a claimset (a paper for LLM readers) with the `claimset-submit` skill. The specification is `references/lab-record-v0.9.md`; read §5 (event types) and §6 (rules) when an event or a refusal is unclear.
 
 **The tool.** Use `claimset` if it is installed (`claimset --help` works); then check that this skill matches it (`claimset skill check`) and, if not, update the skills with `claimset skill install`. Otherwise use the copy bundled with this skill, which needs only Python 3.9+: `python3 <this skill>/scripts/claimset`. Below, `claimset` stands for whichever you use. Every writing command prints the new event's ID; add `--json` to see the whole event. 
 
@@ -165,6 +165,16 @@ A check counts as independent only when someone other than the author makes it, 
 5. Merge its log when it finishes (`claimset lab merge --by AC2`).
 
 Do not summarise a check in a note of your own instead: export takes claims' `checks` from check events, and a check reported only by the author is the author's account.
+
+## Answering a review
+
+When a published claimset is reviewed, each comment carries a resolution test: a procedure and two rules, `upheld` (the comment stands) and `withdrawn` (it falls), written before you answer. Run a computable test as a planned test, so the verdict is computed against the reviewer's rule, not one you chose:
+1. Record a hypothesis stating what the comment questions, as you hold it: `claimset lab hypothesis "Method M's forecast errors are at most weakly correlated across series." --question Q3 --by AC2`.
+2. Plan the test from the comment: `claimset lab plan --kind confirmatory --hypotheses H9 --comment doi:…@v1/RV1.c2 --review RV1.json --analysis "…" --by AC2`. The decision rule is the comment's test, unchanged (`supported` is its `withdrawn` rule, `not_supported` its `upheld` rule), the design is its procedure unless you give one, and the plan's `addresses` names the comment. If a re-review replaced the test, give that file too (`--review RV2.json`): the latest test applies. Never edit the rule.
+3. Run it (`claimset lab run --plan PL9 …`), read `claimset lab verdict PL9`, and record that verdict. A verdict against you is recorded and reported like any other: the comment then stands, and the claimset says so.
+4. Export carries the comment into the claim's `test.addresses`, and `claimset revision respond --lab` cites the plan's runs when you answer the comment (claimset-submit skill, *Revisions*).
+
+Tests decided by what a source states (`documentary`) are not run here; answer them in the response. A revision's record is this record continued: keep appending; never start a new record or rewrite the old one for a revision.
 
 ## A record in an older place
 

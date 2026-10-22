@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -252,6 +253,37 @@ def _json_or_text(v):
         return v
 
 
+def _resolution_test(comment, reviews):
+    """The current resolution test of a review comment, from review and re-review files (revision spec §6.3): the
+    latest replacement or accepted test given in a verdict, or the comment's own test."""
+    m = re.match(r"^(\S+@v[1-9]\d*)/(RV[1-9]\d*)\.(c[1-9]\d*)$", comment)
+    if not m:
+        raise LabError("schema", f"--comment {comment}: give the comment's global ID, <claimset>@v<n>/RV<k>.c<m>")
+    test = None
+    for path in reviews:
+        try:
+            doc = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise LabError("schema", f"--review {path}: {exc}") from None
+        if not isinstance(doc, dict):
+            raise LabError("schema", f"--review {path}: not a review")
+        target = (doc.get("target") or {}).get("version") if isinstance(doc.get("target"), dict) else None
+        if doc.get("id") == m.group(2) and target == m.group(1):
+            for c in doc.get("comments") or []:
+                if isinstance(c, dict) and c.get("id") == m.group(3) and test is None:
+                    test = c.get("resolution_test")
+        for v in doc.get("verdicts") or []:
+            if isinstance(v, dict) and v.get("comment") == comment:
+                test = v.get("accepted_test") or v.get("replacement_test") or test
+    if not isinstance(test, dict):
+        raise LabError("schema", f"--comment {comment}: no resolution test for it in "
+                                 f"{', '.join(reviews) or 'the review files given (--review)'}")
+    if test.get("framework") == "documentary" or not test.get("quantities"):
+        raise LabError("schema", f"--comment {comment}: its resolution test is decided by text, not computed from "
+                                 f"results; answer it in the response rather than with a planned test")
+    return test
+
+
 def _decision_from_args(args):
     """The decision rule from --decision FILE, overridden by the individual options."""
     d = {}
@@ -290,6 +322,21 @@ def cmd_plan(args):
         if not Path(h).is_file():
             raise LabError("schema", f"--holdout {h}: no such file")
         holdout.append({"path": h, "hash": file_hash(h)})
+    addresses = list(args.addresses or [])
+    decision = _decision_from_args(args)
+    design = args.design
+    if args.comment:
+        if decision is not None:
+            raise LabError("schema", "--comment takes the decision rule from the comment's resolution test; leave out "
+                                     "--framework, --parameter, --quantity, --supported, --not-supported and --decision")
+        test = _resolution_test(args.comment, args.review)
+        decision = {"framework": test["framework"], "parameters": test.get("parameters") or {},
+                    "quantities": test["quantities"], "supported": test.get("withdrawn"),
+                    "not_supported": test.get("upheld")}
+        design = design or test.get("procedure")
+        addresses = [args.comment] + [a for a in addresses if a != args.comment]
+    if not design:
+        raise LabError("schema", "plan: --design is required (with --comment it defaults to the test's procedure)")
     exclusions = []
     for x in args.exclusion:
         if "=" not in x:
@@ -298,8 +345,9 @@ def cmd_plan(args):
         name, rule = x.split("=", 1)
         exclusions.append({"name": name.strip(), "rule": rule.strip()})
     commit, dirty = code_version(os.getcwd(), _lab(args).root)
-    body = {"kind": args.kind, "hypotheses": args.hypotheses, "design": args.design, "analysis": args.analysis,
-            "new_data": args.new_data, "exclusions": exclusions or None, "decision": _decision_from_args(args),
+    body = {"kind": args.kind, "hypotheses": args.hypotheses, "design": design, "analysis": args.analysis,
+            "new_data": args.new_data, "exclusions": exclusions or None, "addresses": addresses or None,
+            "decision": decision,
             "runs": args.runs, "criterion": args.criterion, "data": data, "holdout": holdout,
             "code_version": commit, "dirty": dirty if commit is not None else None}
     warnings = plan_warnings(_view(args), body)
@@ -678,8 +726,15 @@ def add_parser(subparsers):
     p.add_argument("--kind", required=True, choices=["confirmatory", "exploratory"])
     p.add_argument("--hypotheses", nargs="+", default=[], metavar="ID",
                    help="hypotheses the plan tests (required for confirmatory)")
-    p.add_argument("--design", required=True, help="what will be run, on what, with which settings")
+    p.add_argument("--design", help="what will be run, on what, with which settings (required, except with "
+                                     "--comment: the test's procedure)")
     p.add_argument("--analysis", required=True, help="what will be computed from the outputs")
+    p.add_argument("--comment", metavar="ID",
+                   help="run a review comment's resolution test: its global ID (<claimset>@v<n>/RV<k>.c<m>); the "
+                        "decision rule is the test (supported: its withdrawn rule; not supported: its upheld rule)")
+    p.add_argument("--review", action="append", default=[], metavar="FILE",
+                   help="the review holding the comment, and any re-review that replaced its test")
+    p.add_argument("--addresses", nargs="+", metavar="ID", help="review comments whose resolution test the plan runs")
     p.add_argument("--new-data", dest="new_data", metavar="TEXT",
                    help="what this test uses that the runs which suggested its hypotheses did not")
     p.add_argument("--exclusion", action="append", default=[], metavar="NAME=RULE",

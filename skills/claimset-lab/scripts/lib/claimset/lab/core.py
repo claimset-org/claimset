@@ -539,6 +539,9 @@ def _check_confirmatory_run(state, plan_id, plan):
                               f"run it as exploratory")
 
 
+# A review comment's global ID (revision spec §2.2), named by plans that run its resolution test (§5.7.7)
+COMMENT_ID_RE = re.compile(r"^\S+@v[1-9]\d*/RV[1-9]\d*\.c[1-9]\d*$")
+
 FLAGS = ("code_changed_after_plan", "holdout_used_elsewhere", "reproduces_prompting_result")
 
 
@@ -822,6 +825,12 @@ def check_plan(state, body, by, eid):
             raise LabError("schema", "plan: each data entry needs a description")
         if d.get("hash") and not HASH_RE.match(str(d["hash"])):
             raise LabError("schema", "plan: data hash must be sha256: followed by 64 hex digits")
+    addresses = body.get("addresses")
+    if addresses is not None:
+        if not isinstance(addresses, list) or not addresses or not all(
+                isinstance(a, str) and COMMENT_ID_RE.match(a) for a in addresses):
+            raise LabError("schema", "plan: addresses must be a list of review comments' global IDs "
+                                     "(<claimset>@v<n>/RV<k>.c<m>)")
     if body.get("new_data") is not None and (not isinstance(body["new_data"], str) or not body["new_data"].strip()):
         raise LabError("schema", "plan: new_data must be non-empty text")
     exclusions = body.get("exclusions")

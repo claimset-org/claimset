@@ -382,6 +382,8 @@ class _Exporter:
                 flags = plan_flags(st, pv, runs)
                 if flags:
                     claim["test"]["flags"] = flags
+                if pv["body"].get("addresses"):
+                    claim["test"]["addresses"] = list(pv["body"]["addresses"])
                 for r, dv in devs:
                     self.add_deviation_limitation(claim, r, pv, dv)
                 self.claims.append(claim)
