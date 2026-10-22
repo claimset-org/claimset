@@ -1,8 +1,18 @@
-# Claimset Lab Record — Specification v0.6 (draft)
+# Claimset Lab Record — Specification v0.7 (draft)
 
-Status: working draft · Date: 2026-10-22 · Supersedes v0.5 · Companion to the claimset specification (`spec/claimset-v0.19.md`)
+Status: working draft · Date: 2026-10-22 · Supersedes v0.6 · Companion to the claimset specification (`spec/claimset-v0.19.md`)
 
-## Changes since v0.5
+## Changes since v0.6
+
+The record and the code are kept apart by the tools, not by care. A study's record copied along code branches diverged, was carried into pull requests, and stopped being kept when the work turned to implementation.
+
+- Each study lives on its own branch, `claimset/<study>`, which holds only the study's folder and shares no history with the code. It is checked out as a git worktree at `claimset/<study>/`; the code branches ignore `claimset/`. Study branches are never merged into code branches, nor code into them (§3).
+- After every command that changes the record, the tool commits the study branch and pushes it; the push is the anchor, so the separate anchor branches go (§7.1). The commit after a run takes the run's code commit as a further parent, so the code it ran stays reachable when its branch is squash-merged or deleted (§5.9).
+- Code only a study uses lives on the code branches, in `claimset-code/<study>/`, left out of package builds like `claimset/` (§3, §3.3).
+- `claimset setup` creates, attaches or adopts study branches; a study committed on a code branch is adopted onto its own branch with a relocation (§3.4, §5.18).
+- New rule L20: a record is written only on its study branch. The guard refuses git commands that would mix study branches and code, a GitHub check refuses pull requests that carry study records, and every session starts with the state of the studies (§4.5).
+
+## Changes in v0.6 (since v0.5)
 
 A repository can hold several studies, each with its own lab, and a study can give several papers. Where they live and what they are called is fixed, so tools and readers find them.
 
@@ -80,25 +90,29 @@ Version 0.1 targets computational research (simulation, analysis of existing dat
 
 ## 3. Layout
 
-A **study** is a piece of research with its own lab record: one or more related questions, and the hypotheses, plans and runs that answer them. A repository can hold several studies, and a study can give several papers. Every study lives in its own folder under `claimset/` at the top of the project's version-controlled repository:
+A **study** is a piece of research with its own lab record: one or more related questions, and the hypotheses, plans and runs that answer them. A repository can hold several studies, and a study can give several papers.
+
+**The record and the code are kept apart.** Each study lives on its own branch of the project's repository, `claimset/<study>`, which holds only the study's folder and shares no history with the code. The branch is checked out as a git worktree at `claimset/<study>/` in the code checkout, and the code branches ignore `claimset/` (`.gitignore`: `/claimset/`). So the code checkout shows every study in one place, while no code branch ever holds a record:
 
 ```
-claimset/
-  <study>/
+claimset/                      ignored by the code branches
+  <study>/                     the checkout of branch claimset/<study>
     lab/                       the lab record
       lab.jsonl                the main event log, one event per line
       agents/<actor>.jsonl     per-agent logs while agents work concurrently (§3.5)
       anchors.jsonl            timestamp anchors of the log (§7)
-      config.json              the anchoring configuration (§7.1)
+      config.json              the study branch and its remote (§7.1)
       runs/<run id>/           per-run outputs: stdout, stderr, results.json, other files
-    code/                      code only this study uses: prototypes, experiments, benchmarks (optional)
     <paper>.claimset.json      a paper drawn from the study (claimset §2.4)
     <paper>.claimset.txt       its reading view
+claimset-code/<study>/         on the code branches: code only this study uses (prototypes, benchmarks)
 ```
 
-- **Names.** A study's and a paper's name is lower-case letters, digits and hyphens, starting with a letter, at most 60 characters (`eigen-checker`). The study's name is the name of its folder and is recorded in `init` (§5.1). A paper's name is unique within its study; the first paper of a study usually takes the study's name.
-- **Code.** Code that belongs to the project itself (a package's source) stays where it belongs; runs record the commit they ran, so the lab need not own that code.
-- Records begun before v0.6 may live elsewhere (`lab/` at the top of the repository); they are moved into this layout with a relocation (§3.4).
+- **Never merged.** A study branch is never merged into a code branch, and nothing is merged into it; it is never rebased, force-pushed or deleted. The code goes through its own pull requests; the record is pushed to its study branch.
+- **Names.** A study's and a paper's name is lower-case letters, digits and hyphens, starting with a letter, at most 60 characters (`eigen-checker`). The study's name is the name of its branch and folder and is recorded in `init` (§5.1). A paper's name is unique within its study; the first paper of a study usually takes the study's name.
+- **Code.** All code is on the code branches. Code that belongs to the project (a package's source) stays where it belongs; code only a study uses goes in `claimset-code/<study>/`. Runs record the commit they ran (§5.9), and the study branch keeps that commit reachable, so the record need not hold code and the code need not reach the main branch.
+- **Setting up.** `claimset setup --study NAME --title …` creates the study branch with its first commit and lab, and checks it out at `claimset/NAME/`; in a fresh clone, `claimset setup` checks out every study branch of the remote. Outside a git repository a study is a plain folder `claimset/<study>/`.
+- Records begun before v0.7 may live on a code branch (in `claimset/<study>/`, `lab/` at the top, or elsewhere); they are moved to their own branch by adoption (§3.4).
 
 ### 3.2 Finding the lab
 
@@ -106,18 +120,20 @@ A command works on the lab named by `--lab DIR` or `$CLAIMSET_LAB`; else on the 
 
 ### 3.3 Package builds
 
-The studies are part of the repository, not of what it ships. When a lab is created in `claimset/`, the tool adds to each of these files the repository already has the line that leaves the folder out, and `verify` reports a file without it:
+The studies are part of the repository, not of what it ships, and a build reads the working directory, worktrees included. When a study is set up, the tool adds `/claimset/` to `.gitignore` and, to each of these files the repository already has, the lines that leave `claimset/` and `claimset-code/` out; `verify` reports a file without them:
 
-| File | Line |
+| File | Lines |
 |---|---|
-| `.Rbuildignore` (R packages) | `^claimset$` |
-| `MANIFEST.in` (Python source distributions) | `prune claimset` |
-| `.npmignore` (npm packages) | `claimset/` |
-| `.gitattributes` (repository statistics) | `claimset/** linguist-documentation` |
+| `.Rbuildignore` (R packages) | `^claimset$`, `^claimset-code$` |
+| `MANIFEST.in` (Python source distributions) | `prune claimset`, `prune claimset-code` |
+| `.npmignore` (npm packages) | `claimset/`, `claimset-code/` |
+| `.gitattributes` (repository statistics) | `claimset/** linguist-documentation`, `claimset-code/** linguist-documentation` |
 
 ### 3.4 Moving a lab
 
 A lab is moved only by the tool, which moves the folder, moves any other files the record names (its code), and records a `relocation` event (§5.18) in the moved log. Paths in earlier events are not rewritten: a reader maps them through the relocations. Anchors made before the move hold the log at its old path; remote verification looks for it there (§7.1). A lab moved by other means fails verification once it is in `claimset/` under a name other than its study's (rule L19).
+
+**Adoption** moves a study committed on a code branch onto its own branch (`claimset setup --study NAME --adopt`). The study's folder must be at `claimset/NAME/` and committed (`claimset lab move` brings a lab from elsewhere there first). The tool makes the study branch from that folder, without its `code/` subfolder, which moves on the code branch to `claimset-code/NAME/`; a second commit on the study branch takes the code branch's commit as a further parent, so the code the record names stays reachable. It removes the folder from the code branch (to be committed with the `.gitignore` change), checks the branch out in its place, and records a `relocation` with the branch. From then on the record is written only there.
 
 `lab.jsonl` is UTF-8 JSON Lines. Every line is one event.
 
@@ -196,7 +212,13 @@ An agent that can run commands as the researcher can, in principle, do anything 
 | Anchored | the head of the chain is regularly recorded outside the agent's reach (§7) | any rewriting before an anchor is detected, including a full recomputation of the chain |
 | Remote append-only | the authoritative copy is held by a service that accepts only appends (the Claimset platform; or a git branch protected against force-pushes and deletion, pushed to with credentials that cannot change the protection) | rewriting is prevented, not just detected |
 
-Locally, the log is tamper-evident. With anchoring, tampering is always detected. With a remote append-only copy, it is prevented. A lab that matters should use at least anchoring.
+Locally, the log is tamper-evident. With anchoring, tampering is always detected. With a remote append-only copy, it is prevented. A lab that matters should use at least anchoring; a lab on a study branch is anchored at every event.
+
+**Keeping record and code apart** (§3) is protected in the same layers:
+- the tool refuses to write a record off its study branch (L20), and refuses runs started from the study's folder;
+- the guard refuses git commands that would merge, rebase or cherry-pick between study branches and code, check a study branch out in the code checkout, force-add `claimset/` to a code branch, or force-push, delete or rename a study branch;
+- on the host, protect `claimset/*` against force-pushes and deletion, and add the check that `claimset setup --ci` writes: a pull request fails if it changes `claimset/`, comes from or goes to a study branch, or contains a study branch's own history;
+- the guard's configuration also shows the state of every study (`claimset studies`) at the start of each agent session, so that work, implementation included, begins inside the record.
 
 ## 5. Event types
 
@@ -334,7 +356,7 @@ Two things weaken a planned test without making it invalid. The tool does not re
 - `plan_version`: the ID of the version of that plan in force for the run's writer when the run was made (the latest correction it could see). The version named by the first deciding run decides the plan (§5.7.2); this holds also for runs merged from agent logs, whose writer may not have seen corrections made meanwhile in the main log.
 - `label`: `confirmatory` (only if rule L5 holds) or `exploratory`.
 - `command`: the command as a list of arguments.
-- `code_version`: commit hash of the working directory's repository, or `null` if it is not a git repository; `dirty`: true if it had uncommitted changes outside the lab directory.
+- `code_version`: commit hash of the working directory's repository, or `null` if it is not a git repository; `dirty`: true if it had uncommitted changes outside the lab directory. A run is made from the code checkout, never from the study's folder. The commit of the study branch that records the run takes `code_version` as a further parent, so the code stays reachable from the record (§7.1).
 - `parameters`: optional object of named settings given to the tool; `seeds`: optional list of random seeds given to the tool.
 - `data`: list of `{path, hash}` for input files declared to the tool.
 - `environment`: `{software: {python, platform}, hardware: {machine, cpus}}`, as recorded by the tool.
@@ -403,7 +425,7 @@ Papers split a study's results between them; the split must not decide what is r
 
 ### 5.18 `relocation` (prefix `MV`), written by the tool
 
-`{from, to, study, moved}`: the lab moved from `from` to `to` (paths of the lab folder relative to the top of the repository); `study` names the study when the move gives it one; `moved` lists other files or folders the record names that moved with it, as `{from, to}`. Written only to the main log, after the move (§3.4).
+`{from, to, study, moved, branch}`: the lab moved from `from` to `to` (paths of the lab folder relative to the top of the repository, or, for `to` with `branch`, to the top of the study branch); `study` names the study when the move gives it one; `moved` lists other files or folders the record names that moved with it, as `{from, to}`; `branch` is the study branch the lab now lives on, after an adoption. Written only to the main log, after the move (§3.4).
 
 ## 6. Rules
 
@@ -426,8 +448,9 @@ L16. A confirmatory run is not made under a plan that already has its deciding r
 L17. A status that names a plan, or that cites a decided plan's deciding runs or their results for a hypothesis the plan names, is a verdict: the plan is decided and names the hypothesis, the deciding runs or their results are cited, and the outcome is the one the plan's rule gives (§5.5).
 L18. A paper has a valid name, unique among the record's papers, and names at least one question; no question is named by two papers (each correction chain counted once, its latest version in force).
 L19. A lab inside `claimset/<name>/lab` belongs to the study `<name>`: its study (from `init` or the latest relocation that names one) is `<name>`, and records begun under v0.6 or later name a study.
+L20. A record with a study branch is written only in the checkout of that branch; a lab in `claimset/<study>/lab` inside a git repository is written only on its study branch (adopted, §3.4).
 
-The tool enforces L1–L5 and L8–L19 mechanically, and refuses L6 and L7 violations. L15–L17 apply to records begun under v0.5 or later, and to records whose `init` is withheld. Where a check depends on withheld content (a withheld run, result or plan), `verify` does not report it as a violation; withholding lowers verifiability instead (§8).
+The tool enforces L1–L5 and L8–L20 mechanically, and refuses L6 and L7 violations. L15–L17 apply to records begun under v0.5 or later, and to records whose `init` is withheld. Where a check depends on withheld content (a withheld run, result or plan), `verify` does not report it as a violation; withholding lowers verifiability instead (§8).
 
 ## 7. Timestamp anchoring
 
@@ -449,7 +472,9 @@ The anchor level of a plan becomes `planned_at_anchor` in the exported claimset.
 
 ### 7.1 Git anchoring
 
-With `git_remote` anchoring, the head is recorded by pushing the lab's logs to a dedicated branch of a git remote. The branch is `claimset-lab/<study>` unless the configuration names another (`claimset-lab` for a record without a study), so the studies of a repository never share one. A relocation keeps the branch the record was anchored on: the tool writes it into the configuration. Anchor commits hold the logs at their paths when they were made; remote verification looks for the main log at its current path and, in commits made before a relocation, at the paths it had before.
+**On a study branch** (§3) anchoring is part of keeping the record: after every command that changes it, the tool commits the study's folder (the logs, run outputs, papers) to the study branch and pushes it. Each push is an anchor (`service: git_remote`, with the pushed commit as the receipt), so every event is anchored when it is written. The commit after a run takes the run's `code_version` as a further parent: pushing the study branch pushes the code the run used, and keeps it reachable whatever happens to its own branch. The record's own history is the first-parent history of the branch. Offline, the commits stay local and are pushed with the next command; until then `verify` and `claimset studies` report them as not pushed, and a confirmatory run is refused until its plan is pushed (L5). Configuration in `lab/config.json`: `{"record": {"remote": "origin", "branch": "claimset/<study>"}}`.
+
+**Without a study branch** (records outside the study layout, or before v0.7), the head is recorded by pushing the lab's logs to a dedicated anchor branch of a git remote, as follows. The branch is `claimset-lab/<study>` unless the configuration names another (`claimset-lab` for a record without a study). A relocation keeps the branch the record was anchored on: the tool writes it into the configuration. Anchor commits hold the logs at their paths when they were made; remote verification looks for the main log at its current path and, in commits made before a relocation, at the paths it had before. When such a record is adopted onto a study branch, its earlier receipts keep naming the anchor branch they were pushed to, and are checked there.
 
 - **Configuration** is kept in `lab/config.json`: `{"anchor": {"service": "git_remote", "remote": "origin", "branch": "claimset-lab", "every": "plan"}}`. `every` is `plan` (default) or `event`.
 - **What is committed:** `lab.jsonl`, `anchors.jsonl` and the files in `agents/`, at their paths in the repository. The commit is made on the anchor branch without touching the researcher's working tree or current branch. Run outputs are not committed; they are covered by the hashes in the log.
@@ -458,7 +483,7 @@ With `git_remote` anchoring, the head is recorded by pushing the lab's logs to a
 - **Receipt:** `{remote, branch, commit}` recorded in the `anchors.jsonl` entry, which itself is committed with the next anchor.
 - **Protection of the branch:** to make the remote copy append-only, protect the branch on the host so that force-pushes and deletion are refused, and give the agent credentials that can push but cannot change branch protection. This turns detection into prevention.
 - **Several working copies:** when agents work in their own clones (§3.5), each copy anchors to the same branch. The commit starts from the branch as it is on the remote: a local log that extends its anchored copy replaces it; a log that is behind (another copy has added to it) is kept as anchored; a log that differs is refused. `anchors.jsonl` on the branch holds the receipts of all copies. In the repository, `lab/.gitattributes` (written by `init`) marks `anchors.jsonl` with `merge=union`, so merging the copies' branches combines their receipts without conflicts; agent logs never conflict because each has its own file.
-- **Checking:** `verify --remote` fetches the branch and checks that each local log agrees with its copy there (a local log that is behind is reported as a note, not an error), that each anchor's commit is on the branch, and that it holds every anchored log as it was at that anchor.
+- **Checking:** `verify --remote` fetches the branch and checks that each local log agrees with its copy there (a local log that is behind is reported as a note, not an error), that each anchor's commit is on the branch its receipt names, and that it holds every anchored log as it was at that anchor.
 
 ## 8. Publication and redaction
 
@@ -517,7 +542,11 @@ The reference tool is part of the `claimset` package. Indicative commands:
 
 | Command | Effect |
 |---|---|
-| `claimset lab init --study NAME --title …` | creates `claimset/NAME/lab/`, writes `init`, and leaves `claimset/` out of the package build files (§3.3) |
+| `claimset setup --study NAME --title …` (or `claimset lab init --study NAME --title …`) | creates the study branch `claimset/NAME` with its lab, checks it out at `claimset/NAME/`, and adds the ignore lines (§3, §3.3) |
+| `claimset setup` | in a fresh clone: checks out every study branch of the remote |
+| `claimset setup --study NAME --adopt --by AC2` | moves a study committed on the code branch onto its own branch (§3.4) |
+| `claimset setup --ci` | writes the GitHub check that keeps study records out of pull requests (§4.5) |
+| `claimset studies` | the studies of the repository: events, open hypotheses, pending plans, commits not pushed |
 | `claimset lab paper NAME --questions Q1 Q2` | records a paper and the questions it reports (§5.17) |
 | `claimset lab move [--to DIR] [--study NAME] [--also OLD=NEW …]` | moves the lab (default `claimset/<study>/lab`) and other files, and records the relocation (§3.4) |
 | `claimset lab actor` | registers an actor |

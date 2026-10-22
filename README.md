@@ -34,12 +34,16 @@ claimset skill install         # install or update the skills in .claude/skills 
 claimset skill check           # are the installed skills this version's?
 ```
 
-Studies and papers live in the research repository under `claimset/` (see the lab record specification §3):
+Studies and papers live in the research repository, each study on its own branch `claimset/<study>` that is never merged with the code. The tool checks it out at `claimset/<study>/` (ignored by the code branches), and commits and pushes it after every change to the record (see the lab record specification §3):
 
 ```
-claimset/<study>/lab/                     the study's lab record   (claimset lab init --study <study> …)
-claimset/<study>/code/                    code only this study uses
-claimset/<study>/<paper>.claimset.json    a paper drawn from it    (claimset lab export [--paper <paper>])
+claimset setup --study <study> --title …   # new study: branch claimset/<study>, checked out at claimset/<study>/
+claimset setup                             # in a fresh clone: check out every study branch
+claimset setup --ci                        # GitHub check: pull requests never carry study records
+claimset studies                           # the studies and their state
+claimset/<study>/lab/                      # the lab record, on the study branch
+claimset/<study>/<paper>.claimset.json     # a paper drawn from it   (claimset lab export [--paper <paper>])
+claimset-code/<study>/                     # code only this study uses, on the code branches
 claimset tag claimset/<study>/<paper>.claimset.json    # mark a submitted version: git tag claimset/<study>/<paper>/v<n>
 ```
 
