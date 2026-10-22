@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.20"
+SCHEMA_VERSION = "0.21"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -145,7 +145,11 @@ def check_enum(r, rule, where, value, enum_name, required=False):
         r.err(rule, where, f"'{value}' is not one of {sorted(ENUM[enum_name])}")
 
 
-PLATFORM_PAPER_FIELDS = ("version", "previous_version", "changes", "date", "status", "status_notice")
+PLATFORM_PAPER_FIELDS = ("version", "previous_version", "changes", "date", "status", "status_notice", "answers")
+
+# Global IDs of review comments and responses (revision spec §2.2; rule 59)
+COMMENT_ID_RE = re.compile(r"^\S+@v[1-9]\d*/RV[1-9]\d*\.c[1-9]\d*$")
+RESPONSE_ID_RE = re.compile(r"^(\S+)@v([1-9]\d*)/RP[1-9]\d*$")
 
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,59}$")
@@ -303,9 +307,10 @@ def process_warnings(r, doc, claims, coll, by_id, converted):
                                                            "commit hash")
 
 
-def validate(doc, published=False, local_root=None):
+def validate(doc, published=False, local_root=None, revision=False):
     """Check a claimset. `local_root`: the repository's claimset/ folder, when the file lies in one, so that
-    local references to other papers can be resolved (rule 57)."""
+    local references to other papers can be resolved (rule 57). `revision`: the file is a revision submission,
+    which names the claimset it revises in paper.id (rule 25; revision spec §5.1)."""
     r = Report()
     if not isinstance(doc, dict):
         r.err("2", "$", "top level must be a JSON object")
@@ -366,9 +371,15 @@ def validate(doc, published=False, local_root=None):
         for f in PLATFORM_PAPER_FIELDS:
             if f in paper:
                 r.err("24", f"paper.{f}", "assigned by the platform at publication; remove it from the submission")
-        if "id" in paper and "correction_reason" not in paper:
+        if "id" in paper and "correction_reason" not in paper and not revision:
             r.err("25", "paper.id", "the platform mints the DOI; remove paper.id (keep it only when submitting "
-                                    "a correction, together with correction_reason)")
+                                    "a correction, together with correction_reason, or a revision, with its "
+                                    "response: `claimset revision check`)")
+        if revision and "correction_reason" in paper:
+            r.err("25", "paper.correction_reason", "a revision answers reviews with a response; a correction "
+                                                   "is submitted on its own (revision spec §5.1)")
+        if revision and not paper.get("id"):
+            r.err("25", "paper.id", "a revision names the claimset it revises")
         if "correction_reason" in paper and "id" not in paper:
             r.err("26", "paper.correction_reason", "a correction must name the existing claimset in paper.id")
     check_enum(r, "1", "paper.status", paper.get("status"), "status")
@@ -387,6 +398,15 @@ def validate(doc, published=False, local_root=None):
         for i, ch in enumerate(as_list(paper.get("changes"))):
             if not isinstance(ch, dict) or "op" not in ch or "path" not in ch or "reason" not in ch:
                 r.err("28", f"paper.changes[{i}]", "each change needs op, path and reason")
+            for a in as_list(as_dict(ch).get("addresses")):
+                if not (isinstance(a, str) and COMMENT_ID_RE.match(a)):
+                    r.err("59", f"paper.changes[{i}].addresses", f"'{a}' is not a review comment's global ID "
+                                                                 f"(<claimset>@v<n>/RV<k>.c<m>)")
+    if "answers" in paper:
+        m = RESPONSE_ID_RE.match(str(paper.get("answers")))
+        if not m or m.group(1) != paper.get("id") or str(paper.get("version")) != m.group(2):
+            r.err("59", "paper.answers", "must be the global ID of this version's response, "
+                                         "<paper.id>@v<version>/RP<k>")
     if paper.get("status") not in (None, "active"):
         notice = as_dict(paper.get("status_notice"))
         missing = [f for f in ("date", "reason_code", "statement", "issued_by") if f not in notice]
@@ -970,6 +990,13 @@ def check_test(r, test, w):
         check_enum(r, "47", f"{w}.flags[{i}]", f, "test_flag", required=True)
     if test.get("verdict") == "computed" and not test.get("quantities"):
         r.err("47", f"{w}.quantities", "a computed verdict needs the quantities the rules were evaluated on")
+    if "addresses" in test:
+        if not isinstance(test["addresses"], list) or not test["addresses"]:
+            r.err("59", f"{w}.addresses", "a non-empty list of review comments' global IDs")
+        for a in as_list(test.get("addresses")):
+            if not (isinstance(a, str) and COMMENT_ID_RE.match(a)):
+                r.err("59", f"{w}.addresses", f"'{a}' is not a review comment's global ID "
+                                              f"(<claimset>@v<n>/RV<k>.c<m>)")
 
 
 def _is_number(x):
@@ -1519,7 +1546,7 @@ def main(argv):
         print(f"ERROR: cannot read {path}: {exc}")
         return 1
     published = "--published" in argv
-    rep = validate(doc, published=published, local_root=claimset_folder(path))
+    rep = validate(doc, published=published, local_root=claimset_folder(path), revision="--revision" in argv)
     print_report(rep, published=published, as_json="--json" in argv)
     return 1 if rep.errors else 0
 

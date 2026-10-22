@@ -30,6 +30,7 @@ The package has no dependencies beyond the Python standard library (Python 3.9 o
 ```
 claimset spec                  # the claimset specification this version validates against
 claimset spec --lab            # the lab record specification
+claimset spec --revision       # the revision specification: reviews, responses, revised versions, scores
 claimset skill install         # install or update the skills in .claude/skills (--dir for another place)
 claimset skill check           # are the installed skills this version's?
 ```
@@ -102,6 +103,19 @@ claimset lab merge              # appends both logs to the main log, interleaved
 ```
 
 An agent sees the main log as it was when it started, plus its own events. The merge is refused as a whole if any event no longer fits the main log, and `verify` checks that every merged event matches its agent log.
+
+### Answering a review
+
+A published claimset is reviewed, and every comment states in advance what evidence would settle it. The author may answer with a revised version and a response; reviews, responses and versions are kept side by side, never rewritten, and each claim's score is computed from the file and the state of the comments on it. The commands read the claimset's record folder (`v1/claimset.json`, `v1/reviews/RV1.json`, …):
+
+```
+claimset revision status <record>                    # comments, their states and tests; what to answer
+claimset lab plan --kind confirmatory --hypotheses H9 --comment doi:…@v1/RV1.c2 --review RV1.json --analysis "…"
+                                                     # run a comment's resolution test as a planned test
+claimset revision respond <record> --revision revised.json --lab lab.jsonl -o response.json
+claimset revision check <record> --revision revised.json --response response.json --lab lab.jsonl
+claimset revision score <record>                     # claim and paper scores, with every input
+```
 
 ### Protecting the lab record
 

@@ -1,13 +1,13 @@
 ---
 name: claimset-submit
-description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.20 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
+description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.21 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
 ---
 
 # Preparing a Claimset submission
 
 A claimset is a research paper written for LLM readers: a flat JSON file of atomic, self-contained claims plus the definitions, evidence, assumptions, limitations, warrants and artefacts that support, condition and limit them. You write every field. A human decides two things (guarantor and licence), and you ask them before you finish.
 
-The normative rules are in `references/spec-v0.20.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
+The normative rules are in `references/spec-v0.21.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
 
 **Versions.** This skill, its spec and its validator are one version. If the `claimset` package is installed, check that this skill matches it before starting: `claimset skill check`. If it reports the skill out of date, or `claimset validate` says a file follows an earlier specification, update the skill with `claimset skill install` (it replaces this folder with the version matching the package) and read the new spec; never mix rules from two versions.
 
@@ -45,7 +45,7 @@ If the human cannot be asked (unattended run), stop after building and validatin
 
 ### 2a. If the research has a lab record
 
-If the work was done with a lab record (`claimset/<study>/lab/lab.jsonl`, or an older `lab/lab.jsonl`; specified in `references/lab-record-v0.8.md`), start from it rather than from a manuscript:
+If the work was done with a lab record (`claimset/<study>/lab/lab.jsonl`, or an older `lab/lab.jsonl`; specified in `references/lab-record-v0.9.md`), start from it rather than from a manuscript:
 - Run `claimset lab export [--paper NAME]` if the tool is available (with several papers recorded, one paper at a time). It writes a draft that holds everything the record states and prints a **completion list**: the decisions and wording still needed (licence, guarantor, principal claims, claim types, scopes, evidence profiles and descriptions, statements of negative results). Work through that list; do not change what the record states, such as `hypothesis`, `planning`, `planned_at`, `lab_runs` or the exploration counts. If export refuses (an open hypothesis, an unmerged agent log, a record that does not verify), fix the record with `claimset lab` commands, never by editing it.
 - Without the tool, build the claims from the record by hand, following the mapping in lab record §9.
 - Every hypothesis that reached `supported`, `not_supported` or `inconclusive` becomes a claim with `hypothesis: {lab_event, outcome}`, `planning`, and for planned tests `planned_at`, `planned_at_anchor` and `test` (the decision rule) copied from the record. Never upgrade `exploratory` to `confirmatory`, and never change a `test`: it is what the plan fixed before the data were seen.
@@ -242,6 +242,23 @@ Give the human a short summary:
 
 If a Claimset submission endpoint or tool is available in your environment, submit through it once the human approves; the platform then asks the guarantor to confirm and, after confirmation, publishes the paper with its DOI. Otherwise stop at the validated file.
 
+## Revisions: answering a review
+
+A published claimset is reviewed by the platform, and later by others. Each review comment names the claims it affects, its category and severity, and a **resolution test**: what evidence would settle it, fixed before you answer (`references/revision-v0.1.md`). Answering is optional: a revision raises the claims' scores by settling comments, and unanswered comments stay visible. These steps need the `claimset` package.
+
+1. **Get the record folder** of the claimset: the folder of the platform's registry with `v1/claimset.json`, `v1/reviews/RV1.json`, … (a clone, or the files the human gives you). `claimset revision status <record>` lists every comment, its state and test, and marks the unresolved ones: a revision answers every one of them.
+2. **Decide an answer to each comment**, one of five:
+   - `changed`: the claimset now meets the comment; list the field paths that do (`C1.statement`, `E1.results`, `C13`).
+   - `rebutted`: the comment is wrong and evidence shows it. Run its test: if it is computable, as a planned test in the lab record (claimset-lab skill, *Answering a review*), so the verdict is computed against the reviewer's rule; if it is documentary, cite the source with a locator. Never rebut with argument alone: `argument` explains evidence, it never replaces it.
+   - `accepted_as_limitation`: the comment is right, and the claim states it: a new limitation affecting the comment's claims, or a narrower scope.
+   - `test_challenged`: the test is unfair, cannot be run or does not decide the comment; give a complete alternative test and the reason. Never challenge a test because its result would go against you.
+   - `declined`: no action. Allowed, but a declined comment that could reverse a claim keeps lowering it; say why.
+   If the planned test comes out for the comment, the comment stands: change the claim or state the limitation, and say so.
+3. **Build the revision from the current version**, never from an older one or from a fresh export: copy the latest `v<n>/claimset.json`, keep `paper.id`, and remove what the platform adds (`paper.version`, `previous_version`, `changes`, `date`, `status`, `status_notice`, `answers`, the classification's `subfield` and `topics`, and each claim's `verifiability` and `verifiability_flags`). Keep every object's ID: a refined object keeps it, a different assertion gets a new ID, and an ID once removed is never used again. Put the evidence a rebuttal rests on into the claimset (a new evidence object with the plan's `lab_runs`, an assumption's `check` and `check_evidence`). If the claimset has a lab record, keep appending to it; never restart or rewrite it.
+4. **Draft the response:** `claimset revision respond <record> --revision revised.json --lab claimset/<study>/lab/lab.jsonl -o response.json`. It answers each comment from what it finds (a planned test that met the `withdrawn` rule, changes to what the comment is about) and prints what you still have to decide. Complete it: every entry is yours to confirm, and every change no comment asked for goes in `other_changes` with its reason.
+5. **Check:** `claimset revision check <record> --revision revised.json --response response.json --lab …`. Fix every error; read every warning (a rebuttal not backed by a planned test, a declined comment that could reverse a claim).
+6. **Hand over:** tell the human, comment by comment, what you answered and on what evidence, which comments you declined and why, and the scores before (`claimset revision score <record>`). The human's guarantor submits the revision with its response and lab record.
+
 ## Corrections
 
 To correct a published claimset, start from its published file and produce a complete corrected submission:
@@ -249,3 +266,4 @@ To correct a published claimset, start from its published file and produce a com
 - Remove the other platform fields (`version`, `date`, `status`, `status_notice`, `changes`, `previous_version`).
 - Keep object IDs stable: a corrected claim keeps its ID; never reuse an ID for a different claim.
 - Validate as usual. The platform computes the diff, assigns the next version and marks the paper as corrected; the DOI stays the same.
+- A correction is the author's own initiative. To answer reviews, submit a revision with a response instead (above); a revision can also carry corrections, as `other_changes`.

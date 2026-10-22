@@ -12,7 +12,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import LAB_SPEC_VERSION, SPEC_VERSION, __version__
+from . import LAB_SPEC_VERSION, REVISION_SPEC_VERSION, SPEC_VERSION, __version__
 
 PACKAGE = Path(__file__).resolve().parent
 DATA = PACKAGE / "data"
@@ -20,8 +20,9 @@ SKILLS = ("claimset-submit", "claimset-lab")
 DEFAULT_DIR = ".claude/skills"
 
 
-def spec_path(lab=False):
-    name = f"lab-record-v{LAB_SPEC_VERSION}.md" if lab else f"claimset-v{SPEC_VERSION}.md"
+def spec_path(lab=False, revision=False):
+    name = f"claimset-revision-v{REVISION_SPEC_VERSION}.md" if revision else \
+        f"lab-record-v{LAB_SPEC_VERSION}.md" if lab else f"claimset-v{SPEC_VERSION}.md"
     path = DATA / "spec" / name
     if not path.exists():
         raise FileNotFoundError(f"this copy of claimset ({__version__}) carries no specification texts; install "
@@ -36,19 +37,22 @@ def _package_modules():
 
 def files(name):
     """{path inside the skill: source file} for one skill, as this package would install it."""
-    spec, lab = spec_path(), spec_path(lab=True)
+    spec, lab, rev = spec_path(), spec_path(lab=True), spec_path(revision=True)
+    rev_name = f"references/{rev.name.replace('claimset-revision-v', 'revision-v')}"
     if name == "claimset-submit":
         out = {"SKILL.md": DATA / "skills" / name / "SKILL.md",
                "scripts/validate.py": PACKAGE / "validate.py",
                f"references/{spec.name.replace('claimset-v', 'spec-v')}": spec,
-               f"references/{lab.name}": lab}
+               f"references/{lab.name}": lab,
+               rev_name: rev}
         for ex in sorted((DATA / "examples").glob("*.json")):
             out[f"examples/{ex.name}"] = ex
         return out
     if name == "claimset-lab":
         out = {"SKILL.md": DATA / "skills" / name / "SKILL.md",
                "scripts/claimset": DATA / "skills" / name / "claimset",
-               f"references/{lab.name}": lab}
+               f"references/{lab.name}": lab,
+               rev_name: rev}
         for rel in _package_modules():
             out[f"scripts/lib/claimset/{rel.as_posix()}"] = PACKAGE / rel
         return out
@@ -110,7 +114,7 @@ def install(directory, name, force=False):
 
 def cmd_spec(args):
     try:
-        path = spec_path(lab=args.lab)
+        path = spec_path(lab=args.lab, revision=args.revision)
     except FileNotFoundError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -151,6 +155,8 @@ def cmd_skill(args):
 def add_parsers(sub):
     s = sub.add_parser("spec", help="print the specification this package validates against")
     s.add_argument("--lab", action="store_true", help="the lab record specification instead")
+    s.add_argument("--revision", action="store_true",
+                   help="the revision specification (reviews, responses, revised versions, scores) instead")
     s.add_argument("-o", "--output", help="write it to this file")
     s.set_defaults(func=cmd_spec)
 

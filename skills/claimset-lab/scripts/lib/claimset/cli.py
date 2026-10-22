@@ -8,6 +8,7 @@ from pathlib import Path
 from . import LAB_SPEC_VERSION, SPEC_VERSION, __version__
 from . import bundle as _bundle
 from . import render as _render
+from . import revision as _revision
 from . import validate as _validate
 from .lab import cli as _lab_cli
 
@@ -19,7 +20,8 @@ def _cmd_validate(args):
     except (OSError, json.JSONDecodeError) as exc:
         print(f"ERROR: cannot read {args.file}: {exc}", file=sys.stderr)
         return 1
-    rep = _validate.validate(doc, published=args.published, local_root=_validate.claimset_folder(args.file))
+    rep = _validate.validate(doc, published=args.published, local_root=_validate.claimset_folder(args.file),
+                             revision=args.revision)
     _validate.print_report(rep, published=args.published, as_json=args.json)
     return 1 if rep.errors else 0
 
@@ -151,6 +153,8 @@ def build_parser():
     v.add_argument("file", help="path to the claimset JSON file")
     v.add_argument("--published", action="store_true",
                    help="check a published file instead of a submission")
+    v.add_argument("--revision", action="store_true",
+                   help="the file is a revision submission, naming the claimset it revises in paper.id")
     v.add_argument("--json", action="store_true", help="machine-readable report")
     v.set_defaults(func=_cmd_validate)
 
@@ -183,6 +187,7 @@ def build_parser():
     tg.add_argument("-m", "--message", help="tag message")
     tg.set_defaults(func=_cmd_tag)
 
+    _revision.add_parser(sub)
     _bundle.add_parsers(sub)
     _lab_cli.add_parser(sub)
     return p
