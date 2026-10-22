@@ -244,20 +244,7 @@ If a Claimset submission endpoint or tool is available in your environment, subm
 
 ## Revisions: answering a review
 
-A published claimset is reviewed by the platform, and later by others. Each review comment names the claims it affects, its category and severity, and a **resolution test**: what evidence would settle it, fixed before you answer (`references/revision-v0.1.md`). Answering is optional: a revision raises the claims' scores by settling comments, and unanswered comments stay visible. These steps need the `claimset` package.
-
-1. **Get the record folder** of the claimset: the folder of the platform's registry with `v1/claimset.json`, `v1/reviews/RV1.json`, … (a clone, or the files the human gives you). `claimset revision status <record>` lists every comment, its state and test, and marks the unresolved ones: a revision answers every one of them.
-2. **Decide an answer to each comment**, one of five:
-   - `changed`: the claimset now meets the comment; list the field paths that do (`C1.statement`, `E1.results`, `C13`).
-   - `rebutted`: the comment is wrong and evidence shows it. Run its test: if it is computable, as a planned test in the lab record (claimset-lab skill, *Answering a review*), so the verdict is computed against the reviewer's rule; if it is documentary, cite the source with a locator. Never rebut with argument alone: `argument` explains evidence, it never replaces it.
-   - `accepted_as_limitation`: the comment is right, and the claim states it: a new limitation affecting the comment's claims, or a narrower scope.
-   - `test_challenged`: the test is unfair, cannot be run or does not decide the comment; give a complete alternative test and the reason. Never challenge a test because its result would go against you.
-   - `declined`: no action. Allowed, but a declined comment that could reverse a claim keeps lowering it; say why.
-   If the planned test comes out for the comment, the comment stands: change the claim or state the limitation, and say so.
-3. **Build the revision from the current version**, never from an older one or from a fresh export: copy the latest `v<n>/claimset.json`, keep `paper.id`, and remove what the platform adds (`paper.version`, `previous_version`, `changes`, `date`, `status`, `status_notice`, `answers`, the classification's `subfield` and `topics`, and each claim's `verifiability` and `verifiability_flags`). Keep every object's ID: a refined object keeps it, a different assertion gets a new ID, and an ID once removed is never used again. Put the evidence a rebuttal rests on into the claimset (a new evidence object with the plan's `lab_runs`, an assumption's `check` and `check_evidence`). If the claimset has a lab record, keep appending to it; never restart or rewrite it.
-4. **Draft the response:** `claimset revision respond <record> --revision revised.json --lab claimset/<study>/lab/lab.jsonl -o response.json`. It answers each comment from what it finds (a planned test that met the `withdrawn` rule, changes to what the comment is about) and prints what you still have to decide. Complete it: every entry is yours to confirm, and every change no comment asked for goes in `other_changes` with its reason.
-5. **Check:** `claimset revision check <record> --revision revised.json --response response.json --lab …`. Fix every error; read every warning (a rebuttal not backed by a planned test, a declined comment that could reverse a claim).
-6. **Hand over:** tell the human, comment by comment, what you answered and on what evidence, which comments you declined and why, and the scores before (`claimset revision score <record>`). The human's guarantor submits the revision with its response and lab record.
+A published claimset that has been reviewed is revised with the `claimset-revise` skill: it answers each review comment with evidence, builds the revised version and writes the response.
 
 ## Corrections
 

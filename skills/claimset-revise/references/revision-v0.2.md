@@ -1,8 +1,16 @@
-# Claimset Revision — Specification v0.1 (draft)
+# Claimset Revision — Specification v0.2 (draft)
 
-Status: working draft · Date: 2026-10-22 · Companion to the claimset specification (`spec/claimset-v0.21.md`) and the lab record specification (`spec/lab-record-v0.9.md`)
+Status: working draft · Date: 2026-10-22 · Supersedes v0.1 (`spec/claimset-revision-v0.1.md`) · Companion to the claimset specification (`spec/claimset-v0.21.md`) and the lab record specification (`spec/lab-record-v0.9.md`)
 
-This specification covers what happens to a claimset after its first publication: how the platform's reviewers comment on it, how the author responds, how a revised version is submitted, how disagreements are settled, and how each claim is scored. It specifies the documents the author receives and sends, and the rules the platform checks. The portal itself (accounts, notifications, the website) is out of scope.
+This specification covers what happens to a claimset after its first publication: how the platform's reviewers comment on it, how the author responds, how a revised version is submitted, how disagreements are settled, and who scores the claims and on what grounds. It specifies the documents the author receives and sends, and the rules the platform checks. The portal itself (accounts, notifications, the website) is out of scope, and so is the scoring rubric, which the portal publishes (§7).
+
+## Changes since v0.1
+
+Scores are given by the platform's reviewer, not computed by a formula: the reviewer is the one that analyses the claimset in detail. What keeps a score open to challenge is that every point below the top rests on comments the author can answer.
+
+- Principle 7 and §7 rewritten: the platform's reviewer scores every claim, from 0 to 100, against the portal's public scoring rubric, in the initial review and every re-review. A score below 100 cites the unresolved comments it rests on. A version has no score until its first review. The formula of v0.1 (base values, weights, dependency caps) is removed; the rubric and the paper score are the portal's.
+- Reviews gain `scores`, and an agent reviewer that scores names its `rubric` (§3.1). New rule R18; R2 extended (§8).
+- §9: `claimset revision score` removed; `status` shows the latest scores.
 
 ## 1. Principles
 
@@ -12,7 +20,7 @@ This specification covers what happens to a claimset after its first publication
 4. **Revision is optional.** The author may answer a review with a new version, to settle the comments and raise the score, or may leave the version as it is. Comments that are not answered stay visible.
 5. **Disputes are settled by evidence.** Every comment that can be settled says, before the author answers, what evidence would settle it (its resolution test, §3.4). Argument alone neither keeps a comment alive nor resolves it. When no computable test exists, a human resolver decides.
 6. **Flag everything at once.** The first review of a claimset covers the whole of it. Later rounds review what changed. Comments that come up later, from the platform or from humans, are additional reviews of the current version (§3.6).
-7. **Scores are computed, not judged.** Each claim's score is a published function of the claimset file and the state of the comments on it; the paper's score aggregates the claim scores (§7). No reviewer assigns a number.
+7. **Scores rest on comments.** The platform's reviewer scores each claim against a public rubric, and every point below the top rests on comments the author can answer with evidence (§7). A score is never a bare judgement that only persuasion could change.
 
 ## 2. The record of a claimset
 
@@ -72,7 +80,6 @@ The platform commits every document to a public registry repository when it is p
   v2/claimset.json  v2/lab.jsonl  v2/validation.json  v2/response-RP1.json
   v2/reviews/RV2.json  v2/reviews/RV3.json
   v2/resolutions/RL1.json
-  scores.jsonl            every score computed, with its inputs (§7.4)
 ```
 
 `<concept id>` is the DOI with `doi:` removed and `/` replaced by `_` (`10.0000_claimset.2026.000789`). Only the platform commits to the registry. Each version is tagged (`<concept id>-v2`). The branch is protected against force-pushes and deletion, so the repository's history is itself an append-only log of the record. The author's own repository, where the research is done, is not part of the record; the lab record published with each version is.
@@ -94,20 +101,23 @@ An author works on a revision from a copy of the claimset's folder of the regist
     "type": "agent", "name": "Claimset reviewer",
     "models": [{"provider": "…", "name": "…", "version": "…", "identifier": "…"}],
     "prompt": {"version": "review-0.3", "uri": "https://…/prompts/review-0.3.md", "hash": "sha256:…"},
-    "system": {"name": "claimset-review", "version": "0.3"}
+    "system": {"name": "claimset-review", "version": "0.3"},
+    "rubric": {"version": "rubric-0.1", "uri": "https://…/rubric-0.1.md", "hash": "sha256:…"}
   },
   "date": "2026-10-23",
   "comments": [],
   "verdicts": [],
+  "scores": [],
   "lab_record": null
 }
 ```
 
 - `kind`: `initial` (the platform's review of version 1) · `re_review` (the platform's review of a revision, §3.5) · `additional` (any later review, §3.6).
 - `target`: the version reviewed and the hash of its published file.
-- `reviewer`: for an agent, its models, the review prompt (version, public URI and hash) and the reviewing system. For a human: `{type: human, name, orcid, competing_interests}`, where `competing_interests` is a sentence, `"none"` if none.
+- `reviewer`: for an agent, its models, the review prompt (version, public URI and hash), the reviewing system and, when the review scores, the scoring rubric (version, public URI and hash, §7). For a human: `{type: human, name, orcid, competing_interests}`, where `competing_interests` is a sentence, `"none"` if none.
 - `comments`: the review's comments (§3.2).
 - `verdicts`: in a re-review, the verdict on each earlier comment that was still unresolved (§6.2); in other reviews, empty.
+- `scores`: the claims' scores (§7): in an initial review and a re-review, one for every claim of the version; in an additional review by the platform, optional, for the claims its comments name; absent from human reviews.
 - `lab_record`: optional; `{uri, hash}` of the reviewer's own lab record, when the reviewer ran code (to reproduce a result, or to run a resolution test). Its runs can be cited as evidence by the review.
 
 The validator's warnings on a version enter its initial review or re-review as comments of category `validation`, written by the platform, so that the author answers them the same way as the rest.
@@ -130,7 +140,7 @@ The validator's warnings on a version enter its initial review or re-review as c
 ```
 
 - `id`: `c1`, `c2`, … unique within the review.
-- `claims`: required, at least one: the claims the comment affects. A comment on another object names the claims that object bears on (an evidence object: the claims it supports; a limitation: the claims it affects; a definition: the claims that use it). A comment on the paper as a whole (missing prior work, say) names the principal claims it affects. This is what makes scores per claim possible (§7).
+- `claims`: required, at least one: the claims the comment affects. A comment on another object names the claims that object bears on (an evidence object: the claims it supports; a limitation: the claims it affects; a definition: the claims that use it). A comment on the paper as a whole (missing prior work, say) names the principal claims it affects. This is what lets a score rest on comments (§7).
 - `targets`: optional: the objects or fields the comment is about, as field paths (`E4`, `C4.statement`, `L2`, §2.2), when more precise than `claims`.
 - `category`, `severity`: §3.3.
 - `comment`: self-contained; states the problem, not the fix, and follows the statement rules of claimset §8 where they apply (no rhetoric, no instructions to a model).
@@ -147,7 +157,7 @@ The validator's warnings on a version enter its initial review or re-review as c
 |---|---|
 | `prior_work` | missing or misattributed prior work; a novelty label the prior work contradicts |
 | `scope` | a claim broader or narrower than its evidence; a definition the tests do not match |
-| `assumption` | an assumption that is untested or wrongly checked; an assumption or dependency a claim relies on but does not list ("the claim lacks an assumption", always `could_reverse`, §7.1) |
+| `assumption` | an assumption that is untested or wrongly checked; an assumption or dependency a claim relies on but does not list ("the claim lacks an assumption", always `could_reverse`, §7.2) |
 | `test` | how a test was planned and run: data reused from exploration, exclusions, decision rules |
 | `measurement` | what was measured and how: reference methods, numerical accuracy, instruments |
 | `missing_result` | a number or condition a claim relies on that no result records |
@@ -190,7 +200,7 @@ When a revision is published, the platform reviews it (`kind: re_review`). A re-
 1. gives a verdict on every comment that was unresolved on the previous version, from every review of it, including additional reviews (§6.2);
 2. may add new comments only on what the revision changed (an object added, or an object or field that differs from the previous version), or of severity `could_reverse`. Everything else should have been raised in an earlier review; a re-review that reopens unchanged content would make every revision a new first review.
 
-The platform pins the reviewer's models and prompt for each round and records them. When the platform changes its reviewer, existing reviews and scores keep the setup that made them.
+The platform pins the reviewer's models and prompt for each round and records them. When the platform changes its reviewer or its rubric, existing reviews and scores keep the setup that made them.
 
 ### 3.6 Additional reviews
 
@@ -199,7 +209,7 @@ Anything that comes up after a version's initial review or re-review is an addit
 - take the same form as other reviews (§3.1–3.4), with a resolution test on every comment that needs one;
 - target the current version only;
 - are not limited to changed content;
-- require nothing of the author. Their comments count in the current version's score (§7) and, if the author submits a revision, are answered in it like any other unresolved comment.
+- require nothing of the author. Their comments can lower the current version's scores (§7) and, if the author submits a revision, are answered in it like any other unresolved comment.
 
 ## 4. Response
 
@@ -341,65 +351,37 @@ Its verdicts take the same form as a re-review's (§6.2), with state `withdrawn`
 
 ## 7. Scores
 
-Scores are computed by the platform from the published documents and stored outside the claimset file (claimset §6). They are recomputed whenever the inputs change: a new version, a re-review, an additional review, a resolution.
+### 7.1 Who scores
 
-### 7.1 Claim score
+The platform's reviewer scores the claims. It is the one that reads the claimset in detail and judges whether each claim is correct, supported by its evidence and placed against the literature, and its comments say why. It scores every claim of a version from 0 to 100, in the initial review of version 1 and in the re-review of every revision, against the portal's **scoring rubric**: a public, versioned document saying what a claim at each level looks like and how much each kind of problem costs. The review names the rubric it applied (§3.1). The paper's score is aggregated by the portal from the claim scores, by the rule the rubric states.
 
-For each claim $c$ of a version:
+A version has no score until its first review: a score given by the file alone would rank unreviewed papers above reviewed ones.
 
-$$s(c) = \min\Big( b(c)\, v(c) \prod_{k \in K(c)} \big(1 - w_{\text{sev}}(k)\, w_{\text{state}}(k)\big),\ \min_{d \in R(c)} s(d) \Big)$$
+### 7.2 What a score rests on
 
-- $b(c)$, the **base**: what the claim's support is, computed from the file (table below).
-- $v(c)$: its verifiability (claimset §5).
-- $K(c)$: the comments that name $c$ in `claims`, from every review of the version, and every comment of an earlier version that names $c$ and is still unresolved.
-- $w_{\text{sev}}$, $w_{\text{state}}$: the weight of the comment's severity and of its state.
-- $R(c)$: the claims $c$ rests on (`depends_on` and `assumptions`, including the assumptions of the evidence it cites). A claim scores no higher than what it rests on, so a comment on an assumption lowers every contribution built on it. Each claim's score is computed once, after those it rests on.
+```json
+"scores": [
+  {"claim": "C1", "score": 72,
+   "comments": ["doi:10.0000/claimset.2026.000789@v1/RV1.c4", "doi:10.0000/claimset.2026.000789@v1/RV1.c6"],
+   "reason": "The refutation holds on the models tested (c4 biases the count, not its sign), but rests on C13, which no run has checked against smooth 4.6.0 (c6)."},
+  {"claim": "C13", "score": 55, "comments": ["doi:10.0000/claimset.2026.000789@v1/RV1.c6"],
+   "reason": "Unchecked: no recorded run calls smooth 4.6.0 (c6)."}
+]
+```
 
-Reviewers do not give claims numbers: their judgement enters only through comments, each of which says what would settle it.
+- `claim`: a claim of the version; `score`: an integer from 0 to 100.
+- `comments`: the global IDs of the comments the score rests on. A score below 100 cites at least one; a score of 100 cites none.
+- `reason`: required below 100: how the cited comments bear on the claim, in a self-contained sentence.
 
-**Unlisted assumptions.** The dependency cap could be avoided by not listing what a claim rests on. A reviewer who finds that a claim relies on an assumption or another claim it does not list raises a comment of category `assumption` with severity `could_reverse` ("the claim lacks an assumption"), naming the claim and stating the missing assumption. Its factor (0.5 on the claim itself, §7.2) is below the cap from listing the assumption unchecked (0.6), so leaving an assumption out, or removing it in a revision, lowers the score rather than raising it. The comment is resolved by adding the assumption, and the claim is then scored by the cap as usual.
+**No deduction without a comment.** Every point below 100 rests on comments that are unresolved once the review is written (its own comments, and earlier comments after its verdicts) and that name the claim or a claim it rests on (`depends_on` and `assumptions`, including the assumptions of the evidence it cites). A claim is only as credible as what it rests on: a comment on an assumption can lower the claims built on it. One problem lowers a claim once: the rubric counts a comment once per claim, whether the claim is named directly or through what it rests on. The reviewer that sees a weakness raises a comment for it, with its resolution test, so the author always has something to answer, and a score can be raised only by settling comments.
 
-### 7.2 Provisional values
+### 7.3 When scores change
 
-The values below are a first calibration (`scoring_version: 0.1`), to be revised against real claimsets.
-
-**Base $b(c)$**: the highest value among the claim's support entries.
-
-| Support | $b$ |
-|---|---|
-| `formal_proof`, by the claim's `verification`: `machine_checked` · `agent_checked` or `peer_checked` · `unchecked` (or absent) · `disputed` | 1.0 · 0.9 · 0.6 · 0.3 |
-| `empirical_quant`, `empirical_qual`, `simulation`, by the claim's `planning`: `confirmatory` · `confirmatory_with_deviations` · `exploratory` (or absent); × 0.9 without a check with outcome `confirmed` and extent `full` by a contributor who is not an author | 1.0 · 0.9 · 0.75 |
-| `demonstration` | 0.9 |
-| `cited` | 0.8, or the cited claim's score when it is a claimset claim |
-| `consensus` | 0.7 |
-| `argument` | 0.5 |
-| `expert_judgement` | 0.4 |
-| `unstated` | 0.2 |
-| `assumption`, by the claim's `check`: `tested` · `sensitivity_analysed` · `untestable` · `unchecked` | 1.0 · 0.85 · 0.75 · 0.6 |
-
-**Verifiability $v(c)$:** `open` 1.0 · `audit_only` 0.9 · `unverifiable` 0.6 · `not_applicable` 1.0.
-
-**Comment weights:**
-
-| Severity | $w_{\text{sev}}$ | | State | $w_{\text{state}}$ |
-|---|---|---|---|---|
-| `could_reverse` | 0.5 | | `open`, `upheld` | 1.0 |
-| `could_bias_magnitude` | 0.25 | | `disputed` | 0.5 |
-| `reduces_precision` | 0.1 | | `limited` | 0.3 |
-| `reduces_transferability` | 0.1 | | `resolved`, `withdrawn` | 0 |
-| `presentation` | 0.02 | | | |
-
-`disputed` costs half: arguing with evidence pays, but arguing alone cannot raise a score. `limited` costs less than `open`, because a stated limitation is honest, but more than `resolved`, because the claim is still weaker.
-
-### 7.3 Paper score
-
-$$S = \frac{\sum_{c} r(c)\, s(c)}{\sum_{c} r(c)}, \qquad r(c) = 3 \text{ for principal claims},\ 1 \text{ for secondary claims}$$
-
-Supporting claims enter through the principal claims that rest on them (§7.1), not on their own; assumption claims likewise.
+A re-review scores every claim of the revision again, after its verdicts: a comment resolved or withdrawn no longer lowers a score. An additional review by the platform may score again the claims its comments name; human reviews and resolutions do not score, but a resolution's verdicts are taken into account by the next scoring. A claim's current score is the latest one given for the current version; the scores of earlier versions stay in their reviews.
 
 ### 7.4 Recording
 
-Every computed score is recorded with its `scoring_version`, the date, the version scored, and every input: each claim's base, verifiability, the comments and states counted, and the dependency caps. A score can therefore be recomputed by anyone from the record. Each version keeps its score history; the portal shows the current version's latest score and the history of every version.
+Scores are part of the review that gives them, so they are public, committed with it, and tied to the reviewer's models, prompt and rubric. The portal shows the current version's scores and the paper's score, and the history of every version.
 
 ## 8. Validation rules
 
@@ -408,12 +390,13 @@ Errors (the document or submission is refused) and warnings (accepted, recorded)
 ### 8.1 Reviews
 
 - R1. A review has `schema: claimset-review`, an `id` `RV<n>`, and a `target` naming a published version and its hash. `kind: initial` targets version 1 and is written once per claimset by the platform; `kind: re_review` targets a revision and is written once per revision by the platform; `kind: additional` targets the current version.
-- R2. An agent reviewer lists its models and its prompt (`version`, `uri`, `hash`); a human reviewer has `name`, `orcid` and `competing_interests`.
+- R2. An agent reviewer lists its models and its prompt (`version`, `uri`, `hash`), and its rubric when it scores (R18); a human reviewer has `name`, `orcid` and `competing_interests`.
 - R3. Every comment has an `id` unique in the review, at least one entry in `claims`, each resolving to a claim of the target version, and `category`, `severity`, `comment` and `requested_action` from §3.2–3.3; `targets`, if present, resolve to objects of the target version.
 - R4. Every comment not of category `presentation` or `validation` has a `resolution_test` with `procedure`, `framework`, the parameters its framework requires (lab record §5.7.1), and non-empty `upheld` and `withdrawn` rules; rules over `quantities` are valid expressions (lab record §5.7.3); a `documentary` test has text rules.
 - R5. A re-review has a verdict for every comment unresolved on the previous version, and verdicts only for those.
 - R6. A new comment in a re-review names a claim or target that the revision added or changed, or has severity `could_reverse`.
 - R7. A verdict of `disputed` has a `replacement_test` (as R4) that differs from the test it replaces; `withdrawn` and `upheld` name the `rule` met and cite `evidence`; `resolved` and `limited` say in `reason` what in the revision meets the comment. A resolution's verdicts are `withdrawn` or `upheld`.
+- R18. An initial review or a re-review has a score for every claim of the target version; an additional review scores only claims its comments name; a human review or a resolution has no scores. Every score is an integer from 0 to 100 for a claim of the target version, at most one per claim. A score below 100 has a `reason` and cites at least one comment; every cited comment is unresolved after the review and names the claim or a claim it rests on. A score of 100 cites none. An agent review with scores names its rubric (`version`, `uri`, `hash`).
 
 ### 8.2 Responses
 
@@ -444,22 +427,22 @@ The reference implementation is part of the `claimset` package. Its commands rea
 
 | Command | Effect |
 |---|---|
-| `claimset revision status RECORD` | the current version, every comment with its state, current test and claims, and what a revision must answer |
-| `claimset revision check-review FILE --record RECORD` | checks a review or resolution against the version it targets (R1–R7, W-R1) |
+| `claimset revision status RECORD` | the current version, its latest scores, every comment with its state, current test and claims, and what a revision must answer |
+| `claimset revision check-review FILE --record RECORD` | checks a review or resolution against the version it targets (R1–R7, R18, W-R1) |
 | `claimset revision respond RECORD --revision FILE [--lab FILE] [-o FILE]` | writes a draft response: an entry for every unresolved comment, `changed` with the paths of the revision that the comment's targets cover, `rebutted` with the evidence of lab plans that address the comment and whose verdict met its `withdrawn` rule, and `declined` for the rest, to be completed by the author |
 | `claimset revision check RECORD --revision FILE --response FILE [--lab FILE]` | checks a revision submission (R8–R17, W-R2–W-R4) and prints the patch the platform will record |
 | `claimset revision patch RECORD --revision FILE --response FILE` | the JSON Patch from the current version to the revision, with `reason` and `addresses` (§5.3) |
-| `claimset revision score RECORD [--version N]` | the claim and paper scores of a version (§7), with every input |
 
 The lab tool runs a comment's resolution test as a planned test: `claimset lab plan --comment <global ID> --review FILE --hypotheses H9 …` takes the decision rule from the comment's current test and records the comment in the plan's `addresses` (lab record §5.7).
 
 ## 10. Open questions
 
-1. **Calibration of scores.** The values of §7.2 are a first guess; calibrate them on real claimsets and their reviews, for example in the evaluation study.
+1. **The scoring rubric.** What each score level means, how much each category and severity of problem costs, and how the paper's score aggregates the claims' scores; to be designed with the portal, and calibrated on real claimsets and their reviews, for example in the evaluation study.
 2. **Status of a revision that carries corrections.** Whether a revision whose `other_changes` correct errors sets `status: corrected`, or stays `active` with the corrections visible in `changes`.
 3. **Human resolvers.** Who appoints them, how their competing interests are checked, and what happens when none is available.
 4. **Additional reviews in volume.** Whether additional reviews need limits (per reviewer, per version) to prevent flooding a claimset with comments.
-5. **Scores of cited claims.** Whether a cited claimset claim's score should flow into the citing claim's base (§7.2) and update when the cited claim's score changes.
+5. **Scores of cited claims.** Whether a cited claimset claim's score should bear on the citing claim's score, and be updated when the cited claim's score changes.
+7. **Consistency of scores.** How the portal keeps scores comparable across papers and reviewer versions (a pinned reviewer and rubric per round, repeated scoring, reporting the spread).
 6. **Reviewer upgrades.** When the platform's reviewer changes, whether current versions are re-reviewed by the new setup, and how that review is labelled.
 
 ## Appendix A: example
@@ -515,4 +498,4 @@ From the claimset *Admissibility of lagged single-source-of-error state space mo
 ]
 ```
 
-The effect on the scores: in v1, c6 (`could_reverse`, `open`) halved C13's score (base 0.6 for an unchecked assumption), and through the dependency cap it lowered C1. In v2, C13 is `tested` (base 1.0) and c6 is `withdrawn`, so the cap on C1 lifts.
+The effect on the scores: in v1, RV1 scored C13 55 and C1 72, both citing c6 (C1 rests on C13). In v2, C13 is `tested` and c6 is `withdrawn`, so RV2 can cite neither c6 nor c4 against C1 or C13: with no other unresolved comment on them or on what they rest on, both score 100.

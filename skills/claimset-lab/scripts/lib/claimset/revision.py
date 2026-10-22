@@ -1,4 +1,4 @@
-"""Revisions of published claimsets (revision spec v0.1): reviews, responses, revised versions and scores.
+"""Revisions of published claimsets (revision spec v0.2): reviews, responses and revised versions.
 
 A claimset's record is a folder in the layout of the platform's registry (revision spec §2.4):
 
@@ -6,9 +6,11 @@ A claimset's record is a folder in the layout of the platform's registry (revisi
       v1/claimset.json  v1/lab.jsonl  v1/reviews/RV1.json
       v2/claimset.json  v2/lab.jsonl  v2/response-RP1.json  v2/reviews/RV2.json  v2/resolutions/RL1.json
 
-`Record` reads it and works out the state of every review comment (§6). The functions below check reviews and
-resolutions (R1-R7), check a revision submission with its response (R8-R17), draft a response, compute the
-patch the platform records (§5.3) and the scores (§7). The command line is `claimset revision ...`.
+`Record` reads it and works out the state of every review comment (§6) and the latest scores the reviewer gave
+(§7). The functions below check reviews and resolutions (R1-R7, R18), check a revision submission with its
+response (R8-R17), draft a response and compute the patch the platform records (§5.3). Scores are given by the
+platform's reviewer against the portal's rubric; this module only checks that each rests on comments. The
+command line is `claimset revision ...`.
 """
 
 import copy
@@ -23,7 +25,6 @@ from . import validate as _validate
 from .lab import decision as _decision
 from .lab.core import canonical, sha256
 
-SCORING_VERSION = "0.1"
 CATEGORIES = ("prior_work", "scope", "assumption", "test", "measurement", "missing_result", "reproducibility",
               "reasoning", "presentation", "validation")
 SEVERITIES = ("could_reverse", "could_bias_magnitude", "reduces_precision", "reduces_transferability",
@@ -40,16 +41,6 @@ COLLECTIONS = ("contributors", "models", "definitions", "claims", "evidence", "w
 # Fields the platform assigns: not part of what the author changes (claimset §2.2)
 PLATFORM_PAPER = ("id", "version", "previous_version", "changes", "date", "status", "status_notice", "answers")
 PLATFORM_CLAIM = ("verifiability", "verifiability_flags")
-
-W_SEV = {"could_reverse": 0.5, "could_bias_magnitude": 0.25, "reduces_precision": 0.1,
-         "reduces_transferability": 0.1, "presentation": 0.02}
-W_STATE = {"open": 1.0, "upheld": 1.0, "disputed": 0.5, "limited": 0.3, "resolved": 0.0, "withdrawn": 0.0}
-B_FORMAL = {"machine_checked": 1.0, "agent_checked": 0.9, "peer_checked": 0.9, "unchecked": 0.6, "disputed": 0.3}
-B_PLANNING = {"confirmatory": 1.0, "confirmatory_with_deviations": 0.9, "exploratory": 0.75}
-B_KIND = {"demonstration": 0.9, "cited": 0.8, "consensus": 0.7, "argument": 0.5, "expert_judgement": 0.4,
-          "unstated": 0.2}
-B_ASSUMPTION = {"tested": 1.0, "sensitivity_analysed": 0.85, "untestable": 0.75, "unchecked": 0.6}
-V_WEIGHT = {"open": 1.0, "audit_only": 0.9, "unverifiable": 0.6, "not_applicable": 1.0}
 
 DOC_ID = {"review": re.compile(r"^RV([1-9]\d*)$"), "response": re.compile(r"^RP([1-9]\d*)$"),
           "resolution": re.compile(r"^RL([1-9]\d*)$")}
@@ -226,6 +217,20 @@ class Record:
     def unresolved(self, upto=None, exclude=None):
         return {k: c for k, c in self.comments(upto, exclude).items() if c.unresolved}
 
+    def scores(self, n=None):
+        """{claim: {score, comments, reason, review}}: the latest score given to each claim of version n (default:
+        the current one), from the reviews of that version in publication order (§7.3)."""
+        n = n or max(self.versions)
+        out = {}
+        for kind, vn, d in self.documents(upto=n):
+            if kind != "review" or vn != n:
+                continue
+            for x in _as_list(d.get("scores")):
+                x = _as_dict(x)
+                if x.get("claim"):
+                    out[x["claim"]] = dict(x, review=f"{self.vid(n)}/{d.get('id')}")
+        return out
+
     def removed_ids(self):
         """IDs that some version had and a later version dropped (R16)."""
         seen, removed = set(), set()
@@ -249,6 +254,25 @@ def object_ids(doc):
 
 
 _MISSING = object()
+
+
+def rests_on(doc, cid, seen=None):
+    """Every claim a claim rests on, directly or through others: depends_on and assumptions, including the
+    assumptions of the evidence it cites (§7.2)."""
+    claims = {c.get("id"): c for c in _as_list(doc.get("claims")) if isinstance(c, dict)}
+    evidence = {e.get("id"): e for e in _as_list(doc.get("evidence")) if isinstance(e, dict)}
+    seen = set() if seen is None else seen
+    c = claims.get(cid)
+    if c is None:
+        return seen
+    direct = list(_as_list(c.get("depends_on"))) + list(_as_list(c.get("assumptions")))
+    for sup in _as_list(c.get("support")):
+        direct += list(_as_list(_as_dict(evidence.get(_as_dict(sup).get("evidence"))).get("assumptions")))
+    for d in direct:
+        if d in claims and d not in seen and d != cid:
+            seen.add(d)
+            rests_on(doc, d, seen)
+    return seen
 
 
 def resolve_path(doc, path):
@@ -496,7 +520,7 @@ def _check_verdict(r, w, v, comments, is_resolution):
 
 
 def check_review(record, doc):
-    """Check a review or a resolution against the record (R1-R7, W-R1). `doc` may already be in the record."""
+    """Check a review or a resolution against the record (R1-R7, R18, W-R1). `doc` may already be in the record."""
     r = Report()
     doc = _as_dict(doc)
     schema = doc.get("schema")
@@ -553,6 +577,12 @@ def check_review(record, doc):
         for f in ("version", "uri", "hash"):
             if not prompt.get(f):
                 r.err("R2", f"reviewer.prompt.{f}", "an agent reviewer's prompt is public: version, uri and hash")
+        if _as_list(doc.get("scores")):
+            rubric = _as_dict(who.get("rubric"))
+            for f in ("version", "uri", "hash"):
+                if not rubric.get(f):
+                    r.err("R2", f"reviewer.rubric.{f}", "a review that scores names the public rubric it applied: "
+                                                         "version, uri and hash")
         if _model_keys(who.get("models") or []) & _model_keys(author_models(version.claimset)):
             r.warn("W-R1", "reviewer.models", "the reviewer runs on the same model as an author agent of the "
                                               "claimset")
@@ -613,7 +643,80 @@ def check_review(record, doc):
             r.err("R5", "verdicts", f"no verdict on {k}, unresolved on v{n - 1}")
     elif _as_list(doc.get("verdicts")) and not is_resolution:
         r.err("R5", "verdicts", "only a re-review gives verdicts on earlier comments")
+    _check_scores(r, record, doc, n, comments, is_resolution, claims)
     return r
+
+
+def _check_scores(r, record, doc, n, before, is_resolution, claims):
+    """R18: who scores which claims, and every point below 100 rests on unresolved comments on the claim or on
+    what it rests on (§7)."""
+    scores = doc.get("scores")
+    kind = doc.get("kind")
+    human = is_resolution or _as_dict(doc.get("reviewer")).get("type") == "human"
+    if scores is None or scores == []:
+        if kind in ("initial", "re_review") and not is_resolution:
+            r.err("R18", "scores", "an initial review or a re-review scores every claim of the version")
+        return
+    if human:
+        r.err("R18", "scores", "only the platform's reviewer scores; human reviews and resolutions do not")
+        return
+    if not isinstance(scores, list):
+        r.err("R18", "scores", "a list of {claim, score, comments, reason}")
+        return
+    # the state of every comment once this review is published
+    state = {k: (c.state, c.claims) for k, c in before.items()}
+    for v in _as_list(doc.get("verdicts")):
+        v = _as_dict(v)
+        if v.get("comment") in state and v.get("state") in STATES:
+            state[v["comment"]] = (v["state"], state[v["comment"]][1])
+    own = {}
+    for c in _as_list(doc.get("comments")):
+        c = _as_dict(c)
+        if c.get("id"):
+            gid = f"{record.vid(n)}/{doc.get('id')}.{c['id']}"
+            state[gid] = ("open", [x for x in _as_list(c.get("claims")) if isinstance(x, str)])
+            own[gid] = state[gid][1]
+    target = record.versions[n].claimset
+    named_by_own = {x for cl in own.values() for x in cl}
+    seen = set()
+    for i, x in enumerate(scores):
+        w = f"scores[{i}]"
+        x = _as_dict(x)
+        cid = x.get("claim")
+        if cid not in claims:
+            r.err("R18", f"{w}.claim", f"'{cid}' is not a claim of v{n}")
+            continue
+        if cid in seen:
+            r.err("R18", f"{w}.claim", f"{cid} is scored twice")
+        seen.add(cid)
+        if kind == "additional" and cid not in named_by_own:
+            r.err("R18", f"{w}.claim", f"an additional review scores only the claims its comments name; none "
+                                       f"names {cid}")
+        sc = x.get("score")
+        if not isinstance(sc, int) or isinstance(sc, bool) or not 0 <= sc <= 100:
+            r.err("R18", f"{w}.score", "an integer from 0 to 100")
+            continue
+        cited = _as_list(x.get("comments"))
+        if sc == 100 and cited:
+            r.err("R18", f"{w}.comments", "a score of 100 rests on no comment")
+        if sc < 100:
+            if not cited:
+                r.err("R18", f"{w}.comments", "every point below 100 rests on a comment the author can answer: "
+                                              "cite the comments (global IDs)")
+            if not isinstance(x.get("reason"), str) or not x["reason"].strip():
+                r.err("R18", f"{w}.reason", "say how the cited comments bear on the claim")
+        reach = {cid} | rests_on(target, cid)
+        for k in cited:
+            st = state.get(k)
+            if st is None:
+                r.err("R18", f"{w}.comments", f"'{k}' is not a comment of this claimset")
+            elif st[0] not in UNRESOLVED:
+                r.err("R18", f"{w}.comments", f"{short(k)} is {st[0]}: a settled comment no longer lowers a score")
+            elif not set(st[1]) & reach:
+                r.err("R18", f"{w}.comments", f"{short(k)} names neither {cid} nor a claim it rests on")
+    if kind in ("initial", "re_review"):
+        for cid in sorted(set(claims) - seen - {None}):
+            r.err("R18", "scores", f"no score for {cid}: an initial review or a re-review scores every claim")
 
 
 # ---------------------------------------------------------------- lab records
@@ -923,80 +1026,6 @@ def _test_line(test):
     return f"withdrawn if {t.get('withdrawn')}; upheld if {t.get('upheld')}"
 
 
-# ---------------------------------------------------------------- scores (§7)
-
-def score(record, n=None):
-    """Claim and paper scores of version n (default: the current one), with every input (§7.4)."""
-    n = n or max(record.versions)
-    if n not in record.versions:
-        raise RevisionError(f"no version {n}")
-    doc = record.versions[n].claimset
-    claims = {c["id"]: c for c in _as_list(doc.get("claims")) if isinstance(c, dict) and c.get("id")}
-    evidence = {e["id"]: e for e in _as_list(doc.get("evidence")) if isinstance(e, dict) and e.get("id")}
-    contributors = {p.get("id"): p for p in _as_list(doc.get("contributors")) if isinstance(p, dict)}
-    computed = _validate.validate(doc, published=True).computed
-    comments = record.comments(upto=n)
-    counted = {cid: [c for c in comments.values() if cid in c.claims and (c.version == n or (c.version < n and c.unresolved))]
-               for cid in claims}
-
-    def base(c):
-        values = []
-        checked = any(_as_dict(k).get("outcome") == "confirmed" and _as_dict(k).get("extent") == "full" and
-                      "author" not in _as_list(_as_dict(contributors.get(_as_dict(k).get("by"))).get("positions"))
-                      for k in _as_list(c.get("checks")))
-        for s in _as_list(c.get("support")):
-            kind = _as_dict(s).get("kind")
-            if kind == "formal_proof":
-                values.append(B_FORMAL.get(c.get("verification") or "unchecked", 0.6))
-            elif kind in ("empirical_quant", "empirical_qual", "simulation"):
-                values.append(B_PLANNING.get(c.get("planning") or "exploratory", 0.75) * (1.0 if checked else 0.9))
-            elif kind == "assumption":
-                values.append(B_ASSUMPTION.get(c.get("check") or "unchecked", 0.6))
-            elif kind in B_KIND:
-                values.append(B_KIND[kind])
-        return max(values) if values else B_KIND["unstated"]
-
-    def rests_on(c):
-        out = list(_as_list(c.get("depends_on"))) + list(_as_list(c.get("assumptions")))
-        for s in _as_list(c.get("support")):
-            out += list(_as_list(_as_dict(evidence.get(_as_dict(s).get("evidence"))).get("assumptions")))
-        return [d for d in dict.fromkeys(out) if d in claims]
-
-    rows, done = {}, {}
-
-    def s_of(cid, stack=()):
-        if cid in done:
-            return done[cid]
-        if cid in stack:
-            return 1.0       # a cycle (refused by claimset rule 8): no cap from it
-        c = claims[cid]
-        v = c.get("verifiability") or _as_dict(computed.get(cid)).get("verifiability") or "not_applicable"
-        factor, inputs = 1.0, []
-        for k in counted[cid]:
-            f = 1 - W_SEV.get(k.comment.get("severity"), 0) * W_STATE.get(k.state, 0)
-            factor *= f
-            inputs.append({"comment": k.id, "severity": k.comment.get("severity"), "state": k.state,
-                           "factor": round(f, 6)})
-        b = base(c)
-        own = b * V_WEIGHT.get(v, 1.0) * factor
-        caps = {d: s_of(d, stack + (cid,)) for d in rests_on(c)}
-        value = min([own] + list(caps.values()))
-        rows[cid] = {"claim": cid, "role": c.get("role"), "base": round(b, 6), "verifiability": v,
-                     "comments": inputs, "own": round(own, 6), "caps": {k: round(x, 6) for k, x in caps.items()},
-                     "score": round(value, 6)}
-        done[cid] = value
-        return value
-
-    for cid in claims:
-        s_of(cid)
-    weights = {cid: 3 if c.get("role") == "principal" else 1 if c.get("role") == "secondary" else 0
-               for cid, c in claims.items() if not _validate.is_assumption(c)}
-    total = sum(weights.values())
-    paper = round(sum(w * done[cid] for cid, w in weights.items()) / total, 6) if total else None
-    return {"scoring_version": SCORING_VERSION, "version": record.vid(n), "paper": paper,
-            "claims": [rows[cid] for cid in claims]}
-
-
 # ---------------------------------------------------------------- command line
 
 def _print_report(rep, as_json, extra=None):
@@ -1019,11 +1048,21 @@ def cmd_status(args):
     due = [c for c in comments.values() if c.unresolved]
     if args.json:
         print(json.dumps({"concept": rec.concept, "current": rec.vid(rec.current.n), "hash": rec.current.hash,
+                          "scores": rec.scores(),
                           "comments": [c.summary() for c in comments.values()],
                           "to_answer": [c.id for c in due]}, ensure_ascii=False, indent=2))
         return 0
     print(f"{rec.concept}: current version v{rec.current.n} ({rec.current.hash[:19]}…), "
           f"{len(comments)} comments, {len(due)} unresolved")
+    scores = rec.scores()
+    if scores:
+        print("Scores (latest given by the reviewer):")
+        for cid, x in scores.items():
+            why = f" - {', '.join(short(k) for k in _as_list(x.get('comments')))}: {x.get('reason')}" \
+                if x.get("score", 100) < 100 else ""
+            print(f"  {cid}: {x.get('score')}{why}")
+    else:
+        print("No scores yet: the version has not been reviewed.")
     for c in comments.values():
         flag = "*" if c.unresolved else " "
         print(f"{flag} {short(c.id)} [{c.comment.get('category')}, {c.comment.get('severity')}] "
@@ -1075,25 +1114,6 @@ def cmd_patch(args):
     return 0
 
 
-def cmd_score(args):
-    rec = Record(args.record)
-    out = score(rec, args.version)
-    if args.json:
-        print(json.dumps(out, ensure_ascii=False, indent=2))
-        return 0
-    print(f"{out['version']}: paper score {out['paper']} (scoring {out['scoring_version']})")
-    for row in out["claims"]:
-        extra = []
-        if row["comments"]:
-            extra.append("comments " + ", ".join(f"{short(k['comment'])} {k['state']}" for k in row["comments"]))
-        low = {k: v for k, v in row["caps"].items() if v < row["own"]}
-        if low:
-            extra.append("capped by " + ", ".join(f"{k} {v}" for k, v in low.items()))
-        print(f"  {row['claim']} ({row['role']}): {row['score']}  base {row['base']}, {row['verifiability']}"
-              + (f"; {'; '.join(extra)}" if extra else ""))
-    return 0
-
-
 def _run(func):
     def wrapped(args):
         try:
@@ -1141,9 +1161,3 @@ def add_parser(sub):
     a.add_argument("--revision", required=True)
     a.add_argument("--response")
     a.set_defaults(func=_run(cmd_patch))
-
-    a = s.add_parser("score", help="claim and paper scores of a version (§7)")
-    a.add_argument("record")
-    a.add_argument("--version", type=int, help="version number (default: the current one)")
-    a.add_argument("--json", action="store_true")
-    a.set_defaults(func=_run(cmd_score))

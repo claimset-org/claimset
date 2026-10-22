@@ -16,7 +16,7 @@ from . import LAB_SPEC_VERSION, REVISION_SPEC_VERSION, SPEC_VERSION, __version__
 
 PACKAGE = Path(__file__).resolve().parent
 DATA = PACKAGE / "data"
-SKILLS = ("claimset-submit", "claimset-lab")
+SKILLS = ("claimset-submit", "claimset-lab", "claimset-revise")
 DEFAULT_DIR = ".claude/skills"
 
 
@@ -43,16 +43,17 @@ def files(name):
         out = {"SKILL.md": DATA / "skills" / name / "SKILL.md",
                "scripts/validate.py": PACKAGE / "validate.py",
                f"references/{spec.name.replace('claimset-v', 'spec-v')}": spec,
-               f"references/{lab.name}": lab,
-               rev_name: rev}
+               f"references/{lab.name}": lab}
         for ex in sorted((DATA / "examples").glob("*.json")):
             out[f"examples/{ex.name}"] = ex
         return out
-    if name == "claimset-lab":
+    if name in ("claimset-lab", "claimset-revise"):
         out = {"SKILL.md": DATA / "skills" / name / "SKILL.md",
-               "scripts/claimset": DATA / "skills" / name / "claimset",
+               "scripts/claimset": DATA / "skills" / "claimset-lab" / "claimset",
                f"references/{lab.name}": lab,
                rev_name: rev}
+        if name == "claimset-revise":
+            out[f"references/{spec.name.replace('claimset-v', 'spec-v')}"] = spec
         for rel in _package_modules():
             out[f"scripts/lib/claimset/{rel.as_posix()}"] = PACKAGE / rel
         return out
@@ -100,7 +101,7 @@ def install(directory, name, force=False):
             dst = staging / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, dst)
-        if name == "claimset-lab":
+        if name in ("claimset-lab", "claimset-revise"):
             (staging / "scripts" / "claimset").chmod(0o755)
         existed = target.exists()
         if existed:
@@ -162,7 +163,7 @@ def add_parsers(sub):
 
     k = sub.add_parser("skill", help="install or check the agent skills that match this package")
     k.add_argument("action", choices=["install", "check"])
-    k.add_argument("names", nargs="*", metavar="skill", help=f"{' or '.join(SKILLS)} (default: both)")
+    k.add_argument("names", nargs="*", metavar="skill", help=f"{', '.join(SKILLS)} (default: all)")
     k.add_argument("--dir", default=DEFAULT_DIR, help=f"the skills directory (default: {DEFAULT_DIR})")
     k.add_argument("--force", action="store_true", help="replace a directory that is not a claimset skill")
     k.set_defaults(func=cmd_skill)
