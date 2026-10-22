@@ -30,8 +30,10 @@ def save_config(lab, config):
 
 
 def anchoring(lab):
-    """The anchor configuration, or None if anchoring is not configured."""
-    return load_config(lab).get("anchor")
+    """The anchor configuration, or None if anchoring is not configured. A lab on its study branch is anchored
+    by pushing that branch after every event (§7.1)."""
+    from . import record
+    return record.anchor_config(lab) or load_config(lab).get("anchor")
 
 
 def read_anchors(lab):
@@ -260,6 +262,10 @@ def default_branch(lab):
 
 def anchor(lab):
     """Anchor using the configured service. Raises LabError if not configured or if it fails."""
+    from . import record
+    if record.config(lab):
+        record.commit(lab, "claimset lab: anchor")
+        return record.push(lab)
     cfg = anchoring(lab)
     if not cfg:
         raise LabError("anchor", "anchoring is not configured; run `claimset lab anchor --git` once")
@@ -413,14 +419,23 @@ def verify_remote(lab):
         anchors = read_anchors(lab)
     except LabError:
         anchors = []
+    fetched = {branch: "refs/claimset/remote-anchor"}
     for n, a in enumerate(anchors, start=1):
         commit = (a.get("receipt") or {}).get("commit") if isinstance(a, dict) else None
         if not isinstance(commit, str) or not commit:
             continue
-        on_branch = _git(["merge-base", "--is-ancestor", commit, "refs/claimset/remote-anchor"], cwd=top, check=False)
-        if on_branch.returncode != 0:
-            errors.append(fail(f"anchor {n}: commit {commit[:12]} is not on {remote}/{branch}: "
-                               f"the branch was rewritten", seq=a.get("seq")))
+        # each receipt is checked against the branch it was pushed to (a record may have changed branch)
+        a_branch = (a.get("receipt") or {}).get("branch") or branch
+        a_remote = (a.get("receipt") or {}).get("remote") or remote
+        if a_branch not in fetched:
+            ref = f"refs/claimset/remote-anchor-{len(fetched)}"
+            got = _git(["fetch", "-q", a_remote, f"+refs/heads/{a_branch}:{ref}"], cwd=top, check=False)
+            fetched[a_branch] = ref if got.returncode == 0 else None
+        ref = fetched[a_branch]
+        on_branch = _git(["merge-base", "--is-ancestor", commit, ref], cwd=top, check=False) if ref else None
+        if on_branch is None or on_branch.returncode != 0:
+            errors.append(fail(f"anchor {n}: commit {commit[:12]} is not on {a_remote}/{a_branch}: "
+                               f"the branch was rewritten or deleted", seq=a.get("seq")))
             continue
         anchored = _remote_file(top, main_rel, commit)
         for old in _former_logs(lab, top):          # anchored before the lab moved (relocation, §3.4)

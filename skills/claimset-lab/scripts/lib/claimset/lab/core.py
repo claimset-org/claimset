@@ -458,6 +458,8 @@ def check_relocation(state, body, by, eid):
         if not isinstance(v, str) or not v.strip():
             raise LabError("schema", f"relocation: '{f}' must be a path")
     _name(body, "study", "relocation", required=False)
+    if body.get("branch") is not None and not (isinstance(body["branch"], str) and body["branch"].startswith("claimset/")):
+        raise LabError("schema", "relocation: 'branch' is the study branch the lab now lives on (claimset/<study>)")
     moved = body.get("moved")
     if moved is not None and not (isinstance(moved, list) and all(
             isinstance(m, dict) and isinstance(m.get("from"), str) and isinstance(m.get("to"), str) for m in moved)):
@@ -1325,7 +1327,7 @@ def verify_layout(lab, st):
 def layout_notes(lab, st):
     """Hypotheses with a result that no paper reports, once the record names papers; build files that would
     ship the studies inside a package."""
-    from .layout import FOLDER, missing_ignores, studies_top
+    from .layout import missing_ignores, studies_top
     notes = []
     if st.papers:
         covered = set()
@@ -1343,7 +1345,7 @@ def layout_notes(lab, st):
     top = studies_top(lab.root)
     if top is not None:
         for name, line in missing_ignores(top):
-            notes.append(f"{name} does not leave {FOLDER}/ out of package builds: add the line '{line}'")
+            notes.append(f"{name} does not leave the studies out of package builds: add the line '{line}'")
     return notes
 
 

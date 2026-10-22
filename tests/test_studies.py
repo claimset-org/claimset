@@ -92,9 +92,10 @@ class TestLayout(InRepo):
         code, out, _ = self.cli("lab", "init", "--study", "s1", "--title", "T")
         self.assertIn("'^claimset$' to .Rbuildignore", out)
         self.assertIn("'prune claimset' to MANIFEST.in", out)
-        self.assertNotIn(".npmignore", out)
+        self.assertNotIn("'claimset/' to .npmignore", out)                           # already there
+        self.assertIn("'claimset-code/' to .npmignore", out)
         self.assertNotIn(".gitattributes", out)                                       # not in this repository
-        self.assertEqual((self.top / ".Rbuildignore").read_text(), "^\\.git$\n^claimset$\n")
+        self.assertEqual((self.top / ".Rbuildignore").read_text(), "^\\.git$\n^claimset$\n^claimset-code$\n")
         self.assertEqual(layout.missing_ignores(self.top), [])
         (self.top / "MANIFEST.in").write_text("include README\n", encoding="utf-8")
         notes = verify(Lab(self.top / "claimset" / "s1" / "lab"))["notes"]

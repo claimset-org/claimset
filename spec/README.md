@@ -3,7 +3,7 @@
 | File | Contents |
 |---|---|
 | `claimset-v0.19.md` | The claimset format: papers as structured, self-contained claims |
-| `lab-record-v0.6.md` | The lab record: the append-only log of research from which claimsets are distilled |
+| `lab-record-v0.7.md` | The lab record: the append-only log of research from which claimsets are distilled |
 
 The previous version of each is kept here for reference; earlier drafts are in the project's design history.
 

@@ -98,6 +98,14 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
     if not argv:
         raise LabError("schema", "run: give the command after --")
     cwd = cwd or os.getcwd()
+    try:
+        Path(cwd).resolve().relative_to(Path(lab.root).resolve().parent)
+        from .record import config as _record_config
+        if _record_config(lab):
+            raise LabError("L20", "run: run commands from the code checkout, not from the study's folder: the run "
+                                  "records the commit of the code it ran")
+    except ValueError:
+        pass
     st = lab.view(by)
     label = "exploratory"
     if plan is not None:

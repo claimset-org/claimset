@@ -1,6 +1,6 @@
 ---
 name: claimset-lab
-description: Keep a Claimset lab record (an append-only, hash-chained log of questions, hypotheses, plans, runs, results and decisions) while doing computational research, so that planned tests can be told apart from exploration and every reported number traces back to the code that produced it. Use when starting or continuing research such as experiments, simulations, benchmarks or data analyses; when a project has a claimset/<study>/lab/ (or lab/) directory with lab.jsonl; or when asked to keep a lab record, research log or pre-registration.
+description: Keep a Claimset lab record (an append-only, hash-chained log of questions, hypotheses, plans, runs, results and decisions) while doing computational research, so that planned tests can be told apart from exploration and every reported number traces back to the code that produced it. Use when starting or continuing research such as experiments, simulations, benchmarks or data analyses; when a project has claimset/<study> branches or a claimset/<study>/lab/ (or lab/) directory with lab.jsonl; or when asked to keep a lab record, research log or pre-registration.
 ---
 
 # Keeping a lab record
@@ -10,11 +10,11 @@ A lab record is the running log of a piece of research, kept while it happens. I
 - that every number comes from a recorded run of code, not from memory or retyping;
 - what was tried and failed, so a positive result can be weighed against the number of attempts.
 
-At the end the record is exported to a claimset (a paper for LLM readers) with the `claimset-submit` skill. The specification is `references/lab-record-v0.6.md`; read §5 (event types) and §6 (rules) when an event or a refusal is unclear.
+At the end the record is exported to a claimset (a paper for LLM readers) with the `claimset-submit` skill. The specification is `references/lab-record-v0.7.md`; read §5 (event types) and §6 (rules) when an event or a refusal is unclear.
 
 **The tool.** Use `claimset` if it is installed (`claimset --help` works); then check that this skill matches it (`claimset skill check`) and, if not, update the skills with `claimset skill install`. Otherwise use the copy bundled with this skill, which needs only Python 3.9+: `python3 <this skill>/scripts/claimset`. Below, `claimset` stands for whichever you use. Every writing command prints the new event's ID; add `--json` to see the whole event. 
 
-**Where things live.** Each study (a piece of research with its own record) has a folder `claimset/<study>/` at the top of the repository: its lab in `lab/`, code only it uses in `code/`, and the papers drawn from it as `<paper>.claimset.json`. Names are lower-case letters, digits and hyphens (`eigen-checker`). A repository can hold several studies; commands find the lab of the only study, or of the one named by `--study NAME` (or `$CLAIMSET_STUDY`); `--lab DIR` names a lab directly. Below, `lab/` means the study's lab folder.
+**Where things live: the record and the code are kept apart.** Each study (a piece of research with its own record) lives on its own git branch, `claimset/<study>`, which holds only the record: `lab/` and the papers drawn from it (`<paper>.claimset.json`). It is checked out at `claimset/<study>/` in the code checkout, and the code branches ignore `claimset/`. A study branch is never merged into code, and code is never merged into it; never check it out, merge, rebase, cherry-pick, force-push or delete it yourself: the tool commits and pushes it after every command that changes the record. All code stays on the code branches; code only a study uses goes in `claimset-code/<study>/`. Run every command from the code checkout. Names are lower-case letters, digits and hyphens (`eigen-checker`). Commands find the lab of the only study, or of the one named by `--study NAME` (or `$CLAIMSET_STUDY`). Below, `lab/` means the study's lab folder. `claimset studies` shows every study and its state.
 
 ## Rules you never break
 
@@ -29,7 +29,7 @@ At the end the record is exported to a claimset (a paper for LLM readers) with t
 ## Starting
 
 1. **Check for an existing record.** If `claimset/` has studies (`ls claimset/*/lab/lab.jsonl`), or there is an older `lab/lab.jsonl`, and this work continues one of them, this is a continuation: go to *Resuming*. New research with its own questions is a new study, even in a repository that has others.
-2. **Create the record:** `claimset lab init --study <name> --title "Working title" --repository https://…` creates `claimset/<name>/lab/` (the repository URI is used when the record is published). Choose a short name with the human. Init also adds the lines that leave `claimset/` out of the package builds the repository has (`.Rbuildignore`, `MANIFEST.in`, `.npmignore`, `.gitattributes`); commit them. Put code that only this study uses in `claimset/<name>/code/`.
+2. **Create the record:** `claimset setup --study <name> --title "Working title" --repository https://…` creates the branch `claimset/<name>` with the lab and checks it out at `claimset/<name>/` (the repository URI is used when the record is published). Choose a short name with the human. Setup also adds `/claimset/` to `.gitignore` and the lines that leave `claimset/` and `claimset-code/` out of the package builds the repository has; commit those on the code branch. In a fresh clone of a repository that already has studies, `claimset setup` checks them all out. Outside a git repository, `claimset lab init --study <name> --title …` makes a plain folder.
 3. **Register the actors.** Ask the human for their name (and ORCID iD, if they have one). Register them first, then yourself:
    ```
    claimset lab actor --kind human --name "A. Researcher" --orcid 0000-0002-1825-0097      # -> AC1
@@ -39,10 +39,10 @@ At the end the record is exported to a claimset (a paper for LLM readers) with t
    Take provider, model name, version and identifier from your system prompt or environment, and never guess them. `--record-source harness` only if the values come from the system that runs you; otherwise `self_reported`.
 4. **Use `--by AC2` (your ID) on every writing command.** Setting `CLAIMSET_ACTOR` also works, but environment variables often do not persist between separate shell calls.
 5. **Protection.** Offer the human these steps; together they make the record tamper-proof rather than only tamper-evident (spec §4.5):
-   - `claimset lab anchor --git` pushes the record to a `claimset-lab/<study>` branch after every plan, so plans are timestamped outside your reach. It needs a git remote. Afterwards, a confirmatory run is refused if its plan cannot be pushed.
+   - On a study branch the record is anchored by itself: the tool pushes the branch after every command, and a confirmatory run is refused while its plan is not pushed. It needs a git remote that you can push to.
    - The guard hook stops tool calls that would modify `lab/`: add the output of `claimset lab guard --print-config` to `.claude/settings.json`. Because it restricts you, let the human decide whether to install it.
    - `sudo claimset lab protect` makes the log files append-only at the operating-system level (Linux). It needs the human, because it needs an administrator.
-   - On the git host, protect the `claimset-lab/*` branches against force-pushes and deletion.
+   - On the git host, protect the `claimset/*` branches against force-pushes and deletion, and add the pull-request check that `claimset setup --ci` writes (it fails a pull request that brings a study record into the code). The guard's configuration also shows `claimset studies` at the start of every session.
 
 ## The research loop
 
@@ -92,7 +92,7 @@ Two things are flagged, not refused, and readers see the flags: analysis code th
 
 Approvals are optional: when the human is available, ask them to approve confirmatory plans; when not, proceed. The record shows which plans were approved.
 
-**Runs.** `claimset lab run` records the command, code commit (and whether the working tree had uncommitted changes), environment, seeds, parameters, input-file hashes, exit status, stdout, stderr and every output file. Commit your code before confirmatory runs, so the recorded commit is the code that ran; put generated files (`__pycache__/`, outputs written outside the run directory) in `.gitignore`, because any uncommitted or untracked file outside `lab/` marks the run as dirty. Keep `lab/` in the repository with the code and commit it with your work. Without `--plan`, or with `--exploratory`, a run is exploratory; it is confirmatory only under a confirmatory plan. Failed runs are recorded too; that is intended. Exploration does not need to be recorded step by step. Checking that a script starts at all, on toy input, may happen outside the tool; any run whose output you look at to form a hypothesis, choose a setting or decide anything goes through `claimset lab run`. When the direction changes, a short `note` or `decide` saying why is enough.
+**Runs.** `claimset lab run` records the command, code commit (and whether the working tree had uncommitted changes), environment, seeds, parameters, input-file hashes, exit status, stdout, stderr and every output file. Commit your code before confirmatory runs, so the recorded commit is the code that ran; put generated files (`__pycache__/`, outputs written outside the run directory) in `.gitignore`, because any uncommitted or untracked file outside `lab/` marks the run as dirty. Run from the code checkout, never from `claimset/<study>/`; the commit that records the run keeps the code commit reachable, even if its branch is later squash-merged or deleted. You never commit the record yourself. Without `--plan`, or with `--exploratory`, a run is exploratory; it is confirmatory only under a confirmatory plan. Failed runs are recorded too; that is intended. Exploration does not need to be recorded step by step. Checking that a script starts at all, on toy input, may happen outside the tool; any run whose output you look at to form a hypothesis, choose a setting or decide anything goes through `claimset lab run`. When the direction changes, a short `note` or `decide` saying why is enough.
 
 Options that take IDs take several at once (`--hypotheses H1 H2`, `--evidence RS4 RS5`, `--refers-to`, `--prompted-by`, `--affects`). `--seed N`, `--param name=value` (the value is read as JSON when it parses, e.g. `--param grid=[0.1,0.5]`) and `--data FILE` can be repeated.
 
@@ -161,7 +161,11 @@ Do not summarise a check in a note of your own instead: export takes claims' `ch
 
 ## A record in an older place
 
-A record begun before studies had their own folders (`lab/` at the top of the repository, or elsewhere such as `.claude/lab`) is moved, with the human's agreement, by the tool, never by hand: `claimset lab move --lab <old lab> --study <name> --also <old code folder>=claimset/<name>/code --by AC2`. The tool moves the folders, records a `relocation` event, and keeps anchoring on the branch the record was anchored on. Commit the move as a whole (`git add -A`), then check it with `claimset lab verify` (and `--remote` if anchoring is set up). Paths in earlier events keep their old values; the relocation maps them.
+A record kept on a code branch (from before study branches: in `claimset/<study>/`, `lab/` at the top, or elsewhere such as `.claude/lab`) is moved onto its own branch, with the human's agreement, by the tool, never by hand:
+1. If it is not yet in `claimset/<study>/`, move it there first: `claimset lab move --lab <old lab> --study <name> --also <old code folder>=claimset/<name>/code --by AC2`, and commit.
+2. `claimset setup --study <name> --adopt --by AC2` makes the branch `claimset/<name>` from that folder, keeps its `code/` on the code branch as `claimset-code/<name>/`, removes the folder from the code branch, checks the branch out in its place and records a `relocation`. Commit the code branch's change (the removal, the code's new place and `.gitignore`) as one commit.
+   A study folder that holds only a paper and its code, with no lab, is adopted with `--title "…"` instead of `--by`: it gets a new record begun now, and the paper must not present earlier work as recorded.
+3. Check with `claimset lab verify --remote`. Other branches that still hold a copy of the record must not be extended: tell the human which ones, so their copies are removed before they are merged.
 
 ## Resuming after a break or a context reset
 

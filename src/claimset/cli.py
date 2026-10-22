@@ -24,6 +24,57 @@ def _cmd_validate(args):
     return 1 if rep.errors else 0
 
 
+def _cmd_setup(args):
+    """Create, attach or adopt study branches (lab record spec §3)."""
+    from .lab import record
+    from .lab.core import LabError
+    try:
+        if args.ci:
+            print(f"wrote {record.write_ci()}: pull requests fail if they bring study records into the code")
+        if args.study:
+            lab, what, notes = record.setup(args.study, title=args.title, repository=args.repository,
+                                            remote=args.remote, adopt=args.adopt,
+                                            by=args.by or __import__("os").environ.get("CLAIMSET_ACTOR"))
+            print(f"{args.study}: {what} at {lab.root.parent} (branch {record.PREFIX}{args.study})")
+            for n in notes:
+                print(f"  {n}")
+        elif not args.ci:
+            done = record.attach_all(remote=args.remote)
+            for study, what in done:
+                print(f"{study}: {what}")
+            if not done:
+                print("no study branches on the remote; create one with `claimset setup --study NAME --title …`")
+        return 0
+    except LabError as exc:
+        print(f"ERROR [{exc.rule}] {exc.message}", file=sys.stderr)
+        return 1
+
+
+def _cmd_studies(args):
+    from .lab import record
+    rows = record.studies()
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    if not rows:
+        print("no studies in this repository")
+        return 0
+    for r in rows:
+        if not r.get("attached"):
+            print(f"{r['study']}: branch {r['branch']}, not checked out (`claimset setup --study {r['study']}`)")
+            continue
+        state = [f"{r.get('events', '?')} events", f"{r.get('open', 0)} open hypotheses",
+                 f"{r.get('pending', 0)} pending plans"]
+        if not r.get("on_branch"):
+            state.append("NOT on its study branch: `claimset setup --study " + r["study"] + " --adopt`")
+        elif r.get("unpushed"):
+            state.append(f"{r['unpushed']} commits not pushed")
+        print(f"{r['study']}: " + ", ".join(state))
+    print("Record every run with `claimset lab run`, choices with `claimset lab decide`; implementation work "
+          "belongs to the study too.")
+    return 0
+
+
 def _cmd_tag(args):
     """Mark a version of a paper with a git tag claimset/<study>/<paper>/v<n> (the version as committed)."""
     import subprocess
@@ -38,7 +89,7 @@ def _cmd_tag(args):
     path = Path(args.file).resolve()
 
     def git(*a):
-        return subprocess.run(["git", *a], cwd=folder, capture_output=True, text=True)
+        return subprocess.run(["git", *a], cwd=path.parent, capture_output=True, text=True)
     if git("ls-files", "--error-unmatch", str(path)).returncode != 0:
         print(f"ERROR: {args.file} is not committed; commit it first", file=sys.stderr)
         return 1
@@ -108,6 +159,23 @@ def build_parser():
     rv.add_argument("-o", "--output", help="write the reading view to this file")
     rv.add_argument("--published", action="store_true", help="the file is a published claimset")
     rv.set_defaults(func=_cmd_render)
+
+    su = sub.add_parser("setup", help="create, attach or adopt study branches (claimset/<study>), checked out "
+                                      "at claimset/<study>/")
+    su.add_argument("--study", help="the study (default: attach every study branch of the remote)")
+    su.add_argument("--title", help="working title, for a new study")
+    su.add_argument("--repository", help="URI of the repository, for a new study")
+    su.add_argument("--remote", default="origin")
+    su.add_argument("--adopt", action="store_true",
+                    help="move a study committed on the code branch (claimset/<study>/) onto its own branch")
+    su.add_argument("--by", help="actor recording the move, for --adopt (default: $CLAIMSET_ACTOR)")
+    su.add_argument("--ci", action="store_true", help="also write a GitHub workflow that keeps study records out "
+                                                       "of pull requests")
+    su.set_defaults(func=_cmd_setup)
+
+    sd = sub.add_parser("studies", help="the studies of this repository and their state")
+    sd.add_argument("--json", action="store_true")
+    sd.set_defaults(func=_cmd_studies)
 
     tg = sub.add_parser("tag", help="mark the committed version of a paper with a git tag "
                                     "(claimset/<study>/<paper>/v<n>)")

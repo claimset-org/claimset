@@ -15,7 +15,10 @@ from . import anchor as _anchor
 from . import guard as _guard
 from . import protect as _protect
 from . import layout as _layout
+from . import record as _record
 
+#: Commands that only read the record: they are allowed anywhere and never commit.
+READERS = {"summary", "list", "show", "verify", "verdict", "guard", "studies"}
 
 def _lab(args):
     return Lab(_layout.find_lab(args.lab, getattr(args, "study", None)))
@@ -40,9 +43,10 @@ def _emit(args, event):
 
 
 def _auto_anchor(lab, event):
-    """Anchor after a plan (or after every event, if configured); warn instead of failing."""
+    """Anchor after a plan (or after every event, if configured); warn instead of failing. A lab on its study
+    branch is committed and pushed after the command instead (see run())."""
     cfg = _anchor.anchoring(lab)
-    if not cfg:
+    if not cfg or _record.config(lab):
         return
     if event["type"] == "plan" or cfg.get("every") == "event":
         try:
@@ -65,6 +69,13 @@ def _write(args, etype, body, by=None):
 
 def cmd_init(args):
     explicit = args.lab or os.environ.get("CLAIMSET_LAB")
+    if not explicit and args.study and _layout.repo_top() is not None:
+        # in a git repository a study lives on its own branch (§3)
+        lab, what, notes = _record.setup(args.study, title=args.title, repository=args.repository)
+        print(f"INIT {lab.log_path} (on branch {_record.PREFIX}{args.study})")
+        for n in notes:
+            print(n)
+        return 0
     if explicit:
         root = Path(explicit)
     elif args.study:
@@ -79,7 +90,7 @@ def cmd_init(args):
     top = _layout.studies_top(lab.root)
     if top is not None:
         for name, line in _layout.add_ignores(top):
-            print(f"added '{line}' to {name}, so package builds leave {_layout.FOLDER}/ out")
+            print(f"added '{line}' to {name}, so package builds leave the studies out")
     return 0
 
 
@@ -161,7 +172,7 @@ def cmd_move(args):
     t = _layout.studies_top(dest)
     if t is not None:
         for name, line in _layout.add_ignores(t):
-            print(f"added '{line}' to {name}, so package builds leave {_layout.FOLDER}/ out", file=sys.stderr)
+            print(f"added '{line}' to {name}, so package builds leave the studies out", file=sys.stderr)
     return 0
 
 
@@ -734,9 +745,24 @@ def add_parser(subparsers):
 
 
 def run(func, args):
-    """Run a handler, turning LabError into a message and exit code 1."""
+    """Run a handler, turning LabError into a message and exit code 1. A command that writes is refused unless the
+    lab is on its study branch (or a lab outside the study layout); afterwards, what changed is committed to the
+    study branch and pushed (§3, §7.1)."""
     try:
-        return func(args)
+        command = getattr(args, "lab_command", None)
+        lab, before = None, 0
+        if command and command not in READERS and command not in ("init", "move"):
+            lab = _lab(args)
+            if lab.exists():
+                _record.check_writable(lab)
+                before = len(lab.read())
+        code = func(args)
+        if lab is not None and lab.exists() and _record.config(lab):
+            entry = _record.save(lab, before)
+            if entry:
+                print(f"claimset: pushed {entry['receipt']['branch']} at seq {entry['seq']} "
+                      f"({entry['receipt']['commit'][:12]})", file=sys.stderr)
+        return code
     except LabError as exc:
         print(f"ERROR [{exc.rule}] {exc.message}", file=sys.stderr)
         return 1

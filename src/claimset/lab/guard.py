@@ -31,6 +31,12 @@ DESTRUCTIVE = re.compile(
     r"|\b(?:write_text|write_bytes|unlink|rmtree|remove|rename|replace)\("
 )
 FORCE_PUSH = re.compile(r"\bgit\s+push\b[^;&|]*(?:\s-f\b|--force|\s\+\S+)")
+# Study branches are never merged into code, nor code into them (§3), and are never checked out in the code checkout.
+STUDY_MIX = re.compile(r"\bgit\s+(?:merge|rebase|cherry-pick|pull)\b[^;&|]*\bclaimset/")
+STUDY_CHECKOUT = re.compile(r"\bgit\s+(?:checkout|switch)\b[^;&|]*\s(?:origin/)?claimset/[a-z]")
+STUDY_ADD = re.compile(r"\bgit\s+add\b[^;&|]*(?:\s-f\b|--force)[^;&|]*\bclaimset\b")
+STUDY_REWRITE = re.compile(r"\bgit\s+(?:push\b[^;&|]*(?:\s-f\b|--force|--delete|\s:)[^;&|]*claimset/"
+                           r"|branch\s+-[dDmM]\b[^;&|]*claimset/|update-ref\s+-d[^;&|]*claimset/)")
 DELETE_BRANCH = re.compile(r"\bgit\s+push\b[^;&|]*(?:--delete|\s:\S+)")
 MIRROR = re.compile(r"\bgit\s+push\b[^;&|]*--mirror")
 ALL = re.compile(r"\bgit\s+push\b[^;&|]*--all")
@@ -140,6 +146,16 @@ def _decide_for(tool, inp, cwd, root, branch):
                 return None
             # The command a run wraps is checked like any other command.
             command = " ".join(shlex.quote(t) for t in rest[rest.index("--") + 1:]) if "--" in rest else ""
+        if STUDY_MIX.search(command):
+            return ("study branches (claimset/<study>) are never merged with code branches, in either direction. "
+                    "Record changes with `claimset lab`; the code goes through its own pull requests.")
+        if STUDY_CHECKOUT.search(command):
+            return ("a study branch is checked out only at claimset/<study>/ (`claimset setup --study NAME`), never "
+                    "in the code checkout.")
+        if STUDY_ADD.search(command):
+            return "study records are never committed to code branches; they live on their study branches."
+        if STUDY_REWRITE.search(command):
+            return "force-pushing, deleting or renaming a study branch would rewrite the study's record."
         rewrites = FORCE_PUSH.search(command) or DELETE_BRANCH.search(command) or MIRROR.search(command)
         if rewrites and (branch in command or MIRROR.search(command) or ALL.search(command)):
             return f"force-pushing or deleting the anchor branch '{branch}' would rewrite the anchored lab record."
@@ -181,9 +197,12 @@ def guard_command(argv0=None, installed=None):
 
 
 def claude_code_config(command="claimset lab guard"):
-    """Settings snippet installing the guard as a Claude Code PreToolUse hook."""
-    return {"hooks": {"PreToolUse": [{
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
-        "hooks": [{"type": "command", "command": command}],
-    }]}}
+    """Settings snippet: the guard as a Claude Code PreToolUse hook, and the state of the studies shown at the
+    start of every session, so that work begins inside the record."""
+    studies = command.replace("lab guard", "studies")
+    return {"hooks": {
+        "PreToolUse": [{"matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+                        "hooks": [{"type": "command", "command": command}]}],
+        "SessionStart": [{"hooks": [{"type": "command", "command": studies}]}],
+    }}
 

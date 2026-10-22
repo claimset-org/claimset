@@ -23,13 +23,16 @@ FOLDER = "claimset"
 PAPER_SUFFIX = ".claimset.json"
 VIEW_SUFFIX = ".claimset.txt"
 
-# Package build files that must leave the studies out, and the line that does it (spec §3.3).
-IGNORES = [
-    (".Rbuildignore", "^claimset$"),
-    ("MANIFEST.in", "prune claimset"),
-    (".npmignore", "claimset/"),
-    (".gitattributes", "claimset/** linguist-documentation"),
-]
+CODE_FOLDER = "claimset-code"
+
+# Package build files that must leave the studies (and the code only they use) out, and the lines that do it
+# (spec §3.3).
+IGNORES = [(name, line.format(f=f), f) for f in (FOLDER, CODE_FOLDER) for name, line in (
+    (".Rbuildignore", "^{f}$"),
+    ("MANIFEST.in", "prune {f}"),
+    (".npmignore", "{f}/"),
+    (".gitattributes", "{f}/** linguist-documentation"),
+)]
 
 
 def repo_top(start=None):
@@ -98,12 +101,12 @@ def lab_dirs(cwd=None):
     return out
 
 
-def _has(path, line):
+def _has(path, line, folder=FOLDER):
     lines = [l.strip() for l in path.read_text(encoding="utf-8", errors="replace").splitlines()]
     if path.name == ".Rbuildignore":            # R matches each line as a regular expression
         for l in lines:
             try:
-                if l and not l.startswith("#") and re.search(l, FOLDER, re.I):
+                if l and not l.startswith("#") and re.search(l, folder, re.I):
                     return True
             except re.error:
                 continue
@@ -114,9 +117,9 @@ def _has(path, line):
 def missing_ignores(top):
     """[(file, line)] for package build files in `top` that do not leave claimset/ out."""
     out = []
-    for name, line in IGNORES:
+    for name, line, folder in IGNORES:
         p = Path(top) / name
-        if p.is_file() and not _has(p, line):
+        if p.is_file() and not _has(p, line, folder):
             out.append((name, line))
     return out
 
