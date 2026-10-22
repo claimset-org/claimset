@@ -202,6 +202,24 @@ class TestKeptApart(StudyRepo):
         self.assertTrue(rep["ok"], rep["errors"])
         self.assertEqual(anchor_mod.read_anchors(moved)[0]["receipt"]["branch"], old_anchor["receipt"]["branch"])
 
+    def test_adopting_a_paper_without_a_lab(self):
+        folder = self.top / "claimset" / "delta"
+        (folder / "code").mkdir(parents=True)
+        (folder / "code" / "kl.py").write_text("print(1)\n", encoding="utf-8")
+        (folder / "delta.claimset.json").write_text("{}\n", encoding="utf-8")
+        git("add", "-f", "-A", cwd=self.top)
+        git("commit", "-qm", "a paper written before any record", cwd=self.top)
+        code, _, err = self.cli("setup", "--study", "delta", "--adopt")
+        self.assertIn("--title", err)
+        code, out, err = self.cli("setup", "--study", "delta", "--adopt", "--title", "Delta")
+        self.assertEqual(code, 0, err)
+        self.assertIn("began a lab record", out)
+        lab = Lab(folder / "lab")
+        self.assertEqual([e["type"] for e in lab.read()], ["init"])
+        self.assertTrue((folder / "delta.claimset.json").exists())
+        self.assertTrue((self.top / "claimset-code" / "delta" / "kl.py").exists())
+        self.assertEqual([e["id"] for e in self.remote_log("delta")], ["INIT"])
+
     def test_guard_keeps_study_branches_and_code_apart(self):
         def bash(command):
             return guard.decide({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(self.top)})

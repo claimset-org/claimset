@@ -230,7 +230,7 @@ def setup(study, title=None, repository=None, remote="origin", adopt=False, by=N
         if not adopt:
             raise LabError("record", f"study '{study}' is on the code branch ({FOLDER}/{study}/); move it to its own "
                                      f"branch with `claimset setup --study {study} --adopt --by <you>`")
-        return _adopt(top, study, branch, path, remote, by, notes, clock)
+        return _adopt(top, study, branch, path, remote, by, notes, clock, title, repository)
     if path.exists() and any(path.iterdir()):
         raise LabError("record", f"{path} exists and is not the checkout of {branch}")
 
@@ -254,10 +254,15 @@ def setup(study, title=None, repository=None, remote="origin", adopt=False, by=N
     return lab, "created", notes
 
 
-def _adopt(top, study, branch, path, remote, by, notes, clock):
-    """Move a study folder committed on the code branch onto its own branch (§3.4)."""
-    if not by:
+def _adopt(top, study, branch, path, remote, by, notes, clock, title=None, repository=None):
+    """Move a study folder committed on the code branch onto its own branch (§3.4). A folder without a lab
+    (a paper written before any record) gets a new lab, begun at the adoption."""
+    has_lab = (path / "lab" / "lab.jsonl").exists()
+    if has_lab and not by:
         raise LabError("L8", "say who records the move: --by ACTOR")
+    if not has_lab and not title:
+        raise LabError("record", f"{FOLDER}/{study}/ has no lab: give the working title of the record begun now "
+                                 f"with --title")
     rel = f"{FOLDER}/{study}"
     if git(["status", "--porcelain", "--", rel], cwd=top).stdout.strip():
         raise LabError("record", f"{rel}/ has uncommitted changes on the code branch; commit them first")
@@ -270,12 +275,10 @@ def _adopt(top, study, branch, path, remote, by, notes, clock):
     code_branch = branch_of(top) or "HEAD"
     head = git(["rev-parse", "HEAD"], cwd=top).stdout.strip()
     tree = git(["rev-parse", f"HEAD:{rel}"], cwd=top).stdout.strip()
-    old = Lab(path / "lab")
-    if not old.exists():
-        raise LabError("record", f"{rel}/lab/lab.jsonl does not exist: nothing to adopt")
-    st = old.state()
     body = {"from": f"{rel}/lab", "to": "lab", "branch": branch}
-    st.check("relocation", st.next_id("relocation"), by, body, None)     # refuse before changing anything
+    if has_lab:
+        st = Lab(path / "lab").state()
+        st.check("relocation", st.next_id("relocation"), by, body, None)     # refuse before changing anything
     # code/ stays with the code: on the code branch, in claimset-code/<study>/ (§3)
     entries = git(["ls-tree", tree], cwd=top).stdout.splitlines()
     has_code = any(e.split("\t", 1)[1] == "code" for e in entries if "\t" in e)
@@ -302,8 +305,12 @@ def _adopt(top, study, branch, path, remote, by, notes, clock):
         import shutil
         shutil.rmtree(path)
     git(["worktree", "add", "-q", str(path), branch], cwd=top)
-    lab = Lab(path / "lab", **({"clock": clock} if clock else {}))
-    lab.append("relocation", body, by)
+    if has_lab:
+        lab = Lab(path / "lab", **({"clock": clock} if clock else {}))
+        lab.append("relocation", body, by)
+    else:
+        lab = Lab.create(path / "lab", title, repository, study=study, **({"clock": clock} if clock else {}))
+        notes.append(f"began a lab record for {study}: what was done before it is not recorded")
     _save_record_config(lab, remote, branch)
     save(lab, len(lab.read()) - 1, f"claimset: {study} moved to its own branch")
     notes.append(f"removed {rel}/ from {code_branch} (staged): commit that with the .gitignore change")

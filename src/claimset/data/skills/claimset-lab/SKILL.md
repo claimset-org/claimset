@@ -164,6 +164,7 @@ Do not summarise a check in a note of your own instead: export takes claims' `ch
 A record kept on a code branch (from before study branches: in `claimset/<study>/`, `lab/` at the top, or elsewhere such as `.claude/lab`) is moved onto its own branch, with the human's agreement, by the tool, never by hand:
 1. If it is not yet in `claimset/<study>/`, move it there first: `claimset lab move --lab <old lab> --study <name> --also <old code folder>=claimset/<name>/code --by AC2`, and commit.
 2. `claimset setup --study <name> --adopt --by AC2` makes the branch `claimset/<name>` from that folder, keeps its `code/` on the code branch as `claimset-code/<name>/`, removes the folder from the code branch, checks the branch out in its place and records a `relocation`. Commit the code branch's change (the removal, the code's new place and `.gitignore`) as one commit.
+   A study folder that holds only a paper and its code, with no lab, is adopted with `--title "…"` instead of `--by`: it gets a new record begun now, and the paper must not present earlier work as recorded.
 3. Check with `claimset lab verify --remote`. Other branches that still hold a copy of the record must not be extended: tell the human which ones, so their copies are removed before they are merged.
 
 ## Resuming after a break or a context reset
