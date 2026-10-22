@@ -41,7 +41,9 @@ def review_rv1(v1):
                                  "identifier": "reviewer-model-2"}],
                      "prompt": {"version": "review-0.1", "uri": "https://example.org/prompts/review-0.1.md",
                                 "hash": "sha256:" + "a" * 64},
-                     "system": {"name": "claimset-review", "version": "0.1"}},
+                     "system": {"name": "claimset-review", "version": "0.1"},
+                     "rubric": {"version": "rubric-0.1", "uri": "https://example.org/rubric-0.1.md",
+                                "hash": "sha256:" + "b" * 64}},
         "date": "2026-10-23",
         "comments": [
             {"id": "c1", "claims": ["C2"], "targets": ["C2.scope"], "category": "scope",
@@ -63,7 +65,14 @@ def review_rv1(v1):
              "comment": "The statement of C2 does not name the country its scope is limited to.",
              "requested_action": "Name the United Kingdom in the statement."},
         ],
-        "verdicts": [], "lab_record": None}
+        "verdicts": [],
+        "scores": [
+            {"claim": "C1", "score": 100, "comments": []},
+            {"claim": "C3", "score": 50, "comments": [f"{V1}/RV1.c2"],
+             "reason": "Independence across series is unchecked and doubtful for one retailer's series (c2)."},
+            {"claim": "C2", "score": 60, "comments": [f"{V1}/RV1.c1", f"{V1}/RV1.c2", f"{V1}/RV1.c3"],
+             "reason": "The gain may not transfer beyond one retailer (c1), and its interval rests on C3 (c2)."}],
+        "lab_record": None}
 
 
 def revision_v2(v1):
@@ -159,7 +168,10 @@ class RecordCase(unittest.TestCase):
                    {"comment": f"{V1}/RV1.c1", "state": "limited", "reason": "L2 states the single retailer."},
                    {"comment": f"{V1}/RV1.c2", "state": "withdrawn", "reason": "E2 reports 0.12, below 0.3.",
                     "rule": {"met": "withdrawn", "quantities": {"rho": 0.12}}, "evidence": [f"{DOI}@v2#E2"]},
-                   {"comment": f"{V1}/RV1.c3", "state": "resolved", "reason": "C2 names the United Kingdom."}]}
+                   {"comment": f"{V1}/RV1.c3", "state": "resolved", "reason": "C2 names the United Kingdom."}],
+               "scores": [{"claim": "C1", "score": 100}, {"claim": "C3", "score": 100},
+                          {"claim": "C2", "score": 90, "comments": [f"{V1}/RV1.c1"],
+                           "reason": "The gain is measured under one retailer's promotions, as L2 states (c1)."}]}
         doc.update(extra)
         return doc
 
@@ -222,7 +234,7 @@ class TestReviews(RecordCase):
         bad = copy.deepcopy(self.rv1)
         del bad["reviewer"]["prompt"]["hash"]
         self.assertEqual(rules(rv.check_review(rec, bad)), ["R2"])
-        human = dict(self.rv1, id="RV9", kind="additional", reviewer={"type": "human", "name": "R"})
+        human = dict(self.rv1, id="RV9", kind="additional", reviewer={"type": "human", "name": "R"}, scores=[])
         self.assertEqual(rules(rv.check_review(rec, human)), ["R2"])
 
     def test_w_r1_same_model_as_an_author(self):
@@ -237,7 +249,7 @@ class TestReviews(RecordCase):
                        {"severity": "minor"}, {"requested_action": ""}):
             bad = copy.deepcopy(self.rv1)
             bad["comments"][2].update(change)
-            self.assertEqual(rules(rv.check_review(rec, bad))[0], "R3", change)
+            self.assertIn("R3", rules(rv.check_review(rec, bad)), change)
 
     def test_r4_resolution_test(self):
         rec = self.unfiled()
@@ -282,6 +294,55 @@ class TestReviews(RecordCase):
         doc = self.re_review()
         del doc["verdicts"][1]["evidence"]
         self.assertEqual(rules(rv.check_review(self.record(), doc)), ["R7"])
+
+    def test_r18_every_claim_scored_in_initial_and_re_reviews(self):
+        rec = self.unfiled()
+        bad = copy.deepcopy(self.rv1)
+        bad["scores"].pop(0)
+        self.assertEqual(rules(rv.check_review(rec, bad)), ["R18"])
+        bad["scores"] = []
+        self.assertEqual(rules(rv.check_review(rec, bad)), ["R18"])
+
+    def test_r18_no_deduction_without_a_comment(self):
+        rec = self.unfiled()
+        for change in ({"score": 60, "comments": []}, {"score": 60, "reason": ""}, {"score": 101},
+                       {"score": 7.5}, {"comments": [f"{V1}/RV1.c9"]},
+                       {"score": 100, "comments": [f"{V1}/RV1.c1"], "reason": ""}):
+            bad = copy.deepcopy(self.rv1)
+            bad["scores"][2].update(change)
+            self.assertEqual(rules(rv.check_review(rec, bad)), ["R18"], change)
+        bad = copy.deepcopy(self.rv1)
+        bad["scores"][0] = {"claim": "C1", "score": 80, "comments": [f"{V1}/RV1.c1"], "reason": "r"}
+        self.assertEqual(rules(rv.check_review(rec, bad)), ["R18"])      # c1 names C2, which C1 does not rest on
+
+    def test_r18_comments_on_what_a_claim_rests_on_count(self):
+        # c2 names C3 (and C2); a comment naming only C3 may still lower C2, which rests on C3
+        rec = self.unfiled()
+        doc = copy.deepcopy(self.rv1)
+        doc["comments"][1]["claims"] = ["C3"]
+        self.assertEqual(rv.check_review(rec, doc).errors, [])
+
+    def test_r18_settled_comments_no_longer_lower_scores(self):
+        self.publish_v2()
+        doc = self.re_review()
+        doc["scores"][1] = {"claim": "C3", "score": 70, "comments": [f"{V1}/RV1.c2"], "reason": "r"}
+        self.assertEqual(rules(rv.check_review(self.record(), doc)), ["R18"])     # c2 is withdrawn
+
+    def test_r18_rubric_and_who_scores(self):
+        rec = self.unfiled()
+        bad = copy.deepcopy(self.rv1)
+        del bad["reviewer"]["rubric"]
+        self.assertEqual(rules(rv.check_review(rec, bad)), ["R2"])
+        human = dict(copy.deepcopy(self.rv1), id="RV9", kind="additional",
+                     reviewer={"type": "human", "name": "R", "orcid": "0000-0002-0000-0002",
+                               "competing_interests": "none"})
+        self.assertEqual(rules(rv.check_review(self.record(), human)), ["R18"])
+        human["scores"] = []
+        self.assertEqual(rv.check_review(self.record(), human).errors, [])
+        extra = dict(copy.deepcopy(self.rv1), id="RV9", kind="additional",
+                     comments=[dict(self.rv1["comments"][2], id="c1")],
+                     scores=[{"claim": "C1", "score": 100}])
+        self.assertEqual(rules(rv.check_review(self.record(), extra)), ["R18"])    # its comment names only C2
 
     def test_resolution(self):
         self.publish_v2()
@@ -456,19 +517,13 @@ class TestRespondAndScore(RecordCase):
         self.assertEqual(states, {"c1": "limited", "c2": "withdrawn", "c3": "resolved"})
         self.assertEqual(list(self.record().unresolved()), [f"{V1}/RV1.c1"])
 
-    def test_scores(self):
-        s1 = rv.score(self.record())
-        by1 = {r["claim"]: r for r in s1["claims"]}
-        self.assertEqual(by1["C3"]["score"], 0.3)             # unchecked 0.6, halved by c2 (could_reverse, open)
-        # C2: exploratory, unchecked 0.75 x 0.9, then c1 (0.9), c2 (0.5) and c3 (0.98): below the cap of C3
-        self.assertEqual(by1["C2"]["score"], 0.297675)
-        self.assertEqual(s1["paper"], 0.297675)
+    def test_latest_scores(self):
+        self.assertEqual(self.record().scores()["C2"]["score"], 60)
         self.publish_v2()
+        self.assertEqual(self.record().scores(), {})          # no score until the revision is reviewed
         write(self.dir / "v2" / "reviews" / "RV2.json", self.re_review())
-        by2 = {r["claim"]: r for r in rv.score(self.record())["claims"]}
-        self.assertEqual(by2["C3"]["score"], 1.0)             # tested, c2 withdrawn
-        self.assertEqual(by2["C2"]["score"], 0.6)             # capped by C1 (unchecked)
-        self.assertEqual(rv.score(self.record(), 1)["claims"][2]["score"], 0.297675)   # v1 keeps its own score
+        self.assertEqual({k: v["score"] for k, v in self.record().scores().items()}, {"C1": 100, "C3": 100, "C2": 90})
+        self.assertEqual(self.record().scores(1)["C2"]["score"], 60)    # v1 keeps its scores
 
     def test_cli(self):
         out, err = io.StringIO(), io.StringIO()
@@ -480,7 +535,6 @@ class TestRespondAndScore(RecordCase):
             self.assertEqual(cli.main(["revision", "status", str(self.dir)]), 0)
             self.assertEqual(cli.main(["revision", "check", str(self.dir), "--revision", str(v2),
                                        "--response", str(rp)]), 0)
-            self.assertEqual(cli.main(["revision", "score", str(self.dir)]), 0)
             self.assertEqual(cli.main(["revision", "respond", str(self.dir), "--revision", str(v2)]), 0)
             self.assertEqual(cli.main(["validate", str(v2), "--revision"]), 0)
             self.assertEqual(cli.main(["revision", "status", str(self.dir / "missing")]), 1)

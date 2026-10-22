@@ -172,7 +172,7 @@ When a published claimset is reviewed, each comment carries a resolution test: a
 1. Record a hypothesis stating what the comment questions, as you hold it: `claimset lab hypothesis "Method M's forecast errors are at most weakly correlated across series." --question Q3 --by AC2`.
 2. Plan the test from the comment: `claimset lab plan --kind confirmatory --hypotheses H9 --comment doi:…@v1/RV1.c2 --review RV1.json --analysis "…" --by AC2`. The decision rule is the comment's test, unchanged (`supported` is its `withdrawn` rule, `not_supported` its `upheld` rule), the design is its procedure unless you give one, and the plan's `addresses` names the comment. If a re-review replaced the test, give that file too (`--review RV2.json`): the latest test applies. Never edit the rule.
 3. Run it (`claimset lab run --plan PL9 …`), read `claimset lab verdict PL9`, and record that verdict. A verdict against you is recorded and reported like any other: the comment then stands, and the claimset says so.
-4. Export carries the comment into the claim's `test.addresses`, and `claimset revision respond --lab` cites the plan's runs when you answer the comment (claimset-submit skill, *Revisions*).
+4. Export carries the comment into the claim's `test.addresses`, and `claimset revision respond --lab` cites the plan's runs when you answer the comment (claimset-revise skill).
 
 Tests decided by what a source states (`documentary`) are not run here; answer them in the response. A revision's record is this record continued: keep appending; never start a new record or rewrite the old one for a revision.
 

@@ -106,7 +106,7 @@ An agent sees the main log as it was when it started, plus its own events. The m
 
 ### Answering a review
 
-A published claimset is reviewed, and every comment states in advance what evidence would settle it. The author may answer with a revised version and a response; reviews, responses and versions are kept side by side, never rewritten, and each claim's score is computed from the file and the state of the comments on it. The commands read the claimset's record folder (`v1/claimset.json`, `v1/reviews/RV1.json`, …):
+A published claimset is reviewed, and every comment states in advance what evidence would settle it. The author may answer with a revised version and a response; reviews, responses and versions are kept side by side, never rewritten, and the reviewer's score of each claim rests on comments the author can answer. The commands read the claimset's record folder (`v1/claimset.json`, `v1/reviews/RV1.json`, …):
 
 ```
 claimset revision status <record>                    # comments, their states and tests; what to answer
@@ -114,7 +114,6 @@ claimset lab plan --kind confirmatory --hypotheses H9 --comment doi:…@v1/RV1.c
                                                      # run a comment's resolution test as a planned test
 claimset revision respond <record> --revision revised.json --lab lab.jsonl -o response.json
 claimset revision check <record> --revision revised.json --response response.json --lab lab.jsonl
-claimset revision score <record>                     # claim and paper scores, with every input
 ```
 
 ### Protecting the lab record
@@ -136,6 +135,8 @@ claimset lab protect          # append-only attribute on the log files (Linux, n
 `skills/claimset-submit/` teaches an agent to turn finished research, or a lab record, into a valid claimset submission. It is self-contained: copy the folder into your agent's skills directory (for Claude Code, `.claude/skills/` in a project or `~/.claude/skills/`). Agents without skills support can be given its `SKILL.md` as instructions.
 
 `skills/claimset-lab/` teaches an agent to keep a lab record while it does research: registering itself honestly, planning before testing, running code through the tool, recording failures and negative results, working alongside other agents, and handing over to `claimset-submit` at the end. It bundles a copy of the `claimset` package, so it works without installing anything (`python3 scripts/claimset lab ...`).
+
+`skills/claimset-revise/` teaches an agent to answer the reviews of a published claimset: settling each comment with evidence (running its resolution test as a planned test where it can be computed), building the revised version and writing the response. It bundles the package too.
 
 ## Contributing
 

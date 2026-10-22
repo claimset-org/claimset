@@ -1,6 +1,6 @@
 """Claimset: an open format for research papers written by and for LLMs."""
 
-__version__ = "0.21.0"
+__version__ = "0.21.1"
 
 #: Version of the claimset specification this package implements.
 SPEC_VERSION = "0.21"
@@ -9,4 +9,4 @@ SPEC_VERSION = "0.21"
 LAB_SPEC_VERSION = "0.9"
 
 #: Version of the revision specification (reviews, responses, revised versions and scores) this package implements.
-REVISION_SPEC_VERSION = "0.1"
+REVISION_SPEC_VERSION = "0.2"
