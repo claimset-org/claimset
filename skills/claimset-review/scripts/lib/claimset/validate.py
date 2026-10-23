@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.22"
+SCHEMA_VERSION = "0.23"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -583,6 +583,19 @@ def validate(doc, published=False, local_root=None, revision=False):
             check_enum(r, "1", f"{w}.analytic_approach", e.get("analytic_approach"), "analytic_approach")
         for aid in as_list(e.get("artefacts")):
             ref("1", f"{w}.artefacts", aid, "artefacts")
+        if "setup" in e:
+            setup = e["setup"]
+            if not isinstance(setup, dict) or not setup:
+                r.err("61", f"{w}.setup", "an object {compared, data, design, measures} of lists of definition IDs")
+            else:
+                for role, ids_ in setup.items():
+                    if role not in SETUP_ROLES:
+                        r.err("61", f"{w}.setup.{role}", f"the roles are {', '.join(SETUP_ROLES)}")
+                    elif not isinstance(ids_, list) or not ids_:
+                        r.err("61", f"{w}.setup.{role}", "a non-empty list of definition IDs")
+                    else:
+                        for d in ids_:
+                            ref("61", f"{w}.setup.{role}", d, "definitions")
         if "availability" not in e:
             r.warn("W-avail", w, "availability not stated; verifiability cannot be confirmed")
         check_availability(r, w, e.get("availability"))
@@ -865,8 +878,42 @@ def statement_checks(r, where, text):
         r.warn("S3", where, "possible cross-reference or anaphora; statements must be self-contained")
     if EVALUATIVE_RE.search(text):
         r.warn("S7", where, "possible evaluative rhetoric (e.g. 'novel', 'significant'); state the finding plainly")
-    if len(re.findall(r"[.;]\s+[A-Z]", text)) >= 1:
+    if len(re.findall(r"\.\s+[A-Z]", NUMBER_SKIP.sub(" ", text))) >= 1:
         r.warn("S1", where, "statement may contain more than one sentence or assertion")
+    cues = compound_cues(text)
+    if cues:
+        r.warn("W22", where, f"may hold more than one claim ({'; '.join(cues)}): if one part could be true and "
+                             f"another false, split it into claims, each self-contained; a comparison that states "
+                             f"where a method is better and where it is not stays one claim")
+
+
+SETUP_ROLES = ("compared", "data", "design", "measures")
+
+
+# Signs that a statement holds more than one claim (spec §8 rule 1; warning W22)
+COMPOUND_CUES = [
+    ("semicolon", re.compile(r";")),
+    ("contrast", re.compile(r"\b(but|while|whereas|although|however)\b", re.I)),
+    ("addition", re.compile(r"\b(as well as|also|in addition|moreover|furthermore|not only)\b", re.I)),
+    ("explanation", re.compile(r"\b(because|due to|thus|therefore|hence|which explains|since(?!\s+(?:the\s+)?\d))\b",
+                               re.I)),
+    ("side clause", re.compile(r",\s*which\b", re.I)),
+    ("parenthesis", re.compile(r"\([^()]*\b(and|also|is|are)\b[^()]*\)", re.I)),
+    ("recommendation", re.compile(r"\b(should|recommends?|recommended)\b", re.I)),
+]
+
+
+def compound_cues(text):
+    """The signs, in a statement, that it holds more than one claim: [`kind 'word'`]."""
+    if not isinstance(text, str):
+        return []
+    plain = NUMBER_SKIP.sub(" ", text)
+    out = []
+    for kind, rx in COMPOUND_CUES:
+        m = rx.search(plain)
+        if m:
+            out.append(kind if kind in ("semicolon", "parenthesis", "side clause") else f"{kind} '{m.group(1).lower()}'")
+    return out
 
 
 def model_key(m, fallback):
@@ -1321,6 +1368,11 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
         r.warn("W17", f"{w}.statement", f"{', '.join(unsourced)} in the statement match no recorded result, table "
                                         f"cell, test parameter, scope condition or referenced definition: record the "
                                         f"number as a result (or the setting in the scope), or check it")
+    with_results = sorted({str(s.get("evidence")) for s in support if s.get("evidence") and as_list(s.get("results"))})
+    if len(with_results) > 1:
+        r.warn("W22", f"{w}.statement", f"cites results of {', '.join(with_results)}: if the statement reports a "
+                                        f"result of each, it may hold more than one claim; split it if one part could "
+                                        f"be true and another false")
     kinds = {s.get("kind") for s in support}
     if c.get("novelty") == "no_prior_found" and kinds == {"consensus"}:
         r.warn("W19", w, "novelty no_prior_found, but the only support is established knowledge (consensus): if the claim is "

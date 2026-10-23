@@ -71,6 +71,17 @@ Leave out general knowledge that no claim rests on and justifications of routine
 
 **Apply the granularity rule.** Split a statement when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one `interpretive` claim with a warrant.
 
+**One claim per statement.** The test: could one part be true and another false? Then they are two claims, each self-contained, with the shared context in definitions rather than repeated. Signs of two claims in one sentence:
+- a semicolon;
+- contrast: "but", "while", "whereas", "although", "however";
+- addition: "as well as", "also", "in addition", "moreover", "not only";
+- explanation: "because", "since", "due to", "thus", "therefore", "which explains": a result and its explanation are two claims, often of different types (descriptive and causal or interpretive);
+- an assertion in a side clause (", which …") or in parentheses;
+- a recommendation added to a finding ("…, so practitioners should …");
+- results cited from two evidence objects, two scopes, or two different outcomes;
+- "and" joining two verbs ("reduces MASE and improves coverage").
+"M is more accurate than ETS at short horizons and faster to fit" is two claims. A comparison across measures or datasets that says where a method is better and where it is not stays one claim, with the table that holds the numbers. The validator flags most of these signs (W22); check each flagged statement.
+
 **Write each statement** as one self-contained sentence:
 - No "this", "these", "the above", "as shown", "our method" without naming it. Name the method, population and outcome every time.
 - No "novel", "significant" (unless you mean statistical significance and say so), "remarkable", "important".
@@ -129,7 +140,23 @@ Each claim needs at least one support entry. Use these exact pointer fields:
 
 ### 5. Build evidence objects
 
-One evidence object per analysis, reused by every claim it supports; the validator warns (W18) about two evidence objects with the same code version and the same results. Write `description` so it stands alone (what was done, on what data, how). Fill the profile fields:
+One evidence object per analysis, reused by every claim it supports; the validator warns (W18) about two evidence objects with the same code version and the same results. Write `description` so it stands alone (what was done, on what data, how).
+
+**Split the setup into its parts.** An evaluation is made of parts that many claims share and that readers and reviewers need to name one at a time. Record each part once as a definition and list them in the evidence's `setup`, by role:
+- `compared`: what is compared: the methods, models or treatments, each with the settings that define it (in forecasting: the competing methods, e.g. "ETS, automatic selection by AICc, smooth 4.6.0");
+- `data`: what it is compared on: each data set or population, with its size and selection (e.g. "M3 monthly: 1,428 series, holdout of 18");
+- `design`: how the comparison is made: fixed or rolling origin, the number of origins, horizons, refits, the holdout;
+- `measures`: what is measured and how it is aggregated: each error measure or outcome (e.g. "MASE, averaged over series and horizons").
+
+```json
+"definitions": [{"id": "D5", "term": "M3 monthly", "definition": "The 1,428 monthly series of the M3 competition; the last 18 observations of each held out.", "source": "B4"},
+                {"id": "D7", "term": "rolling origin", "definition": "Eight forecast origins, 18 steps apart; each method refitted at every origin; horizons 1 to 18."}],
+"evidence": [{"id": "E2", "setup": {"compared": ["D1", "D2", "D3"], "data": ["D5"], "design": ["D7"], "measures": ["D8", "D9"]}, …}]
+```
+
+A borrowed part (a published data set, method or measure) names its `source`; the definition says what this work specifies. Evidence objects that share a part point to the same definition, and statements mark the parts they name (`[[D7:rolling origin]]`). The description still says in a sentence what was done.
+
+Fill the profile fields:
 - `quant`: design, estimand, n, model (the statistical model); `estimate` and `interval` for a single result, otherwise `results`.
 - `qual`: data_sources, n_participants_or_cases, sampling, analytic_approach, exemplars, reflexivity.
 - `simulation`: model, parameters (artefact), runs, seeds, `results`.
@@ -226,6 +253,7 @@ Re-read the file as a sceptical reviewer who sees only one claim at a time. If t
 - Does each claim's scope describe that claim, not its section?
 - Does every refutation, replication and extension name the work it relates to?
 - Are limitations specific and attached to the right claims?
+- Does each statement hold one claim (W22)? Is each part of the setup a definition, listed in the evidence's `setup`?
 - Are all numbers identical to the structured results and the source tables? Does each claim cite only the results its statement reports? (The validator warns, W12, when a cited result does not appear in the statement, and W17 when a number in the statement matches no result.)
 - Does every `no_prior_found` or `refutation` claim cite the closest prior result you found?
 - Do the most important claims, especially refutations, have independent checks, with every outcome recorded?

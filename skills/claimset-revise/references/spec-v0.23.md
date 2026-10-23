@@ -1,10 +1,17 @@
-# Claimset — Specification v0.22 (draft)
+# Claimset — Specification v0.23 (draft)
 
-Status: working draft · Date: 2026-10-22 · Supersedes v0.21 (`spec/claimset-v0.21.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-22 · Supersedes v0.22 (`spec/claimset-v0.22.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.21
+## Changes since v0.22
+
+An evaluation is made of parts that many claims share and that a reader, a reviewer or another paper needs to name one at a time: what is compared, on what data, by which design, measured how. And a sentence of a paper often carries more than one claim.
+
+- Evidence gains `setup`: the parts of the evaluation, each a definition, by role: `compared`, `data`, `design`, `measures` (§3.4). New rule 61.
+- §8: how to tell that a statement holds several claims; new warning 22 flags the usual signs (§10.4).
+
+## Changes in v0.22 (since v0.21)
 
 Novelty is a statement about a search, not a fact: a claim is new only as far as its authors looked. Models read labels literally, so the label says what is known.
 
@@ -234,7 +241,7 @@ Top-level layout:
 
 A claimset is stored and exchanged as JSON: the canonical file, which tools validate, the platform publishes and corrections patch. A model that reads the paper is given its **reading view**: a plain-text rendering of the same claimset. JSON field names, quotation marks and the fields that serve tools, audit and publication take a large share of a file and carry nothing a reader needs; the reading view leaves them out.
 
-- **Kept:** the title, licence, source of a converted paper, contributions and exploration counts; definitions; claims with their type, role, novelty (when not `no_prior_found`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes, and test; evidence with its description, design fields, estimate, results, tables and proof steps; warrants; limitations; artefact descriptions; references.
+- **Kept:** the title, licence, source of a converted paper, contributions and exploration counts; definitions; claims with their type, role, novelty (when not `no_prior_found`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes, and test; evidence with its description, design fields, setup, estimate, results, tables and proof steps; warrants; limitations; artefact descriptions; references.
 - **Left out:** `provenance`, `field_provenance`, `source_spans`, `corrections`, availability, artefact locations, versions and licences, contributors, models, execution records, lab-record identifiers, `schema_version` and the platform's publication fields.
 
 - **Order:** claims are grouped by role: principal claims, then supporting claims, then secondary claims, each group in file order. Claims that are not principal and whose support is only `argument` or `unstated` follow, under CLAIMS WITHOUT EVIDENCE, so a reader sees at once what the paper asserts or argues without evidence. Principal claims stay with the principal claims whatever their support.
@@ -500,6 +507,18 @@ Intervals, ranks and test statistics are columns of their own (e.g. `"mean MASE,
   "rows": [{"id": "r1", "label": ["CES"], "values": [0.861, 6.95]},
            {"id": "r2", "label": ["ETS"], "values": [0.874, 6.71]},
            {"id": "r3", "label": ["ARIMA"], "values": [0.902, null]}]}]
+```
+
+**Setup** (`setup`, optional, any profile): the parts of the evaluation, each recorded once as a definition (§3.2) and named here by role, so that claims, evidence objects, reviews and other papers can refer to each part on its own. `{compared, data, design, measures}`, each a list of definition IDs:
+- `compared`: what is compared: methods, models, treatments, conditions (in forecasting: the competing methods, each with the settings that define it).
+- `data`: what it is compared on: data sets, populations, samples (the series collections, with their frequency and size, or a simulation's data-generating process).
+- `design`: how the comparison is made: the evaluation scheme (fixed or rolling origin, the number of origins, horizons, refits, holdout), the trial or study design.
+- `measures`: what is measured: error measures, scores, outcomes, with how they are aggregated.
+
+Definitions of borrowed parts name their `source` (a data set, a published method, a standard measure); the definition says what this paper specifies (the subset, the settings, the horizon). Evidence objects that share a part point to the same definition, and a claim's statement marks the parts it names (`[[D7:rolling origin]]`). `setup` adds no content of its own: the description still says, in a sentence, what was done.
+
+```json
+"setup": {"compared": ["D1", "D2", "D3"], "data": ["D5", "D6"], "design": ["D7"], "measures": ["D8", "D9"]}
 ```
 
 **Execution** (`execution`, optional): what was actually run, when it differs from or adds to the artefact versions. `{code_version, software, hardware, notes}`; `code_version` is the commit or version that produced the results.
@@ -780,7 +799,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 ## 8. Statement text rules
 
-1. One assertion per statement.
+1. One assertion per statement. A statement holds more than one claim when one part could be true and another false. Signs of it: a semicolon; contrast (`but`, `while`, `whereas`, `although`, `however`); addition (`as well as`, `also`, `in addition`, `moreover`, `furthermore`, `not only`); explanation (`because`, `since`, `due to`, `thus`, `therefore`, `hence`, `which explains`), which usually joins a result to its explanation, two claims of different types; an assertion in a side clause (`, which …`) or in parentheses; a recommendation added to a finding (`should`, `recommend`); a claim citing results of more than one evidence object; and `and` joining two verbs. The comparison of rule 2 (where a method is better and where it is not) stays one claim.
 2. **Granularity rule:** split a statement into separate claims when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one interpretive claim with a warrant; sub-themes become separate supporting claims only if they have their own evidence. A comparison the paper makes across several measures, datasets or settings is one claim that states where the method is better and where it is not, supported by the table holding the numbers; it is split only where the paper draws separate conclusions or the parts differ in support or scope. Results on which a method is worse are stated in the claim, never left out.
 3. Self-contained: no anaphora or cross-references ("this", "the above", "as shown").
 4. Scope-bearing qualifiers belong in `scope`, not hedged prose.
@@ -908,6 +927,10 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 60. A claim that is not an assumption has a `novelty`; an assumption claim (support of kind `assumption`) has none. The value `new` of earlier versions is `no_prior_found`.
 
+### 10.18 Rules added in v0.23 (errors: file rejected)
+
+61. An evidence object's `setup`, if present, has only the keys `compared`, `data`, `design` and `measures`, each a non-empty list of IDs of definitions.
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -931,6 +954,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 19. `novelty: no_prior_found` on a claim whose only support is `consensus`: if established knowledge already shows the claim, the claim is known (cite it, or relate to it); if it is not, give the support that shows it. (Revised in v0.22.)
 20. In a native paper, a principal claim lists a limitation with `impact: could_reverse` and `mitigation: none`, and its author assessment neither has strength `low` or `very_low` nor names that limitation by ID in its rationale: say how the risk was weighed, or lower the strength.
 21. A public artefact's `uri` is on a git host and contains no full (40-hexadecimal-digit) commit hash: a branch or tag link can change what it shows.
+22. A statement shows a sign of holding more than one claim (§8 rule 1): a semicolon, a word of contrast, addition or explanation, a side clause with `, which`, a parenthesis holding `and`, `also` or `is`/`are`, a recommendation, or results cited from more than one evidence object. Check it: if one part could be true and another false, split it into claims, each self-contained. A comparison that states where a method is better and where it is not stays one claim.
 
 ## 11. Platform dependencies
 
