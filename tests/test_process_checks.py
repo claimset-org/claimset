@@ -21,7 +21,7 @@ from test_lab_decision import FREQ, RuleCase
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "adam-admissible-bounds"
 EXAMPLES = sorted((ROOT / "examples").glob("*.json"))
-NEW = ("W17", "W18", "W19", "W20", "W21", "W22")
+NEW = ("W17", "W18", "W19", "W20", "W21", "W22", "W23")
 
 
 def fixture_claimset():

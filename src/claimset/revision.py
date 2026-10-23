@@ -37,7 +37,7 @@ NO_TEST = ("presentation", "validation")
 FRAMEWORKS = _decision.FRAMEWORKS + ("documentary",)
 
 COLLECTIONS = ("contributors", "models", "definitions", "claims", "evidence", "warrants", "limitations",
-               "artefacts", "references")
+               "artefacts", "references", "open_questions")
 # Fields the platform assigns: not part of what the author changes (claimset §2.2)
 PLATFORM_PAPER = ("id", "version", "previous_version", "changes", "date", "status", "status_notice", "answers")
 PLATFORM_CLAIM = ("verifiability", "verifiability_flags")

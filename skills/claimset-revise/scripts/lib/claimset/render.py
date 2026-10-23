@@ -207,6 +207,9 @@ def render(doc):
          lambda w: [f"{w.get('id')} [{_join([w.get('reasoning'), ('premises ' + ', '.join(w['premises'])) if w.get('premises') else ''])}] {w.get('text', '')}"]),
         ("LIMITATIONS", doc.get("limitations"),
          lambda l: [f"{l.get('id')} [{_join([l.get('category'), ('affects ' + ', '.join(l.get('affects') or [])), l.get('impact'), ('mitigation ' + l['mitigation']) if l.get('mitigation') else ''])}] {l.get('statement', '')}"]),
+        ("OPEN QUESTIONS", doc.get("open_questions"),
+         lambda q: [f"{q.get('id')}" + (f" [from {', '.join(q['claims'])}]" if q.get("claims") else "")
+                    + f" {q.get('question', '')}"]),
         ("ARTEFACTS", [a for a in doc.get("artefacts") or [] if isinstance(a, dict) and a.get("description")],
          lambda a: [f"{a.get('id')} [{a.get('kind')}] {a.get('description')}"]),
         ("REFERENCES", doc.get("references"),

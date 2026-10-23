@@ -70,6 +70,10 @@ Work claim by claim, principal claims first, then what they rest on. For each:
 **Limitations.**
 - Does each limitation name the right claims and an honest impact? A threat to a claim that no limitation states is a comment on that claim.
 
+**What the paper does not need.**
+- A claim the paper neither shows nor uses (W23: no evidence, citation or warrant, and nothing rests on it), or one about something the contributions do not concern, is a `presentation` comment: "not shown or used by the paper; remove it, or record it as an open question". It never lowers a credibility score, and the author may decline it.
+- Open questions are not reviewed or scored; a finding presented as an open question, or a question presented as a finding, is a `presentation` comment.
+
 ## Assessing novelty
 
 Novelty is judged apart from credibility: a true claim is no less credible for being known, but a label that earlier work contradicts is a problem. For every claim that is not an assumption:
