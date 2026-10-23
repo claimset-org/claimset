@@ -741,7 +741,7 @@ class TestReadingView(Base):
         self.assertLess(len(self.render(d)), len(json.dumps(d, separators=(",", ":"))))
 
     def test_appendix_d_matches_the_renderer(self):
-        spec = (ROOT / "spec" / "claimset-v0.23.md").read_text(encoding="utf-8")
+        spec = (ROOT / "spec" / "claimset-v0.24.md").read_text(encoding="utf-8")
         self.assertIn(self.render(load("submission-native.json")), spec)
 
     def test_render_command_refuses_invalid_file(self):
@@ -915,6 +915,66 @@ class TestRulesV023(Base):
             claim(self.d, "C2")["statement"] = text
             errors, warnings = self.rules(self.d)
             self.assertNotIn("W22", warnings, text)
+
+
+class TestRulesV024(Base):
+    """Rule 62 (open questions) and warning W23 (a claim the paper neither shows nor uses)."""
+
+    def setUp(self):
+        self.d = load("submission-native.json")
+        self.d["claims"].append({"id": "C9", "statement": "Accurate retail forecasts are crucial for every business.",
+                                 "type": "descriptive", "role": "secondary", "novelty": "no_prior_found",
+                                 "support": [{"kind": "consensus"}], "provenance": "author_stated"})
+
+    def w23(self, doc=None):
+        return [w for w in validate(doc or self.d).warnings if w["rule"] == "W23"]
+
+    def test_w23_unsupported_and_unused(self):
+        found = self.w23()
+        self.assertEqual([w["where"] for w in found], ["claims:C9"])
+        self.assertIn("importance framing 'crucial'", found[0]["message"])
+        self.assertIn("open question", found[0]["message"])
+
+    def test_w23_wording_alone_never_warns(self):
+        claim(self.d, "C2")["statement"] += " It is crucial."
+        self.d["claims"].pop()
+        self.assertEqual(self.w23(), [])
+
+    def test_w23_exemptions(self):
+        for change in ({"role": "principal"}, {"type": "formal"},
+                       {"support": [{"kind": "argument", "warrant": "W1"}]},
+                       {"support": [{"kind": "empirical_quant", "evidence": "E1"}]}):
+            d = copy.deepcopy(self.d)
+            claim(d, "C9").update(change)
+            if "W1" in json.dumps(change):
+                d["warrants"] = [{"id": "W1", "text": "Shortages and overstock both cost money.", "reasoning": "deductive"}]
+            self.assertEqual(self.w23(d), [], change)
+        d = copy.deepcopy(self.d)
+        claim(d, "C2").setdefault("depends_on", []).append("C9")
+        self.assertEqual(self.w23(d), [])                      # a claim rests on it
+
+    def test_w23_converted_wording(self):
+        d = converted_base()
+        d["claims"].append(dict(claim(self.d, "C9"), support=[{"kind": "unstated"}]))
+        found = self.w23(d)
+        self.assertEqual(len(found), 1)
+        self.assertIn("the source's argument", found[0]["message"])
+
+    def test_62_open_questions(self):
+        self.d["claims"].pop()
+        self.d["open_questions"] = [{"id": "O1", "question": "Whether method M helps on weekly series is not established.",
+                                     "claims": ["C2"]}]
+        self.assertValid(self.d)
+        from claimset.render import render
+        self.assertIn("OPEN QUESTIONS\nO1 [from C2] Whether method M helps", render(self.d))
+        for bad in ({"id": "O1", "question": ""}, {"id": "O1", "question": "q", "claims": ["C9"]},
+                    {"id": "O1", "question": "q", "support": []}):
+            d = copy.deepcopy(self.d)
+            d["open_questions"] = [bad]
+            self.assertRule(d, "62")
+        d = copy.deepcopy(self.d)
+        d["open_questions"] = [{"id": "Q1", "question": "q"}]
+        self.assertRule(d, "1")
 
 
 if __name__ == "__main__":

@@ -69,6 +69,8 @@ Work in this order: principal claims → supporting claims → assumptions.
 - a borrowed term (MASE, ETS) → a one-line definition with what this work specifies (e.g. the interval level) and `"source": "B5"`.
 Leave out general knowledge that no claim rests on and justifications of routine choices (which accuracy measure, which software); put such choices in the evidence's `description` if they matter. Define in full only the terms the work introduces or uses in its own sense.
 
+**A claim is what the work shows or uses.** A statement that nothing in the work supports (no evidence, no citation, no warrant) and that no claim rests on is not a claim: framing ("accurate forecasts are crucial for business"), promise ("paves the way for"), sweeping generalisation ("it is well known"), speculation ("this could transform practice"). Leave it out. If it is a question the work leaves open (a conjecture it did not test, a case it could not settle, a direction for further work), record it under `open_questions`, as a question, with the claims it arises from: `{"id": "O1", "question": "Whether method M helps on weekly series is not established.", "claims": ["C2"]}`. The validator warns (W23) about a claim that nothing supports and nothing rests on.
+
 **Apply the granularity rule.** Split a statement when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one `interpretive` claim with a warrant.
 
 **One claim per statement.** The test: could one part be true and another false? Then they are two claims, each self-contained, with the shared context in definitions rather than repeated. Signs of two claims in one sentence:

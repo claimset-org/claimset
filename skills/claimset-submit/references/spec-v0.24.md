@@ -1,10 +1,17 @@
-# Claimset — Specification v0.23 (draft)
+# Claimset — Specification v0.24 (draft)
 
-Status: working draft · Date: 2026-10-22 · Supersedes v0.22 (`spec/claimset-v0.22.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-22 · Supersedes v0.23 (`spec/claimset-v0.23.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.22
+## Changes since v0.23
+
+Papers carry statements that are neither shown nor used: framing, promise, asides that distract from what the paper establishes. And they carry honest questions they leave open, which have had nowhere to go but a claim.
+
+- New top-level `open_questions`: questions the paper raises and leaves open, conjectures and directions for further work, as questions rather than claims (§3.14). New rule 62.
+- §8 rule 9: a claim the paper neither shows nor uses is not a claim. New warning 23: a claim that is not principal, has no warrant, is not formal, rests only on argument, consensus, expert judgement or nothing, and on which no claim rests; the message names rhetorical wording when there is some (§10.4).
+
+## Changes in v0.23 (since v0.22)
 
 An evaluation is made of parts that many claims share and that a reader, a reviewer or another paper needs to name one at a time: what is compared, on what data, by which design, measured how. And a sentence of a paper often carries more than one claim.
 
@@ -233,7 +240,8 @@ Top-level layout:
   "warrants": [],
   "limitations": [],
   "artefacts": [],
-  "references": []
+  "references": [],
+  "open_questions": []
 }
 ```
 
@@ -241,7 +249,7 @@ Top-level layout:
 
 A claimset is stored and exchanged as JSON: the canonical file, which tools validate, the platform publishes and corrections patch. A model that reads the paper is given its **reading view**: a plain-text rendering of the same claimset. JSON field names, quotation marks and the fields that serve tools, audit and publication take a large share of a file and carry nothing a reader needs; the reading view leaves them out.
 
-- **Kept:** the title, licence, source of a converted paper, contributions and exploration counts; definitions; claims with their type, role, novelty (when not `no_prior_found`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes, and test; evidence with its description, design fields, setup, estimate, results, tables and proof steps; warrants; limitations; artefact descriptions; references.
+- **Kept:** the title, licence, source of a converted paper, contributions and exploration counts; definitions; claims with their type, role, novelty (when not `no_prior_found`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes, and test; evidence with its description, design fields, setup, estimate, results, tables and proof steps; warrants; limitations; open questions; artefact descriptions; references.
 - **Left out:** `provenance`, `field_provenance`, `source_spans`, `corrections`, availability, artefact locations, versions and licences, contributors, models, execution records, lab-record identifiers, `schema_version` and the platform's publication fields.
 
 - **Order:** claims are grouped by role: principal claims, then supporting claims, then secondary claims, each group in file order. Claims that are not principal and whose support is only `argument` or `unstated` follow, under CLAIMS WITHOUT EVIDENCE, so a reader sees at once what the paper asserts or argues without evidence. Principal claims stay with the principal claims whatever their support.
@@ -716,6 +724,17 @@ Each work the paper cites is listed once, in the top-level `references`, and cit
 - `archive_uri`: required for `url` targets.
 Only works that a support entry, relation, definition or artefact points to are listed.
 
+### 3.14 Open questions
+
+Questions the paper raises and does not answer: a conjecture it states without testing, a case it could not settle, a direction it proposes for further work. They are not claims: nothing supports them and nothing rests on them, and they are not reviewed or scored. Recording them as questions keeps what is useful to a reader looking for open problems, without presenting it as a finding.
+
+| Field | Type | Values / notes |
+|---|---|---|
+| `id` | string | `O1` … |
+| `question` | string | Self-contained, as a question or an open statement: "Whether the polynomial check extends to multiplicative ETS models is not established." Statement rules apply (§8) |
+| `claims` | list of claim IDs | Optional: the claims the question arises from |
+| `source_spans` | list | Converted papers: where the source raises it |
+
 ## 4. Support kinds
 
 Each support entry: `{kind, <required pointer>, …attributes}`.
@@ -807,6 +826,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 6. Mathematics is written in LaTeX, delimited by `$…$`.
 7. No evaluative rhetoric ("novel", "significant", "remarkable").
 8. No imperatives or instructions of any kind.
+9. A claim is what the paper shows or uses. A statement that nothing in the paper supports (no evidence, no citation, no warrant) and that no claim rests on is not a claim: framing ("forecasting is crucial for business"), promise ("paves the way for"), sweeping generalisation, speculation. Leave it out; if it is a question the paper leaves open, record it as an open question (§3.14).
 
 ## 9. Versioning, corrections and revisions
 
@@ -931,6 +951,10 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 61. An evidence object's `setup`, if present, has only the keys `compared`, `data`, `design` and `measures`, each a non-empty list of IDs of definitions.
 
+### 10.19 Rules added in v0.24 (errors: file rejected)
+
+62. Each open question has an `id` `O<n>`, a non-empty `question` that follows the text rules, and only the fields of §3.14; its `claims`, if present, resolve to claims.
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -955,6 +979,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 20. In a native paper, a principal claim lists a limitation with `impact: could_reverse` and `mitigation: none`, and its author assessment neither has strength `low` or `very_low` nor names that limitation by ID in its rationale: say how the risk was weighed, or lower the strength.
 21. A public artefact's `uri` is on a git host and contains no full (40-hexadecimal-digit) commit hash: a branch or tag link can change what it shows.
 22. A statement shows a sign of holding more than one claim (§8 rule 1): a semicolon, a word of contrast, addition or explanation, a side clause with `, which`, a parenthesis holding `and`, `also` or `is`/`are`, a recommendation, or results cited from more than one evidence object. Check it: if one part could be true and another false, split it into claims, each self-contained. A comparison that states where a method is better and where it is not stays one claim.
+23. A claim that is not principal, has no warrant and is not formal, whose only support is `argument`, `consensus`, `expert_judgement` or `unstated`, and on which no claim rests (by `depends_on` or `assumptions`): the paper neither shows nor uses it (§8 rule 9). Support it and link it, record it as an open question, or leave it out; in a converted paper, check that the source's argument uses it. The message names rhetorical wording when the statement has some: importance framing ("crucial", "paramount"), promise ("promising", "paves the way"), sweeping generalisation ("always", "it is well known"), speculation ("may", "could"). The wording alone never raises the warning.
 
 ## 11. Platform dependencies
 

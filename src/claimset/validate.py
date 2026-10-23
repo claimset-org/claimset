@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.23"
+SCHEMA_VERSION = "0.24"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -89,7 +89,8 @@ ENUM = {
 }
 
 PREFIX = {"definitions": "D", "claims": "C", "evidence": "E", "warrants": "W",
-          "limitations": "L", "artefacts": "A", "contributors": "P", "models": "M", "references": "B"}
+          "limitations": "L", "artefacts": "A", "contributors": "P", "models": "M", "references": "B",
+          "open_questions": "O"}
 
 ORCID_RE = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -493,6 +494,24 @@ def validate(doc, published=False, local_root=None, revision=False):
             if nxt in claims and nxt not in reached:
                 reached.add(nxt)
                 stack.append(nxt)
+    # W23: a claim the paper neither shows nor uses
+    used = {x for c in claims.values() for x in rests_on(c)}
+    for cid, c in claims.items():
+        if c.get("role") == "principal" or cid in used or c.get("type") == "formal" or is_assumption(c):
+            continue
+        support = [as_dict(s) for s in as_list(c.get("support"))]
+        if not support or any(s.get("warrant") for s in support) or \
+                not {s.get("kind") for s in support} <= {"argument", "consensus", "expert_judgement", "unstated"}:
+            continue
+        words = rhetoric_cues(c.get("statement"))
+        why = f"; it also uses {', '.join(words)}" if words else ""
+        if converted:
+            r.warn("W23", f"claims:{cid}", f"no evidence or citation supports it and no claim rests on it{why}: "
+                                           f"check that the source's argument uses it; leave it out if not")
+        else:
+            r.warn("W23", f"claims:{cid}", f"no evidence or citation supports it and no claim rests on it{why}: "
+                                           f"support it and link it, record it as an open question if it is one, "
+                                           f"or leave it out")
     for cid, c in claims.items():
         if c.get("role") == "supporting" and cid not in reached:
             r.warn("W15", f"claims:{cid}", "no principal claim rests on this supporting claim: link it "
@@ -566,6 +585,21 @@ def validate(doc, published=False, local_root=None, revision=False):
             check_enum(r, "1", f"{w}.weights", m.get("weights"), "weights")
         if m.get("weights") == "open" and not m.get("weights_uri"):
             r.warn("W1", f"{w}.weights_uri", "recommended for open-weights models")
+
+    # ---------- Open questions (rule 62) ----------
+    for q in coll["open_questions"]:
+        if not isinstance(q, dict):
+            continue
+        w = f"open_questions:{q.get('id')}"
+        if not isinstance(q.get("question"), str) or not q["question"].strip():
+            r.err("62", f"{w}.question", "the question, as a self-contained sentence")
+        else:
+            text_checks(r, f"{w}.question", q["question"], ids)
+        for cid in as_list(q.get("claims")):
+            ref("62", f"{w}.claims", cid, "claims")
+        extra = set(q) - {"id", "question", "claims", "source_spans"}
+        if extra:
+            r.err("62", w, f"an open question has only id, question, claims and source_spans, not {sorted(extra)}")
 
     # ---------- Evidence ----------
     for e in coll["evidence"]:
@@ -888,6 +922,25 @@ def statement_checks(r, where, text):
 
 
 SETUP_ROLES = ("compared", "data", "design", "measures")
+
+# Wording typical of rhetoric (spec §8 rule 9); reported only with warning W23, never alone
+RHETORIC_CUES = [
+    ("importance framing", re.compile(r"\b(crucial|paramount|vital|of (?:great|utmost|paramount) (?:importance|interest)|"
+                                      r"increasingly (?:important|popular|relevant))\b", re.I)),
+    ("promise", re.compile(r"\b(promising|paves? the way|opens? (?:up )?new (?:avenues|possibilities|directions)|"
+                           r"has the potential to|holds? (?:great )?promise)\b", re.I)),
+    ("sweeping generalisation", re.compile(r"\b(always|never|all practitioners|everyone|widely (?:recognised|recognized|"
+                                           r"accepted|known)|it is well known|universally)\b", re.I)),
+    ("speculation", re.compile(r"\b(may|might|could|potentially|possibly)\b", re.I)),
+]
+
+
+def rhetoric_cues(text):
+    """Rhetorical wording in a statement: [`kind 'word'`]."""
+    if not isinstance(text, str):
+        return []
+    plain = NUMBER_SKIP.sub(" ", text)
+    return [f"{kind} '{m.group(1).lower()}'" for kind, rx in RHETORIC_CUES for m in [rx.search(plain)] if m]
 
 
 # Signs that a statement holds more than one claim (spec §8 rule 1; warning W22)
