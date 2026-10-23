@@ -741,7 +741,7 @@ class TestReadingView(Base):
         self.assertLess(len(self.render(d)), len(json.dumps(d, separators=(",", ":"))))
 
     def test_appendix_d_matches_the_renderer(self):
-        spec = (ROOT / "spec" / "claimset-v0.22.md").read_text(encoding="utf-8")
+        spec = (ROOT / "spec" / "claimset-v0.23.md").read_text(encoding="utf-8")
         self.assertIn(self.render(load("submission-native.json")), spec)
 
     def test_render_command_refuses_invalid_file(self):
@@ -858,6 +858,63 @@ class TestRulesV022(Base):
     def test_60_claim_without_novelty(self):
         del claim(self.d, "C2")["novelty"]
         self.assertRule(self.d, "1")
+
+
+class TestRulesV023(Base):
+    """Rule 61 (the parts of an evaluation) and warning W22 (a statement that may hold several claims)."""
+
+    def setUp(self):
+        self.d = load("submission-native.json")
+        self.d["definitions"] += [
+            {"id": "D2", "term": "method M", "definition": "Method M with its default settings."},
+            {"id": "D3", "term": "UK retail series", "definition": "1,200 monthly retail sales series, 2010-2024."},
+            {"id": "D4", "term": "rolling origin", "definition": "12 origins, horizons 1 to 12, refitted at each."},
+            {"id": "D5", "term": "MASE", "definition": "Mean absolute scaled error, averaged over series."}]
+        self.e1 = next(e for e in self.d["evidence"] if e["id"] == "E1")
+
+    def test_61_setup_valid(self):
+        self.e1["setup"] = {"compared": ["D2"], "data": ["D3"], "design": ["D4"], "measures": ["D5", "D1"]}
+        self.assertValid(self.d)
+
+    def test_61_setup_in_reading_view(self):
+        from claimset.render import render
+        self.e1["setup"] = {"compared": ["D2"], "data": ["D3"], "design": ["D4"], "measures": ["D5"]}
+        self.assertIn("setup: compared D2; data D3; design D4; measures D5", render(self.d))
+
+    def test_61_setup_must_name_definitions_by_role(self):
+        for bad in ({"compared": ["D9"]}, {"compared": ["C2"]}, {"methods": ["D2"]}, {"data": []}, {"design": "D4"},
+                    {}, ["D2"]):
+            d = copy.deepcopy(self.d)
+            next(e for e in d["evidence"] if e["id"] == "E1")["setup"] = bad
+            self.assertRule(d, "61")
+
+    def test_w22_signs_of_several_claims(self):
+        base = "Method M reduces MASE against seasonal naive on monthly retail series"
+        for tail in ("; it is also faster to fit.", ", while it widens the intervals.",
+                     ", which explains its use in practice.", " because the series are seasonal.",
+                     " (and it is faster to fit).", ", so practitioners should use it.",
+                     " as well as the interval width."):
+            claim(self.d, "C2")["statement"] = base + tail
+            self.assertWarning(self.d, "W22")
+
+    def test_w22_results_of_two_evidence_objects(self):
+        for eid in ("E1", "E2"):
+            e = next((x for x in self.d["evidence"] if x["id"] == eid), None)
+            if e is None:
+                e = dict(copy.deepcopy(self.e1), id=eid)
+                self.d["evidence"].append(e)
+            e["results"] = [{"id": "R1", "quantity": "mean relative MASE reduction", "value": 0.08}]
+        claim(self.d, "C2")["support"] = [{"kind": "empirical_quant", "evidence": "E1", "results": ["E1.R1"]},
+                                          {"kind": "empirical_quant", "evidence": "E2", "results": ["E2.R1"]}]
+        self.assertWarning(self.d, "W22")
+
+    def test_w22_not_raised_for_one_claim(self):
+        for text in ("Method M reduces MASE against seasonal naive on monthly retail series since 2010.",
+                     "Method M reduces MASE against seasonal naive for $x; y$ in ETS(A,N,A) models.",
+                     "Method M reduces MASE against seasonal naive on M3 and M4 monthly series."):
+            claim(self.d, "C2")["statement"] = text
+            errors, warnings = self.rules(self.d)
+            self.assertNotIn("W22", warnings, text)
 
 
 if __name__ == "__main__":

@@ -42,11 +42,13 @@ Every validator warning becomes a comment of category `validation` (no resolutio
 Work claim by claim, principal claims first, then what they rest on. For each:
 
 **Statement and scope.**
+- Does the statement hold one claim? If one part could be true and another false (signs: the validator's W22), it is a `presentation` comment asking to split it, unless the parts differ in support, which makes it a comment on the part that lacks it.
 - Does the statement say what the evidence shows, within its scope, no more? A broader statement than the tests is a `scope` comment.
 - Does each number in the statement come from a recorded result, at the precision stated (`missing_result` if not)?
 - Are defined terms used in the sense the tests measured?
 
 **Support and evidence.**
+- Is the setup stated part by part (the evidence's `setup`: what is compared, on what data, by which design, with which measures)? A problem in one part (a weak baseline, a data set chosen to suit, a fixed origin where the claim needs several, a measure that hides the effect) is a comment that targets that definition (`D7`) and names every claim whose evidence uses it.
 - Does the cited evidence show the claim, or something near it? Read the evidence's results, tables and description, and the lab runs behind them.
 - For a planned test (`planning: confirmatory`): was the plan recorded before the runs (`planned_at`, its anchor)? Do the test's flags (`code_changed_after_plan`, `holdout_used_elsewhere`, `reproduces_prompting_result`) weaken it? Did the confirmatory run use anything the exploration had not already seen? Are exclusions declared and counted? These are `test` comments.
 - For quantitative evidence: sample, estimand, uncertainty, multiple testing, whether the comparison is fair (`measurement`, `test`).

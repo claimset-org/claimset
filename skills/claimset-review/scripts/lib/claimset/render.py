@@ -139,6 +139,11 @@ def _evidence(e):
     if e.get("preregistered"):
         head.append("preregistered")
     lines = [f"{e.get('id')} [{_join(head)}] {e.get('description', '')}"]
+    setup = e.get("setup") if isinstance(e.get("setup"), dict) else {}
+    parts = [f"{role} {', '.join(str(d) for d in setup[role])}" for role in ("compared", "data", "design", "measures")
+             if isinstance(setup.get(role), list) and setup[role]]
+    if parts:
+        lines.append(f"  setup: {'; '.join(parts)}")
     if e.get("estimate") is not None:
         lines.append(f"  estimate: {e.get('estimand', '')} = {_num(e['estimate'])}"
                      + (f" ({_interval(e.get('interval'))})" if e.get("interval") else ""))

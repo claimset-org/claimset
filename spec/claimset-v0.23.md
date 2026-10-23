@@ -1,10 +1,25 @@
-# Claimset — Specification v0.21 (draft)
+# Claimset — Specification v0.23 (draft)
 
-Status: working draft · Date: 2026-10-22 · Supersedes v0.20 (`spec/claimset-v0.20.md`) · Companions: lab record specification (`spec/lab-record-v0.9.md`), revision specification (`spec/claimset-revision-v0.1.md`)
+Status: working draft · Date: 2026-10-22 · Supersedes v0.22 (`spec/claimset-v0.22.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.20
+## Changes since v0.22
+
+An evaluation is made of parts that many claims share and that a reader, a reviewer or another paper needs to name one at a time: what is compared, on what data, by which design, measured how. And a sentence of a paper often carries more than one claim.
+
+- Evidence gains `setup`: the parts of the evaluation, each a definition, by role: `compared`, `data`, `design`, `measures` (§3.4). New rule 61.
+- §8: how to tell that a statement holds several claims; new warning 22 flags the usual signs (§10.4).
+
+## Changes in v0.22 (since v0.21)
+
+Novelty is a statement about a search, not a fact: a claim is new only as far as its authors looked. Models read labels literally, so the label says what is known.
+
+- `novelty: new` is renamed `no_prior_found`: the authors found no earlier result stating the claim. A claim with this label cites the closest earlier result they found, as a relation with a note on how the claim differs, when there is one (§3.3).
+- Assumption claims have no novelty: they are taken as given, not found. New rule 60 (§10).
+- Novelty is judged in review apart from credibility (revision specification §7); §6 corrected: review scores are given by the reviewer, not computed.
+
+## Changes in v0.21 (since v0.20)
 
 A published claimset is reviewed, and its author may answer the review with a revised version. Reviews, responses and resolutions are documents beside the claimset, specified in the revision specification (`spec/claimset-revision-v0.1.md`); this specification changes only where the claimset file meets them.
 
@@ -226,7 +241,7 @@ Top-level layout:
 
 A claimset is stored and exchanged as JSON: the canonical file, which tools validate, the platform publishes and corrections patch. A model that reads the paper is given its **reading view**: a plain-text rendering of the same claimset. JSON field names, quotation marks and the fields that serve tools, audit and publication take a large share of a file and carry nothing a reader needs; the reading view leaves them out.
 
-- **Kept:** the title, licence, source of a converted paper, contributions and exploration counts; definitions; claims with their type, role, novelty (when not `new`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes, and test; evidence with its description, design fields, estimate, results, tables and proof steps; warrants; limitations; artefact descriptions; references.
+- **Kept:** the title, licence, source of a converted paper, contributions and exploration counts; definitions; claims with their type, role, novelty (when not `no_prior_found`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes, and test; evidence with its description, design fields, setup, estimate, results, tables and proof steps; warrants; limitations; artefact descriptions; references.
 - **Left out:** `provenance`, `field_provenance`, `source_spans`, `corrections`, availability, artefact locations, versions and licences, contributors, models, execution records, lab-record identifiers, `schema_version` and the platform's publication fields.
 
 - **Order:** claims are grouped by role: principal claims, then supporting claims, then secondary claims, each group in file order. Claims that are not principal and whose support is only `argument` or `unstated` follow, under CLAIMS WITHOUT EVIDENCE, so a reader sees at once what the paper asserts or argues without evidence. Principal claims stay with the principal claims whatever their support.
@@ -361,7 +376,7 @@ A definition explains in full only a term the paper introduces or uses in its ow
 | `statement` | string | Self-contained sentence (rules in §8) |
 | `type` | enum | `descriptive` · `associational` · `causal` · `predictive` · `interpretive` · `formal` · `methodological` (choosing: §3.3.1) |
 | `role` | enum | `principal` (a contribution) · `supporting` (one of the paper's own claims that a contribution rests on, directly or through other claims, by `depends_on` or `assumptions`) · `secondary` (a finding of the paper that no contribution rests on: a side result, a negative or null result reported in its own right) |
-| `novelty` | enum | `new` · `replication` · `extension` · `refutation` |
+| `novelty` | enum | `no_prior_found` · `replication` · `extension` · `refutation`. Not on assumption claims (§3.8) |
 | `scope` | object | `population`, `setting`, `geography`, `language`, `period`, `data_type`, `conditions` (list), `excludes` (list: where it explicitly does not apply). Describes this claim only (§3.3.2) |
 | `support` | list | Kinds of support (§4); at least one entry |
 | `assumptions` | list of claim IDs | Assumption claims (§3.8) this claim relies on |
@@ -494,6 +509,18 @@ Intervals, ranks and test statistics are columns of their own (e.g. `"mean MASE,
            {"id": "r3", "label": ["ARIMA"], "values": [0.902, null]}]}]
 ```
 
+**Setup** (`setup`, optional, any profile): the parts of the evaluation, each recorded once as a definition (§3.2) and named here by role, so that claims, evidence objects, reviews and other papers can refer to each part on its own. `{compared, data, design, measures}`, each a list of definition IDs:
+- `compared`: what is compared: methods, models, treatments, conditions (in forecasting: the competing methods, each with the settings that define it).
+- `data`: what it is compared on: data sets, populations, samples (the series collections, with their frequency and size, or a simulation's data-generating process).
+- `design`: how the comparison is made: the evaluation scheme (fixed or rolling origin, the number of origins, horizons, refits, holdout), the trial or study design.
+- `measures`: what is measured: error measures, scores, outcomes, with how they are aggregated.
+
+Definitions of borrowed parts name their `source` (a data set, a published method, a standard measure); the definition says what this paper specifies (the subset, the settings, the horizon). Evidence objects that share a part point to the same definition, and a claim's statement marks the parts it names (`[[D7:rolling origin]]`). `setup` adds no content of its own: the description still says, in a sentence, what was done.
+
+```json
+"setup": {"compared": ["D1", "D2", "D3"], "data": ["D5", "D6"], "design": ["D7"], "measures": ["D8", "D9"]}
+```
+
 **Execution** (`execution`, optional): what was actually run, when it differs from or adds to the artefact versions. `{code_version, software, hardware, notes}`; `code_version` is the commit or version that produced the results.
 
 **Models in the research design** (`models`, optional, any profile): `{model, role, settings, record_source, prompts}`
@@ -569,11 +596,13 @@ Links from a claim to a claim or work outside this paper: `{type, reference, tar
 - `self`: true when the target work shares a human supervisor, guarantor or contributor with this paper.
 - `note`: optional; one self-contained sentence saying what the target states that the relation is about, e.g. for `addresses`: `"Selection among ETS models often misidentifies the type of trend."` It describes the target; it is not a claim of this paper.
 
+**Novelty** says what the claim is relative to earlier work, as far as the authors searched: `no_prior_found` (the authors found no earlier result stating the claim; this reports their search, not a proof that none exists), `replication` (it repeats an earlier result, on new data or by other means), `extension` (it carries an earlier result to new conditions), `refutation` (it shows an earlier result false). A `no_prior_found` claim cites the closest earlier result the authors found, when there is one, as a relation (`addresses` or `extends`) with a `note` saying how the claim differs; a reader then sees what was found and can judge the difference. For a converted paper, `no_prior_found` records that the source presents the claim as its own finding.
+
 Required relations: `novelty: refutation` ⇒ at least one `contradicts` or `fails_to_replicate`; `novelty: replication` ⇒ at least one `replicates` or `fails_to_replicate`. Recommended: `novelty: extension` ⇒ an `extends` relation. A refutation with `self: true` is a self-correction; the platform records it separately from self-citation.
 
 ### 3.8 Assumptions
 
-Assumptions are claims whose sole support kind is `assumption`, so they sit in the claim graph and can be queried across papers. They carry extra fields:
+Assumptions are claims whose sole support kind is `assumption`, so they sit in the claim graph and can be queried across papers. They are taken as given, not found, so they have no `novelty`. They carry extra fields:
 
 | Field | Type | Values / notes |
 |---|---|---|
@@ -762,7 +791,7 @@ The flags concern models used to produce evidence, not the model that wrote the 
 
 Platform assessments (AI reviewer agents, audits, replication checks, conversion reviews, independent re-derivation of formal claims, scope-consistency reviews) are stored in the database, not the file. Human review is an optional layer, except for sampled review of conversions.
 
-Reviews of a published claimset, the author's responses, human resolutions of disputed comments and the scores computed from them are platform records beside the file, specified in the revision specification. A review never changes a published version; the author may answer it with a revision (§9).
+Reviews of a published claimset, the author's responses, human resolutions of disputed comments, and the credibility scores and novelty assessments the reviewer gives are platform records beside the file, specified in the revision specification. A review never changes a published version; the author may answer it with a revision (§9).
 
 ## 7. Identifiers and source trust
 
@@ -770,7 +799,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 ## 8. Statement text rules
 
-1. One assertion per statement.
+1. One assertion per statement. A statement holds more than one claim when one part could be true and another false. Signs of it: a semicolon; contrast (`but`, `while`, `whereas`, `although`, `however`); addition (`as well as`, `also`, `in addition`, `moreover`, `furthermore`, `not only`); explanation (`because`, `since`, `due to`, `thus`, `therefore`, `hence`, `which explains`), which usually joins a result to its explanation, two claims of different types; an assertion in a side clause (`, which …`) or in parentheses; a recommendation added to a finding (`should`, `recommend`); a claim citing results of more than one evidence object; and `and` joining two verbs. The comparison of rule 2 (where a method is better and where it is not) stays one claim.
 2. **Granularity rule:** split a statement into separate claims when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one interpretive claim with a warrant; sub-themes become separate supporting claims only if they have their own evidence. A comparison the paper makes across several measures, datasets or settings is one claim that states where the method is better and where it is not, supported by the table holding the numbers; it is split only where the paper draws separate conclusions or the parts differ in support or scope. Results on which a method is worse are stated in the claim, never left out.
 3. Self-contained: no anaphora or cross-references ("this", "the above", "as shown").
 4. Scope-bearing qualifiers belong in `scope`, not hedged prose.
@@ -894,6 +923,14 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 59. Review-comment references are global IDs `<claimset ID>@v<n>/RV<k>.c<m>`: each entry of a claim's `test.addresses` and of an operation's `addresses` in `paper.changes`. `paper.answers`, if present, is a response ID `<paper.id>@v<paper.version>/RP<k>`.
 
+### 10.17 Rules added in v0.22 (errors: file rejected)
+
+60. A claim that is not an assumption has a `novelty`; an assumption claim (support of kind `assumption`) has none. The value `new` of earlier versions is `no_prior_found`.
+
+### 10.18 Rules added in v0.23 (errors: file rejected)
+
+61. An evidence object's `setup`, if present, has only the keys `compared`, `data`, `design` and `measures`, each a non-empty list of IDs of definitions.
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -914,9 +951,10 @@ The platform mints a DOI for every published claimset. The file records identifi
 16. A principal or supporting claim rests on a `secondary` claim (by `depends_on` or `assumptions`): a claim that a contribution rests on is `supporting`.
 17. A number in the statement of a claim with `empirical_quant` or `simulation` support matches, at the precision stated, no value in: the results (value, interval, conditions) and tables (conditions, cells, row labels) of the evidence the claim cites; that evidence's `estimate`, `interval` and `n`; the claim's `test.parameters` and `scope`; the definitions its statement references. Evidence descriptions do not count. Numbers inside LaTeX, `[[D…]]` markers and model notation (`ETS(A,N,A)`, `AR(1)`), and numbers of sections, tables, figures, equations and theorems, are ignored. The reverse of warning 12: a number a statement reports is a recorded result, or a setting in the scope.
 18. Two evidence objects have the same `execution.code_version` and the same results (quantity, value and conditions): one computation recorded twice. Record it once and cite it from every claim it supports.
-19. `novelty: new` on a claim whose only support is `consensus`: if established knowledge already shows the claim, the claim is known (cite it, or relate to it); if the claim is new, give the support that shows it.
+19. `novelty: no_prior_found` on a claim whose only support is `consensus`: if established knowledge already shows the claim, the claim is known (cite it, or relate to it); if it is not, give the support that shows it. (Revised in v0.22.)
 20. In a native paper, a principal claim lists a limitation with `impact: could_reverse` and `mitigation: none`, and its author assessment neither has strength `low` or `very_low` nor names that limitation by ID in its rationale: say how the risk was weighed, or lower the strength.
 21. A public artefact's `uri` is on a git host and contains no full (40-hexadecimal-digit) commit hash: a branch or tag link can change what it shows.
+22. A statement shows a sign of holding more than one claim (§8 rule 1): a semicolon, a word of contrast, addition or explanation, a side clause with `, which`, a parenthesis holding `and`, `also` or `is`/`are`, a recommendation, or results cited from more than one evidence object. Check it: if one part could be true and another false, split it into claims, each self-contained. A comparison that states where a method is better and where it is not stays one claim.
 
 ## 11. Platform dependencies
 
@@ -992,14 +1030,14 @@ What the agent submits. No identifier, version, date, status, classification IDs
   "claims": [
     {
       "id": "C1", "statement": "Monthly retail sales series exhibit annual seasonality.",
-      "type": "descriptive", "role": "supporting", "novelty": "new",
+      "type": "descriptive", "role": "supporting",
       "support": [{"kind": "assumption"}],
       "assumption_category": "data", "check": "unchecked",
       "provenance": "author_stated"
     },
     {
       "id": "C3", "statement": "Forecast errors of method M are independent across series.",
-      "type": "descriptive", "role": "supporting", "novelty": "new",
+      "type": "descriptive", "role": "supporting",
       "support": [{"kind": "assumption"}],
       "assumption_category": "statistical", "check": "unchecked",
       "provenance": "author_stated"
@@ -1007,7 +1045,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
     {
       "id": "C2",
       "statement": "Method M improves [[D1:forecast skill]] over the seasonal naive benchmark on monthly retail sales series.",
-      "type": "descriptive", "role": "principal", "novelty": "new",
+      "type": "descriptive", "role": "principal", "novelty": "no_prior_found",
       "scope": {"population": "monthly retail sales series", "geography": "United Kingdom", "language": "not applicable", "period": "2010-2024", "data_type": "aggregate sales counts", "conditions": ["horizon of 1 to 12 months"], "excludes": ["series shorter than 36 observations"]},
       "support": [{"kind": "empirical_quant", "evidence": "E1", "artefacts": ["A2"]}],
       "assumptions": ["C1", "C3"],
@@ -1085,7 +1123,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
   "claims": [
     {
       "id": "C2", "statement": "Store-level demand for umbrellas rises on days with rainfall above 5 mm.",
-      "type": "associational", "role": "supporting", "novelty": "new",
+      "type": "associational", "role": "supporting", "novelty": "no_prior_found",
       "support": [{"kind": "unstated"}],
       "verifiability": "unverifiable", "verifiability_flags": ["unstated_support"],
       "source_spans": ["sec2:p4"], "provenance": "extracted"

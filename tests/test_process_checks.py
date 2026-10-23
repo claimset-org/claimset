@@ -21,7 +21,7 @@ from test_lab_decision import FREQ, RuleCase
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "adam-admissible-bounds"
 EXAMPLES = sorted((ROOT / "examples").glob("*.json"))
-NEW = ("W17", "W18", "W19", "W20", "W21")
+NEW = ("W17", "W18", "W19", "W20", "W21", "W22")
 
 
 def fixture_claimset():
@@ -82,6 +82,12 @@ class TestFixtureClaimset(unittest.TestCase):
         w = warned(self.rep, "W20")
         for cid in ("C1", "C3", "C16"):
             self.assertIn("L2", w[cid][0])
+
+    def test_w22_statements_with_several_claims(self):
+        w = warned(self.rep, "W22")
+        self.assertIn("C22", w)            # a stability condition that holds, while the weights grow
+        self.assertIn("C21", w)
+        self.assertNotIn("C1", w)
 
     def test_w21_branch_link(self):
         self.assertEqual(list(warned(self.rep, "W21")), ["A9"])
