@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.27"
+SCHEMA_VERSION = "0.28"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},

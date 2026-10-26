@@ -59,6 +59,7 @@ claimset validate claimset.json
 claimset validate claimset.json --json        # machine-readable report
 claimset validate claimset.json --published   # check a published file
 claimset render claimset.json -o claimset.txt  # the reading view: plain text for reading models
+claimset renumber claimset.json                # before the first submission: IDs in reading order
 ```
 
 The report lists errors (the file is rejected), warnings (accepted, recorded) and the verifiability the platform will compute for each claim.

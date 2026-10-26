@@ -1,10 +1,16 @@
-# Claimset — Specification v0.27 (draft)
+# Claimset — Specification v0.28 (draft)
 
-Status: working draft · Date: 2026-10-26 · Supersedes v0.26 (`spec/claimset-v0.26.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-26 · Supersedes v0.27 (`spec/claimset-v0.27.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.26
+## Changes since v0.27
+
+A claimset exported from a lab record numbers its claims in the order the hypotheses were written, and a hand-made one in the order its claims were found; neither is the order of the paper's argument, and the reading view follows file order.
+
+- §9: claims are listed in reading order, and before the first submission their IDs follow that order (`claimset renumber`). After publication IDs never change: a revision keeps every ID and places a new claim where it belongs in the file, with the next free number.
+
+## Changes in v0.27 (since v0.26)
 
 Splitting comparisons into atoms showed how many claims of a converted paper only read off its tables: each sentence of a results section became several claims that nothing rests on, burying the contributions, while the tables already record every value.
 
@@ -853,6 +859,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 ## 9. Versioning, corrections and revisions
 
 - Every published version is immutable and permanently retrievable.
+- **Order and IDs.** Claims are listed in reading order: principal claims, then supporting claims, then secondary claims and assumptions, each in the order of the paper's argument, since the reading view follows file order (§2). Before the first submission, IDs follow that order without gaps: `claimset renumber FILE` renumbers claims, warrants, definitions, limitations and open questions and rewrites every reference to them; a claimset exported from a lab record keeps its link to the record through `hypothesis.lab_event`, not through claim IDs. After publication IDs never change (revision §2, *Stable object IDs*): a revision places a new claim where it belongs in the file, with the next free number, and an ID that is dropped is not reused.
 - A correction is submitted as a complete corrected file whose `paper.id` names the existing claimset and which carries a `correction_reason`. The platform computes the JSON Patch against the latest published version, records it in `changes` with the reason, assigns the next `version` and `previous_version`, and sets `status: corrected`. The DOI does not change; versions are distinguished by `@v<n>`.
 - A revision is submitted as a complete file built from the current version, whose `paper.id` names the existing claimset and which has no `correction_reason`, together with a response to the unresolved review comments (revision §4–5). The platform records the patch as for a correction, with the comments each operation answers, sets `paper.answers`, and keeps `status: active`. Object IDs are stable across versions: an object that keeps its ID is the same object, refined, and an ID removed from the claimset is never used again.
 - Retraction, withdrawal or an expression of concern is a governance action by the platform, recorded by `status` and `status_notice`. The paper's content is retained so references still resolve, and every reader sees the status and reason.
