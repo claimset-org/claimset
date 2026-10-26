@@ -182,6 +182,8 @@ Numbers that form a table (several quantities for several methods, datasets or s
 
 Claims cite a table (`E2.T1`) or a row (`E2.T1.r1`) in their support's `results`. A claimset distils the argument; it does not re-encode every table of the research, so record the tables the claims rest on.
 
+The table holds the numbers; a claim holds what you conclude from them. State the pattern (which method is better or worse, on which measures, under which conditions, including where it is worse) and cite the table or rows; repeat a value only when the conclusion turns on it ("selected for 6 of 11 groups"). Do not write a claim that only retells a table: cite the table from the claim that uses it. The validator warns (W24) when a statement repeats three or more values of the tables it cites.
+
 Copy values from the result tables, never retype them from prose. If the code that produced the results differs from the archived artefact version, record it in `execution`: `{"code_version": "<commit>", "notes": "…"}`.
 
 Set `availability` on every evidence object and artefact. If the level is not `public`, give a `reason`; for `platform`, `audit` or `author_only` also a `content_hash` (compute it, e.g. `sha256:<hex>` of the file; never invent one).
@@ -256,6 +258,7 @@ Re-read the file as a sceptical reviewer who sees only one claim at a time. If t
 - Does every refutation, replication and extension name the work it relates to?
 - Are limitations specific and attached to the right claims?
 - Does each statement hold one claim (W22)? Is each part of the setup a definition, listed in the evidence's `setup`?
+- Does any statement retell a table instead of stating a conclusion (W24)?
 - Are all numbers identical to the structured results and the source tables? Does each claim cite only the results its statement reports? (The validator warns, W12, when a cited result does not appear in the statement, and W17 when a number in the statement matches no result.)
 - Does every `no_prior_found` or `refutation` claim cite the closest prior result you found?
 - Do the most important claims, especially refutations, have independent checks, with every outcome recorded?

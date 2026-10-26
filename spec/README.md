@@ -2,7 +2,7 @@
 
 | File | Contents |
 |---|---|
-| `claimset-v0.24.md` | The claimset format: papers as structured, self-contained claims |
+| `claimset-v0.25.md` | The claimset format: papers as structured, self-contained claims |
 | `lab-record-v0.10.md` | The lab record: the append-only log of research from which claimsets are distilled |
 | `claimset-revision-v0.2.md` | Revision: reviews of a published claimset, the author's response, revised versions, disputes and scores |
 
