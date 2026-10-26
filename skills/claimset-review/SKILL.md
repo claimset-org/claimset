@@ -51,6 +51,7 @@ Work claim by claim, principal claims first, then what they rest on. For each:
 - Are defined terms used in the sense the tests measured?
 
 **Support and evidence.**
+- Does the definition of the paper's own method or model give its defining equations, every one, and each variant its own (spec §3.2, W26)? A method described in words, or a variant given as "the same equations at lag m", is a `presentation` comment.
 - Is the setup stated part by part (the evidence's `setup`: what is compared, on what data, by which design, with which measures)? A problem in one part (a weak baseline, a data set chosen to suit, a fixed origin where the claim needs several, a measure that hides the effect) is a comment that targets that definition (`D7`) and names every claim whose evidence uses it.
 - Does the cited evidence show the claim, or something near it? Read the evidence's results, tables and description, and the lab runs behind them.
 - For a planned test (`planning: confirmatory`): was the plan recorded before the runs (`planned_at`, its anchor)? Do the test's flags (`code_changed_after_plan`, `holdout_used_elsewhere`, `reproduces_prompting_result`) weaken it? Did the confirmatory run use anything the exploration had not already seen? Are exclusions declared and counted? These are `test` comments.

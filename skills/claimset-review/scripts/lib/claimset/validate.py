@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.28"
+SCHEMA_VERSION = "0.29"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -512,6 +512,18 @@ def validate(doc, published=False, local_root=None, revision=False):
             r.warn("W23", f"claims:{cid}", f"no evidence or citation supports it and no claim rests on it{why}: "
                                            f"support it and link it, record it as an open question if it is one, "
                                            f"or leave it out")
+    # W26: an own definition that a formal claim names but that has no mathematics (§3.2)
+    marked_formal = set()
+    for c in claims.values():
+        if c.get("type") == "formal" and isinstance(c.get("statement"), str):
+            marked_formal |= set(re.findall(r"\[\[(D\d+):", c["statement"]))
+    for dfn in coll["definitions"]:
+        dfn = as_dict(dfn)
+        did, text = dfn.get("id"), dfn.get("definition")
+        if did in marked_formal and not dfn.get("source") and isinstance(text, str) and "$" not in text:
+            r.warn("W26", f"definitions:{did}", "a term of the paper's own that a formal claim names, with no "
+                                              "mathematics: if it is the paper's method or model, give its "
+                                              "defining equations as the paper writes them")
     # W25: a secondary result on which nothing rests (§3.3, Secondary claims in converted papers)
     named = set(used)
     for w in coll["warrants"]:

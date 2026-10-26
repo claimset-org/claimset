@@ -19,6 +19,10 @@ def load(name):
         return json.load(fh)
 
 
+def definition(d, did):
+    return next(x for x in d["definitions"] if x["id"] == did)
+
+
 def claim(doc, cid):
     return next(c for c in doc["claims"] if c["id"] == cid)
 
@@ -741,7 +745,7 @@ class TestReadingView(Base):
         self.assertLess(len(self.render(d)), len(json.dumps(d, separators=(",", ":"))))
 
     def test_appendix_d_matches_the_renderer(self):
-        spec = (ROOT / "spec" / "claimset-v0.28.md").read_text(encoding="utf-8")
+        spec = (ROOT / "spec" / "claimset-v0.29.md").read_text(encoding="utf-8")
         self.assertIn(self.render(load("submission-native.json")), spec)
 
     def test_render_command_refuses_invalid_file(self):
@@ -1046,6 +1050,33 @@ class TestRulesV027(Base):
 
     def test_w25_secondary_result_nothing_rests_on(self):
         self.assertWarning(self.d, "W25")
+
+
+class TestRulesV029(Base):
+    """Warning W26: an own definition a formal claim names, with no mathematics."""
+
+    def setUp(self):
+        self.d = load("submission-native.json")
+        self.d["definitions"].append({"id": "D9", "term": "method Q",
+                                      "definition": "A forecasting method that weights past observations exponentially."})
+        self.d["claims"].append({"id": "C9", "statement": "[[D9:method Q]] is unbiased for every sample size.",
+                                 "type": "formal", "role": "secondary", "novelty": "no_prior_found",
+                                 "support": [{"kind": "argument", "warrant": "W9"}], "warrant": "W9"})
+        self.d.setdefault("warrants", []).append({"id": "W9", "reasoning": "deductive", "premises": [],
+                                                  "text": "The expectation of each weighted error is zero."})
+
+    def test_w26_definition_with_equations_passes(self):
+        definition(self.d, "D9")["definition"] = "A forecasting method: $\\hat{y}_t = \\alpha y_{t-1} + (1 - \\alpha)\\hat{y}_{t-1}$."
+        errors, warnings = self.rules(self.d)
+        self.assertNotIn("W26", warnings)
+
+    def test_w26_borrowed_term_passes(self):
+        definition(self.d, "D9")["source"] = "B1" if self.d.get("references") else {"target": "10.1000/x", "id_type": "doi"}
+        errors, warnings = self.rules(self.d)
+        self.assertNotIn("W26", warnings)
+
+    def test_w26_own_method_described_in_words(self):
+        self.assertWarning(self.d, "W26")
 
 
 if __name__ == "__main__":
