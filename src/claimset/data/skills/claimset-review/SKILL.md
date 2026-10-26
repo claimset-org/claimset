@@ -43,6 +43,7 @@ Work claim by claim, principal claims first, then what they rest on. For each:
 
 **Statement and scope.**
 - Does the statement hold one claim? If one part could be true and another false (signs: the validator's W22), it is a `presentation` comment asking to split it, unless the parts differ in support, which makes it a comment on the part that lacks it.
+- Does the statement retell a table's values (the validator's W24) rather than state what the table shows? It is a `presentation` comment asking for the pattern, with the table cited.
 - Does the statement say what the evidence shows, within its scope, no more? A broader statement than the tests is a `scope` comment.
 - Does each number in the statement come from a recorded result, at the precision stated (`missing_result` if not)?
 - Are defined terms used in the sense the tests measured?

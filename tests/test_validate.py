@@ -741,7 +741,7 @@ class TestReadingView(Base):
         self.assertLess(len(self.render(d)), len(json.dumps(d, separators=(",", ":"))))
 
     def test_appendix_d_matches_the_renderer(self):
-        spec = (ROOT / "spec" / "claimset-v0.24.md").read_text(encoding="utf-8")
+        spec = (ROOT / "spec" / "claimset-v0.25.md").read_text(encoding="utf-8")
         self.assertIn(self.render(load("submission-native.json")), spec)
 
     def test_render_command_refuses_invalid_file(self):
@@ -975,6 +975,46 @@ class TestRulesV024(Base):
         d = copy.deepcopy(self.d)
         d["open_questions"] = [{"id": "Q1", "question": "q"}]
         self.assertRule(d, "1")
+
+
+
+class TestRulesV025(Base):
+    """Warning W24: a statement that retells the values of the tables it cites."""
+
+    def setUp(self):
+        self.d = load("submission-native.json")
+        self.e1 = next(e for e in self.d["evidence"] if e["id"] == "E1")
+        self.e1["tables"] = [{"id": "T1", "description": "Mean MASE of three methods on 1,200 monthly retail series",
+                              "row_labels": ["method"], "columns": ["mean MASE", "median MASE"],
+                              "rows": [{"id": "r1", "label": ["M"], "values": [0.861, 0.712]},
+                                       {"id": "r2", "label": ["seasonal naive"], "values": [0.874, 0.731]},
+                                       {"id": "r3", "label": ["ETS"], "values": [0.902, 0.745]}]}]
+        claim(self.d, "C2")["support"] = [{"kind": "empirical_quant", "evidence": "E1", "results": ["E1.T1"]}]
+
+    def test_w23_pattern_citing_the_table_passes(self):
+        claim(self.d, "C2")["statement"] = ("Method M has a lower mean and median MASE than seasonal naive and ETS on "
+                                            "monthly retail sales series.")
+        errors, warnings = self.rules(self.d)
+        self.assertNotIn("W24", warnings)
+
+    def test_w23_one_value_the_conclusion_turns_on_passes(self):
+        claim(self.d, "C2")["statement"] = ("Method M has the lowest mean MASE (0.861) of three methods on monthly "
+                                            "retail sales series.")
+        errors, warnings = self.rules(self.d)
+        self.assertNotIn("W24", warnings)
+
+    def test_w23_statement_retelling_the_table(self):
+        claim(self.d, "C2")["statement"] = ("Method M has mean MASE 0.861 against 0.874 for seasonal naive and 0.902 "
+                                            "for ETS on monthly retail sales series.")
+        self.assertWarning(self.d, "W24")
+
+    def test_w23_only_the_cited_tables_count(self):
+        self.e1["tables"].append(dict(copy.deepcopy(self.e1["tables"][0]), id="T2"))
+        self.e1["tables"][0]["rows"] = [{"id": "r1", "label": ["M"], "values": [1.5, 1.6]}]
+        claim(self.d, "C2")["statement"] = ("Method M has mean MASE 0.861 against 0.874 for seasonal naive and 0.902 "
+                                            "for ETS on monthly retail sales series.")
+        errors, warnings = self.rules(self.d)
+        self.assertNotIn("W24", warnings)
 
 
 if __name__ == "__main__":

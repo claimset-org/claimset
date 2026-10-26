@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.24"
+SCHEMA_VERSION = "0.25"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -1071,6 +1071,34 @@ def unsourced_numbers(c, support, by_id):
     return out
 
 
+def table_echo(c, support, by_id):
+    """W24: values of the cited result tables that the statement repeats. The tables are those of the evidence an
+    empirical or simulation support entry points to, narrowed to the tables its `results` name when it names any.
+    Numbers are found as for W17; each distinct number in the statement that equals a cell counts once."""
+    cells = []
+    for s in support:
+        if s.get("kind") not in ("empirical_quant", "simulation"):
+            continue
+        e = by_id(s.get("evidence"), "evidence") if s.get("evidence") else None
+        if e is None:
+            continue
+        named = {str(x).split(".")[1] for x in as_list(s.get("results")) if str(x).count(".") >= 1}
+        for t in as_list(e.get("tables")):
+            t = as_dict(t)
+            if named and t.get("id") not in named:
+                continue
+            for row in as_list(t.get("rows")):
+                _numbers_in(as_dict(row).get("values"), cells)
+    if not cells:
+        return []
+    out = []
+    for m in NUM_RE.finditer(NUMBER_SKIP.sub(" ", c.get("statement") or "")):
+        token = m.group(0).strip()
+        if token not in out and not m.group(4) and any(number_matches(v, token) for v in cells):
+            out.append(token)
+    return out
+
+
 def check_test(r, test, w):
     """Rule 47: a confirmatory claim carries the decision rule it was planned with."""
     if not isinstance(test, dict):
@@ -1421,6 +1449,12 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
         r.warn("W17", f"{w}.statement", f"{', '.join(unsourced)} in the statement match no recorded result, table "
                                         f"cell, test parameter, scope condition or referenced definition: record the "
                                         f"number as a result (or the setting in the scope), or check it")
+    echoed = table_echo(c, support, by_id)
+    if len(echoed) >= 3:
+        r.warn("W24", f"{w}.statement", f"repeats {len(echoed)} values of the tables it cites ({', '.join(echoed)}): "
+                                        f"state the pattern the paper concludes and cite the table or rows, repeating a "
+                                        f"value only when the conclusion turns on it; a claim that only retells a table "
+                                        f"is removed and the table cited where it is used (§3.4)")
     with_results = sorted({str(s.get("evidence")) for s in support if s.get("evidence") and as_list(s.get("results"))})
     if len(with_results) > 1:
         r.warn("W22", f"{w}.statement", f"cites results of {', '.join(with_results)}: if the statement reports a "
