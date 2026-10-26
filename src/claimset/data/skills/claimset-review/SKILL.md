@@ -42,6 +42,7 @@ Every validator warning becomes a comment of category `validation` (no resolutio
 Work claim by claim, principal claims first, then what they rest on. For each:
 
 **Statement and scope.**
+- Is the claim one atom: one subject, one relation, at most one comparator, one set of conditions (spec §8 rule 1)? Two subjects, comparators or condition sets are a `presentation` comment asking to split it.
 - Does the statement hold one claim? If one part could be true and another false (signs: the validator's W22), it is a `presentation` comment asking to split it, unless the parts differ in support, which makes it a comment on the part that lacks it.
 - Does the statement retell a table's values (the validator's W24) rather than state what the table shows? It is a `presentation` comment asking for the pattern, with the table cited.
 - Does the statement say what the evidence shows, within its scope, no more? A broader statement than the tests is a `scope` comment.

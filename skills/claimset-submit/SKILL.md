@@ -82,7 +82,9 @@ Leave out general knowledge that no claim rests on and justifications of routine
 - a recommendation added to a finding ("…, so practitioners should …");
 - results cited from two evidence objects, two scopes, or two different outcomes;
 - "and" joining two verbs ("reduces MASE and improves coverage").
-"M is more accurate than ETS at short horizons and faster to fit" is two claims. A comparison across measures or datasets that says where a method is better and where it is not stays one claim, with the table that holds the numbers. The validator flags most of these signs (W22); check each flagged statement.
+"M is more accurate than ETS at short horizons and faster to fit" is two claims. The validator flags most of these signs (W22); check each flagged statement.
+
+Write each claim as an **atom** before writing its statement: *subject* (the method, model, group or population it is about), *relation* (what is asserted), *comparator* (what it is compared with, if anything; a named group counts as one), *conditions* (data, setting, sample size, horizon). One claim is one atom. Two subjects, two comparators or two sets of conditions are two claims, whatever the wording: "M beats N on monthly data and P on quarterly data" is two claims. Atoms are grouped only when they share subject, comparator and conditions and differ in the measure or summary: "M has a lower mean and median MASE than N on monthly data, but a higher MSIS" stays one claim, with the table that holds the numbers. A conclusion you draw over several atoms ("M is the most robust variant") is a claim of its own, with `depends_on` listing the atoms.
 
 **Write each statement** as one self-contained sentence:
 - No "this", "these", "the above", "as shown", "our method" without naming it. Name the method, population and outcome every time.
@@ -257,7 +259,7 @@ Re-read the file as a sceptical reviewer who sees only one claim at a time. If t
 - Does each claim's scope describe that claim, not its section?
 - Does every refutation, replication and extension name the work it relates to?
 - Are limitations specific and attached to the right claims?
-- Does each statement hold one claim (W22)? Is each part of the setup a definition, listed in the evidence's `setup`?
+- Is each claim one atom, with one subject, one comparator and one set of conditions? Does each statement hold one claim (W22)? Is each part of the setup a definition, listed in the evidence's `setup`?
 - Does any statement retell a table instead of stating a conclusion (W24)?
 - Are all numbers identical to the structured results and the source tables? Does each claim cite only the results its statement reports? (The validator warns, W12, when a cited result does not appear in the statement, and W17 when a number in the statement matches no result.)
 - Does every `no_prior_found` or `refutation` claim cite the closest prior result you found?
