@@ -1039,6 +1039,11 @@ class TestRulesV027(Base):
         errors, warnings = self.rules(self.d)
         self.assertNotIn("W25", warnings)
 
+    def test_w25_secondary_conclusion_from_results_passes(self):
+        claim(self.d, "C9").update(type="interpretive", statement="Method M is a robust choice for retail forecasting.")
+        errors, warnings = self.rules(self.d)
+        self.assertNotIn("W25", warnings)
+
     def test_w25_secondary_result_nothing_rests_on(self):
         self.assertWarning(self.d, "W25")
 

@@ -519,7 +519,7 @@ def validate(doc, published=False, local_root=None, revision=False):
     for q in coll["open_questions"]:
         named |= {x for x in as_list(as_dict(q).get("claims")) if isinstance(x, str)}
     for cid, c in claims.items():
-        if c.get("role") != "secondary" or cid in named:
+        if c.get("role") != "secondary" or c.get("type") != "descriptive" or cid in named:
             continue
         if any(as_dict(s).get("kind") in ("empirical_quant", "simulation") for s in as_list(c.get("support"))):
             r.warn("W25", f"claims:{cid}", "a secondary result on which no claim, warrant or open question rests: keep it "
