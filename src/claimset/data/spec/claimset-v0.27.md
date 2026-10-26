@@ -1,10 +1,23 @@
-# Claimset — Specification v0.25 (draft)
+# Claimset — Specification v0.27 (draft)
 
-Status: working draft · Date: 2026-10-26 · Supersedes v0.24 (`spec/claimset-v0.24.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-26 · Supersedes v0.26 (`spec/claimset-v0.26.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.24
+## Changes since v0.26
+
+Splitting comparisons into atoms showed how many claims of a converted paper only read off its tables: each sentence of a results section became several claims that nothing rests on, burying the contributions, while the tables already record every value.
+
+- §3.3, *Secondary claims*: a secondary claim resting on evidence (a result) is written only when a claim, a warrant or an open question rests on it, or when it states a loss, limit or null result of the paper's own method. Other results stay in the result tables of their evidence (§3.4).
+- New warning 25 flags a secondary descriptive claim resting on evidence on which nothing rests (§10.4).
+
+## Changes in v0.26 (since v0.25)
+
+"One assertion per statement" was judged sentence by sentence, and comparisons kept growing: several methods, several comparators, several conditions in one statement. A claim is now defined by its parts, so that it can be checked.
+
+- §8 rule 1: a claim is one atom: one subject, one relation, one comparator (if any), one set of conditions. Rule 2: atoms are grouped only when they share subject, comparator and conditions and differ in the measure or summary; the paper's conclusions over several atoms are claims of their own that depend on them.
+
+## Changes in v0.25 (since v0.24)
 
 Tables carry the numbers; claims carry what the paper concludes from them. Statements that retell a table's values add length and transcription errors, and tell a reader nothing the table does not.
 
@@ -491,7 +504,7 @@ Prior work that the paper cites as an example or an illustration ("used, e.g., i
 
 **One claim, several places.** Papers state their findings more than once: in the abstract, the introduction, the body and the conclusions. Each assertion is one claim, with source spans for every place the paper makes it, worded as precisely as its most specific statement (usually the body's, with its conditions). The introduction's and abstract's statements show which claims are contributions. A statement in the conclusions (or abstract) that is broader than what the body establishes (more general data, a stronger verb, a recommendation) is not merged into the claim it generalises: that would make the narrower claim stronger, or hide what the paper concludes. It is a claim of its own, with the scope the paper gives it, that depends on the claims it generalises.
 
-**Secondary claims in converted papers.** The paper's side results, including negative and null results, are kept as `secondary` claims. Its side remarks, illustrations and explanations that it neither tests nor uses for a contribution are left out.
+**Secondary claims in converted papers.** The paper's side results are kept as `secondary` claims only when something rests on them or they qualify what the paper establishes. A secondary descriptive claim resting on evidence (a result; a conclusion the paper draws from results is not one, *One claim, several places* above) is written when a claim depends on it, a warrant names it as a premise or an open question concerns it; or when it states a loss, a limit or a null result of the paper's own method ("M has higher MSIS than N on short series", "M does not improve on N on the yearly data"). Any other result the paper reports, including a pattern its results section reads off a table, is not a claim: it stays in the result table of its evidence, which records it whole (§3.4, *Tables and claims*). Side remarks, illustrations and explanations that the paper neither tests nor uses for a contribution are left out.
 
 ### 3.4 Evidence
 
@@ -516,7 +529,7 @@ A single-estimate study may use `estimand`, `estimate` and `interval` instead.
 
 Intervals, ranks and test statistics are columns of their own (e.g. `"mean MASE, 95% interval lower"`). A table records what the paper reports; it is not split into result entries, and result entries are not repeated in a table.
 
-**Tables and claims.** The table is the record of its numbers; a claim is the record of what the paper concludes from them. A claim resting on a table states the pattern the paper draws (which method is better or worse, on which measures, under which conditions, including where it is worse) and cites the table or the rows that hold the numbers (`E2.T1`, `E2.T1.r3`); it repeats a value only when the conclusion turns on that value ("selected for 6 of the 11 groups", "coverage 0.947, the closest to 95%"). A claim that only retells a table's values, with no conclusion of the paper's own, is not written: the claim that uses the table cites it directly. A comparison stated this way is still one claim (§8 rule 2).
+**Tables and claims.** The table is the record of its numbers; a claim is the record of what the paper concludes from them. A claim resting on a table states the pattern the paper draws (which method is better or worse, on which measures, under which conditions, including where it is worse) and cites the table or the rows that hold the numbers (`E2.T1`, `E2.T1.r3`); it repeats a value only when the conclusion turns on that value ("selected for 6 of the 11 groups", "coverage 0.947, the closest to 95%"). A claim that only retells a table's values, with no conclusion of the paper's own, is not written: the claim that uses the table cites it directly. A comparison stated this way is still one claim (§8 rule 2). A pattern that no claim, warrant or open question uses and that states no loss, limit or null result of the paper's method is not written either (§3.3, *Secondary claims in converted papers*).
 
 ```json
 "tables": [{"id": "T1", "description": "Mean MASE and MSIS of three methods on the M3 monthly series, horizons 1 to 18",
@@ -827,8 +840,8 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 ## 8. Statement text rules
 
-1. One assertion per statement. A statement holds more than one claim when one part could be true and another false. Signs of it: a semicolon; contrast (`but`, `while`, `whereas`, `although`, `however`); addition (`as well as`, `also`, `in addition`, `moreover`, `furthermore`, `not only`); explanation (`because`, `since`, `due to`, `thus`, `therefore`, `hence`, `which explains`), which usually joins a result to its explanation, two claims of different types; an assertion in a side clause (`, which …`) or in parentheses; a recommendation added to a finding (`should`, `recommend`); a claim citing results of more than one evidence object; and `and` joining two verbs. The comparison of rule 2 (where a method is better and where it is not) stays one claim.
-2. **Granularity rule:** split a statement into separate claims when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one interpretive claim with a warrant; sub-themes become separate supporting claims only if they have their own evidence. A comparison the paper makes across several measures, datasets or settings is one claim that states where the method is better and where it is not, supported by the table holding the numbers, whose values it does not repeat (§3.4, *Tables and claims*); it is split only where the paper draws separate conclusions or the parts differ in support or scope. Results on which a method is worse are stated in the claim, never left out.
+1. One assertion per statement. A claim is one **atom**: one *subject* (the method, model, group of methods, population or object the claim is about), one *relation* (what is asserted of it: is lower than, is stationary when, improves, is equivalent to), at most one *comparator* (what it is compared with; a named group, such as "the univariate methods", is one comparator), and one set of *conditions* (the data, setting, sample size, horizon or parameter region under which it holds). A statement with two subjects, two comparators or two sets of conditions is two or more claims, whatever its wording. Write the atom first and the statement from it. A statement also holds more than one claim when one part could be true and another false. Signs of it: a semicolon; contrast (`but`, `while`, `whereas`, `although`, `however`); addition (`as well as`, `also`, `in addition`, `moreover`, `furthermore`, `not only`); explanation (`because`, `since`, `due to`, `thus`, `therefore`, `hence`, `which explains`), which usually joins a result to its explanation, two claims of different types; an assertion in a side clause (`, which …`) or in parentheses; a recommendation added to a finding (`should`, `recommend`); a claim citing results of more than one evidence object; and `and` joining two verbs. The grouping of rule 2 (one subject against one comparator under one set of conditions, better on some measures and worse on others) stays one claim.
+2. **Granularity rule:** split a statement into separate claims when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one interpretive claim with a warrant; sub-themes become separate supporting claims only if they have their own evidence. Atoms are grouped into one claim only when they share subject, comparator and conditions and differ in the measure or summary: "M has a lower mean and median MASE than N, but a higher MSIS" is one claim, supported by the table holding the numbers, whose values it does not repeat (§3.4, *Tables and claims*). The same comparison on two data sets, against two comparators or for two methods is two claims. A conclusion the paper draws over several atoms ("M is the most robust of the variants") is a claim of its own, whose `depends_on` lists the atoms it rests on; it is not written by merging them. Results on which a method is worse are stated in the claim, never left out.
 3. Self-contained: no anaphora or cross-references ("this", "the above", "as shown").
 4. Scope-bearing qualifiers belong in `scope`, not hedged prose.
 5. Defined terms are marked inline with their definition ID: `[[D2:forecast skill]]`.
@@ -990,6 +1003,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 22. A statement shows a sign of holding more than one claim (§8 rule 1): a semicolon, a word of contrast, addition or explanation, a side clause with `, which`, a parenthesis holding `and`, `also` or `is`/`are`, a recommendation, or results cited from more than one evidence object. Check it: if one part could be true and another false, split it into claims, each self-contained. A comparison that states where a method is better and where it is not stays one claim.
 23. A claim that is not principal, has no warrant and is not formal, whose only support is `argument`, `consensus`, `expert_judgement` or `unstated`, and on which no claim rests (by `depends_on` or `assumptions`): the paper neither shows nor uses it (§8 rule 9). Support it and link it, record it as an open question, or leave it out; in a converted paper, check that the source's argument uses it. The message names rhetorical wording when the statement has some: importance framing ("crucial", "paramount"), promise ("promising", "paves the way"), sweeping generalisation ("always", "it is well known"), speculation ("may", "could"). The wording alone never raises the warning.
 24. The statement of a claim with `empirical_quant` or `simulation` support repeats three or more values of the result tables it cites (§3.4, *Tables and claims*): state the pattern the paper concludes and cite the table or rows, repeating a value only when the conclusion turns on it; or, if the claim only retells the table, remove it and cite the table from the claims that use it. Numbers are found as for warning 17.
+25. A `secondary` `descriptive` claim with `empirical_quant` or `simulation` support (a result, not a conclusion drawn from results) on which nothing rests: no claim depends on it or lists it in `assumptions`, no warrant names it as a premise, no open question concerns it. Keep it only if it states a loss, limit or null result of the paper's own method; otherwise the result table of its evidence holds it (§3.3, *Secondary claims in converted papers*).
 
 ## 11. Platform dependencies
 
