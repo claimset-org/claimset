@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.26"
+SCHEMA_VERSION = "0.27"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -512,6 +512,19 @@ def validate(doc, published=False, local_root=None, revision=False):
             r.warn("W23", f"claims:{cid}", f"no evidence or citation supports it and no claim rests on it{why}: "
                                            f"support it and link it, record it as an open question if it is one, "
                                            f"or leave it out")
+    # W25: a secondary result on which nothing rests (§3.3, Secondary claims in converted papers)
+    named = set(used)
+    for w in coll["warrants"]:
+        named |= {x for x in as_list(as_dict(w).get("premises")) if isinstance(x, str)}
+    for q in coll["open_questions"]:
+        named |= {x for x in as_list(as_dict(q).get("claims")) if isinstance(x, str)}
+    for cid, c in claims.items():
+        if c.get("role") != "secondary" or cid in named:
+            continue
+        if any(as_dict(s).get("kind") in ("empirical_quant", "simulation") for s in as_list(c.get("support"))):
+            r.warn("W25", f"claims:{cid}", "a secondary result on which no claim, warrant or open question rests: keep it "
+                                           "only if it states a loss, limit or null result of the paper's own method; "
+                                           "otherwise the result table of its evidence holds it")
     for cid, c in claims.items():
         if c.get("role") == "supporting" and cid not in reached:
             r.warn("W15", f"claims:{cid}", "no principal claim rests on this supporting claim: link it "

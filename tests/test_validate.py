@@ -741,7 +741,7 @@ class TestReadingView(Base):
         self.assertLess(len(self.render(d)), len(json.dumps(d, separators=(",", ":"))))
 
     def test_appendix_d_matches_the_renderer(self):
-        spec = (ROOT / "spec" / "claimset-v0.26.md").read_text(encoding="utf-8")
+        spec = (ROOT / "spec" / "claimset-v0.27.md").read_text(encoding="utf-8")
         self.assertIn(self.render(load("submission-native.json")), spec)
 
     def test_render_command_refuses_invalid_file(self):
@@ -1015,6 +1015,32 @@ class TestRulesV025(Base):
                                             "for ETS on monthly retail sales series.")
         errors, warnings = self.rules(self.d)
         self.assertNotIn("W24", warnings)
+
+
+class TestRulesV027(Base):
+    """Warning W25: a secondary result claim on which nothing rests."""
+
+    def setUp(self):
+        self.d = load("submission-native.json")
+        self.d["claims"].append({"id": "C9", "statement": "Method M has a higher median MASE than ETS on the yearly retail series.",
+                                 "type": "descriptive", "role": "secondary", "novelty": "no_prior_found",
+                                 "support": [{"kind": "empirical_quant", "evidence": "E1"}]})
+
+    def test_w25_secondary_result_a_claim_rests_on_passes(self):
+        principal = next(c for c in self.d["claims"] if c["role"] == "principal")
+        principal["depends_on"] = list(principal.get("depends_on") or []) + ["C9"]
+        claim(self.d, "C9")["role"] = "supporting"
+        errors, warnings = self.rules(self.d)
+        self.assertNotIn("W25", warnings)
+
+    def test_w25_secondary_result_an_open_question_concerns_passes(self):
+        self.d["open_questions"] = [{"id": "O1", "question": "Whether M is worse on yearly series because they are short is not established.",
+                                     "claims": ["C9"]}]
+        errors, warnings = self.rules(self.d)
+        self.assertNotIn("W25", warnings)
+
+    def test_w25_secondary_result_nothing_rests_on(self):
+        self.assertWarning(self.d, "W25")
 
 
 if __name__ == "__main__":
