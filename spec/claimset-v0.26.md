@@ -1,10 +1,16 @@
-# Claimset — Specification v0.25 (draft)
+# Claimset — Specification v0.26 (draft)
 
-Status: working draft · Date: 2026-10-26 · Supersedes v0.24 (`spec/claimset-v0.24.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-26 · Supersedes v0.25 (`spec/claimset-v0.25.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.24
+## Changes since v0.25
+
+"One assertion per statement" was judged sentence by sentence, and comparisons kept growing: several methods, several comparators, several conditions in one statement. A claim is now defined by its parts, so that it can be checked.
+
+- §8 rule 1: a claim is one atom: one subject, one relation, one comparator (if any), one set of conditions. Rule 2: atoms are grouped only when they share subject, comparator and conditions and differ in the measure or summary; the paper's conclusions over several atoms are claims of their own that depend on them.
+
+## Changes in v0.25 (since v0.24)
 
 Tables carry the numbers; claims carry what the paper concludes from them. Statements that retell a table's values add length and transcription errors, and tell a reader nothing the table does not.
 
@@ -827,8 +833,8 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 ## 8. Statement text rules
 
-1. One assertion per statement. A statement holds more than one claim when one part could be true and another false. Signs of it: a semicolon; contrast (`but`, `while`, `whereas`, `although`, `however`); addition (`as well as`, `also`, `in addition`, `moreover`, `furthermore`, `not only`); explanation (`because`, `since`, `due to`, `thus`, `therefore`, `hence`, `which explains`), which usually joins a result to its explanation, two claims of different types; an assertion in a side clause (`, which …`) or in parentheses; a recommendation added to a finding (`should`, `recommend`); a claim citing results of more than one evidence object; and `and` joining two verbs. The comparison of rule 2 (where a method is better and where it is not) stays one claim.
-2. **Granularity rule:** split a statement into separate claims when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one interpretive claim with a warrant; sub-themes become separate supporting claims only if they have their own evidence. A comparison the paper makes across several measures, datasets or settings is one claim that states where the method is better and where it is not, supported by the table holding the numbers, whose values it does not repeat (§3.4, *Tables and claims*); it is split only where the paper draws separate conclusions or the parts differ in support or scope. Results on which a method is worse are stated in the claim, never left out.
+1. One assertion per statement. A claim is one **atom**: one *subject* (the method, model, group of methods, population or object the claim is about), one *relation* (what is asserted of it: is lower than, is stationary when, improves, is equivalent to), at most one *comparator* (what it is compared with; a named group, such as "the univariate methods", is one comparator), and one set of *conditions* (the data, setting, sample size, horizon or parameter region under which it holds). A statement with two subjects, two comparators or two sets of conditions is two or more claims, whatever its wording. Write the atom first and the statement from it. A statement also holds more than one claim when one part could be true and another false. Signs of it: a semicolon; contrast (`but`, `while`, `whereas`, `although`, `however`); addition (`as well as`, `also`, `in addition`, `moreover`, `furthermore`, `not only`); explanation (`because`, `since`, `due to`, `thus`, `therefore`, `hence`, `which explains`), which usually joins a result to its explanation, two claims of different types; an assertion in a side clause (`, which …`) or in parentheses; a recommendation added to a finding (`should`, `recommend`); a claim citing results of more than one evidence object; and `and` joining two verbs. The grouping of rule 2 (one subject against one comparator under one set of conditions, better on some measures and worse on others) stays one claim.
+2. **Granularity rule:** split a statement into separate claims when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one interpretive claim with a warrant; sub-themes become separate supporting claims only if they have their own evidence. Atoms are grouped into one claim only when they share subject, comparator and conditions and differ in the measure or summary: "M has a lower mean and median MASE than N, but a higher MSIS" is one claim, supported by the table holding the numbers, whose values it does not repeat (§3.4, *Tables and claims*). The same comparison on two data sets, against two comparators or for two methods is two claims. A conclusion the paper draws over several atoms ("M is the most robust of the variants") is a claim of its own, whose `depends_on` lists the atoms it rests on; it is not written by merging them. Results on which a method is worse are stated in the claim, never left out.
 3. Self-contained: no anaphora or cross-references ("this", "the above", "as shown").
 4. Scope-bearing qualifiers belong in `scope`, not hedged prose.
 5. Defined terms are marked inline with their definition ID: `[[D2:forecast skill]]`.
