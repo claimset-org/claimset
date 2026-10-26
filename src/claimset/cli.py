@@ -8,6 +8,7 @@ from pathlib import Path
 from . import LAB_SPEC_VERSION, SPEC_VERSION, __version__
 from . import bundle as _bundle
 from . import render as _render
+from . import renumber as _renumber
 from . import revision as _revision
 from . import validate as _validate
 from .lab import cli as _lab_cli
@@ -137,6 +138,27 @@ def _cmd_render(args):
     return 0
 
 
+def _cmd_renumber(args):
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"ERROR: cannot read {args.file}: {exc}", file=sys.stderr)
+        return 1
+    if _renumber.published(doc):
+        print(f"ERROR: {args.file} names a published claimset (paper.id or paper.version): its IDs never change "
+              f"(spec §9, Order and IDs). Place new claims where they belong in the file instead.", file=sys.stderr)
+        return 1
+    out, mapping = _renumber.renumber(doc)
+    with open(args.output or args.file, "w", encoding="utf-8") as fh:
+        json.dump(out, fh, indent=1, ensure_ascii=False)
+        fh.write("\n")
+    for old, new in mapping.items():
+        if old != new:
+            print(f"{old} -> {new}")
+    return 0
+
+
 def build_parser():
     p = argparse.ArgumentParser(
         prog="claimset",
@@ -163,6 +185,12 @@ def build_parser():
     rv.add_argument("-o", "--output", help="write the reading view to this file")
     rv.add_argument("--published", action="store_true", help="the file is a published claimset")
     rv.set_defaults(func=_cmd_render)
+
+    rn = sub.add_parser("renumber", help="before the first submission: renumber claims and other objects in "
+                                         "reading order, rewriting every reference")
+    rn.add_argument("file", help="path to the claimset JSON file (rewritten in place unless -o is given)")
+    rn.add_argument("-o", "--output", help="write the renumbered claimset to this file")
+    rn.set_defaults(func=_cmd_renumber)
 
     su = sub.add_parser("setup", help="create, attach or adopt study branches (claimset/<study>), checked out "
                                       "at claimset/<study>/")

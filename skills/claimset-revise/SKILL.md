@@ -56,7 +56,7 @@ A `disputed` comment met neither rule of its test; the re-review gave a replacem
 
 Start from the current version's file, `<record>/v<n>/claimset.json`, never from an older one or a fresh lab export:
 - keep `paper.id`; remove what the platform adds: `paper.version`, `previous_version`, `changes`, `date`, `status`, `status_notice`, `answers`, the classification's `subfield` and `topics`, and each claim's `verifiability` and `verifiability_flags`;
-- make the changes your answers need. A refined object keeps its ID; a different assertion gets a new ID; an ID removed in any version is never used again;
+- make the changes your answers need. A refined object keeps its ID; a different assertion gets a new ID, the next free number, and is placed where it belongs in the file (claims are in reading order, spec §9); an ID removed in any version is never used again; never run `claimset renumber` on a revision;
 - put the evidence a rebuttal rests on into the claimset: a new evidence object with the plan's `lab_runs` and results, an assumption's `check` and `check_evidence`, a claim of the planned test (its `test.addresses` names the comment);
 - keep the statement rules and everything else of the claimset-submit skill; validate with `claimset validate revised.json --revision`.
 

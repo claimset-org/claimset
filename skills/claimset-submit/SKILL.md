@@ -271,6 +271,8 @@ Re-read the file as a sceptical reviewer who sees only one claim at a time. If t
 
 ### 12. Hand over
 
+Before the first submission, put the claims in reading order and close the gaps in their IDs: `claimset renumber claimset.json` (it rewrites every reference; validate and render again afterwards). A claimset exported from a lab record keeps its link to the record through `hypothesis.lab_event`, so renumbering is safe. Never renumber a published claimset: a correction or revision keeps every ID and places a new claim where it belongs in the file, with the next free number (spec §9, *Order and IDs*).
+
 Write the file where it belongs (spec §2.4): `claimset/<study>/<paper>.claimset.json`, which in a git repository is the checkout of the study's branch (lab record §3; the tool commits and pushes what `claimset lab` commands write there, and you commit a file you edit by hand in that checkout and push the branch), with its reading view as `claimset/<study>/<paper>.claimset.txt` (`claimset render … -o …`). The name stays the same through revisions; never put a date or version in it. When the human submits a version, commit it and mark it with `claimset tag claimset/<study>/<paper>.claimset.json` (a git tag `claimset/<study>/<paper>/v<n>`). If a claim builds on a paper of the same repository that is not yet published, cite or relate it with `id_type: claimset_local` and the target `<study>/<paper>.claimset.json#C3`; the platform replaces it at publication, so that paper is published first or submitted together.
 
 Give the human a short summary:

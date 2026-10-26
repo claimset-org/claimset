@@ -1,10 +1,23 @@
-# Claimset — Specification v0.26 (draft)
+# Claimset — Specification v0.28 (draft)
 
-Status: working draft · Date: 2026-10-26 · Supersedes v0.25 (`spec/claimset-v0.25.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-26 · Supersedes v0.27 (`spec/claimset-v0.27.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.25
+## Changes since v0.27
+
+A claimset exported from a lab record numbers its claims in the order the hypotheses were written, and a hand-made one in the order its claims were found; neither is the order of the paper's argument, and the reading view follows file order.
+
+- §9: claims are listed in reading order, and before the first submission their IDs follow that order (`claimset renumber`). After publication IDs never change: a revision keeps every ID and places a new claim where it belongs in the file, with the next free number.
+
+## Changes in v0.27 (since v0.26)
+
+Splitting comparisons into atoms showed how many claims of a converted paper only read off its tables: each sentence of a results section became several claims that nothing rests on, burying the contributions, while the tables already record every value.
+
+- §3.3, *Secondary claims*: a secondary claim resting on evidence (a result) is written only when a claim, a warrant or an open question rests on it, or when it states a loss, limit or null result of the paper's own method. Other results stay in the result tables of their evidence (§3.4).
+- New warning 25 flags a secondary descriptive claim resting on evidence on which nothing rests (§10.4).
+
+## Changes in v0.26 (since v0.25)
 
 "One assertion per statement" was judged sentence by sentence, and comparisons kept growing: several methods, several comparators, several conditions in one statement. A claim is now defined by its parts, so that it can be checked.
 
@@ -497,7 +510,7 @@ Prior work that the paper cites as an example or an illustration ("used, e.g., i
 
 **One claim, several places.** Papers state their findings more than once: in the abstract, the introduction, the body and the conclusions. Each assertion is one claim, with source spans for every place the paper makes it, worded as precisely as its most specific statement (usually the body's, with its conditions). The introduction's and abstract's statements show which claims are contributions. A statement in the conclusions (or abstract) that is broader than what the body establishes (more general data, a stronger verb, a recommendation) is not merged into the claim it generalises: that would make the narrower claim stronger, or hide what the paper concludes. It is a claim of its own, with the scope the paper gives it, that depends on the claims it generalises.
 
-**Secondary claims in converted papers.** The paper's side results, including negative and null results, are kept as `secondary` claims. Its side remarks, illustrations and explanations that it neither tests nor uses for a contribution are left out.
+**Secondary claims in converted papers.** The paper's side results are kept as `secondary` claims only when something rests on them or they qualify what the paper establishes. A secondary descriptive claim resting on evidence (a result; a conclusion the paper draws from results is not one, *One claim, several places* above) is written when a claim depends on it, a warrant names it as a premise or an open question concerns it; or when it states a loss, a limit or a null result of the paper's own method ("M has higher MSIS than N on short series", "M does not improve on N on the yearly data"). Any other result the paper reports, including a pattern its results section reads off a table, is not a claim: it stays in the result table of its evidence, which records it whole (§3.4, *Tables and claims*). Side remarks, illustrations and explanations that the paper neither tests nor uses for a contribution are left out.
 
 ### 3.4 Evidence
 
@@ -522,7 +535,7 @@ A single-estimate study may use `estimand`, `estimate` and `interval` instead.
 
 Intervals, ranks and test statistics are columns of their own (e.g. `"mean MASE, 95% interval lower"`). A table records what the paper reports; it is not split into result entries, and result entries are not repeated in a table.
 
-**Tables and claims.** The table is the record of its numbers; a claim is the record of what the paper concludes from them. A claim resting on a table states the pattern the paper draws (which method is better or worse, on which measures, under which conditions, including where it is worse) and cites the table or the rows that hold the numbers (`E2.T1`, `E2.T1.r3`); it repeats a value only when the conclusion turns on that value ("selected for 6 of the 11 groups", "coverage 0.947, the closest to 95%"). A claim that only retells a table's values, with no conclusion of the paper's own, is not written: the claim that uses the table cites it directly. A comparison stated this way is still one claim (§8 rule 2).
+**Tables and claims.** The table is the record of its numbers; a claim is the record of what the paper concludes from them. A claim resting on a table states the pattern the paper draws (which method is better or worse, on which measures, under which conditions, including where it is worse) and cites the table or the rows that hold the numbers (`E2.T1`, `E2.T1.r3`); it repeats a value only when the conclusion turns on that value ("selected for 6 of the 11 groups", "coverage 0.947, the closest to 95%"). A claim that only retells a table's values, with no conclusion of the paper's own, is not written: the claim that uses the table cites it directly. A comparison stated this way is still one claim (§8 rule 2). A pattern that no claim, warrant or open question uses and that states no loss, limit or null result of the paper's method is not written either (§3.3, *Secondary claims in converted papers*).
 
 ```json
 "tables": [{"id": "T1", "description": "Mean MASE and MSIS of three methods on the M3 monthly series, horizons 1 to 18",
@@ -846,6 +859,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 ## 9. Versioning, corrections and revisions
 
 - Every published version is immutable and permanently retrievable.
+- **Order and IDs.** Claims are listed in reading order: principal claims, then supporting claims, then secondary claims and assumptions, each in the order of the paper's argument, since the reading view follows file order (§2). Before the first submission, IDs follow that order without gaps: `claimset renumber FILE` renumbers claims, warrants, definitions, limitations and open questions and rewrites every reference to them; a claimset exported from a lab record keeps its link to the record through `hypothesis.lab_event`, not through claim IDs. After publication IDs never change (revision §2, *Stable object IDs*): a revision places a new claim where it belongs in the file, with the next free number, and an ID that is dropped is not reused.
 - A correction is submitted as a complete corrected file whose `paper.id` names the existing claimset and which carries a `correction_reason`. The platform computes the JSON Patch against the latest published version, records it in `changes` with the reason, assigns the next `version` and `previous_version`, and sets `status: corrected`. The DOI does not change; versions are distinguished by `@v<n>`.
 - A revision is submitted as a complete file built from the current version, whose `paper.id` names the existing claimset and which has no `correction_reason`, together with a response to the unresolved review comments (revision §4–5). The platform records the patch as for a correction, with the comments each operation answers, sets `paper.answers`, and keeps `status: active`. Object IDs are stable across versions: an object that keeps its ID is the same object, refined, and an ID removed from the claimset is never used again.
 - Retraction, withdrawal or an expression of concern is a governance action by the platform, recorded by `status` and `status_notice`. The paper's content is retained so references still resolve, and every reader sees the status and reason.
@@ -996,6 +1010,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 22. A statement shows a sign of holding more than one claim (§8 rule 1): a semicolon, a word of contrast, addition or explanation, a side clause with `, which`, a parenthesis holding `and`, `also` or `is`/`are`, a recommendation, or results cited from more than one evidence object. Check it: if one part could be true and another false, split it into claims, each self-contained. A comparison that states where a method is better and where it is not stays one claim.
 23. A claim that is not principal, has no warrant and is not formal, whose only support is `argument`, `consensus`, `expert_judgement` or `unstated`, and on which no claim rests (by `depends_on` or `assumptions`): the paper neither shows nor uses it (§8 rule 9). Support it and link it, record it as an open question, or leave it out; in a converted paper, check that the source's argument uses it. The message names rhetorical wording when the statement has some: importance framing ("crucial", "paramount"), promise ("promising", "paves the way"), sweeping generalisation ("always", "it is well known"), speculation ("may", "could"). The wording alone never raises the warning.
 24. The statement of a claim with `empirical_quant` or `simulation` support repeats three or more values of the result tables it cites (§3.4, *Tables and claims*): state the pattern the paper concludes and cite the table or rows, repeating a value only when the conclusion turns on it; or, if the claim only retells the table, remove it and cite the table from the claims that use it. Numbers are found as for warning 17.
+25. A `secondary` `descriptive` claim with `empirical_quant` or `simulation` support (a result, not a conclusion drawn from results) on which nothing rests: no claim depends on it or lists it in `assumptions`, no warrant names it as a premise, no open question concerns it. Keep it only if it states a loss, limit or null result of the paper's own method; otherwise the result table of its evidence holds it (§3.3, *Secondary claims in converted papers*).
 
 ## 11. Platform dependencies
 
