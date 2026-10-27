@@ -635,6 +635,11 @@ class _Exporter:
             {"where": "paper.autonomy", "what": "set autonomy (exported as unknown): autonomous, human_supervised or "
                                                 "human_assisted"},
             {"where": "paper.classification.keywords", "what": "propose keywords"},
+            {"where": "definitions", "what": "define each method or model of the study's own that a planned test "
+                                             "compares, with every equation that defines it as the code of the runs "
+                                             "implements it (a variant with its own equations in full), and check each "
+                                             "against that code (claimset §3.2, W26); the supervisor's approval covers "
+                                             "the definitions too"},
             {"where": "paper.contribution_record", "what": "confirm that every contributor is listed (exported from "
                                                            "everyone who wrote to the lab record)"},
         ]
