@@ -1,8 +1,12 @@
-# Claimset Lab Record — Specification v0.10 (draft)
+# Claimset Lab Record — Specification v0.11 (draft)
 
-Status: working draft · Date: 2026-10-22 · Supersedes v0.9 · Companion to the claimset specification (`spec/claimset-v0.22.md`) and the revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-27 · Supersedes v0.10 · Companion to the claimset specification (`spec/claimset-v0.29.md`) and the revision specification (`spec/claimset-revision-v0.2.md`)
 
-## Changes since v0.9
+## Changes since v0.10
+
+- The completion list asks for the definition of each method the planned tests compare: every defining equation as the code that ran implements it, checked against that code (claimset v0.29, §3.2), and it names definitions among the parts the supervisor's approval covers (§9).
+
+## Changes in v0.10 (since v0.9)
 
 - Export follows claimset v0.22: claims get `novelty: no_prior_found` by default (the authors found no earlier result stating the claim; the completion list asks for the closest one they found), and assumption claims get no novelty (§9).
 
@@ -578,7 +582,7 @@ Hypotheses without a final status are counted as open; they are not forced close
 
 **Exploration summary.** `questions` counts questions, each correction chain once; `hypotheses` counts hypotheses by final status, each correction chain once, with `open` for those without one, and `from_exploration` those whose latest version has `origin: from_exploration`; `tests` counts verdicts, one per decided plan and hypothesis it names; `runs` counts all run events by label, and `failed` those whose exit status is not `success`.
 
-**Defaults the completion list always names:** `paper.licence` and the guarantor (asked of the responsible human), `paper.contributions` and principal roles, `paper.autonomy` (exported as `unknown`), claim types, statements of negative results (to say plainly what was not found), scopes, evidence profiles and descriptions, and links from claims to assumptions.
+**Defaults the completion list always names:** `paper.licence` and the guarantor (asked of the responsible human), `paper.contributions` and principal roles, `paper.autonomy` (exported as `unknown`), claim types, statements of negative results (to say plainly what was not found), scopes, evidence profiles and descriptions, links from claims to assumptions, and the **definitions**, which the draft leaves empty: the definition of each method or model of the study's own that a planned test compares gives every equation that defines it, as the code of the runs implements it, and is checked against that code (the runs' code versions are in each evidence's `execution`); a variant gives its own equations in full (claimset §3.2, warning 26). The supervisor's approval of the completed claimset covers its definitions as well as its claims.
 
 **Negative results** are exported as claims in the same claimset: the statement says what was not found, under what scope, and `hypothesis.outcome` is `not_supported`.
 

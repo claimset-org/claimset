@@ -163,7 +163,7 @@ class TestMapping(ExportCase):
     def test_completion_list_names_decisions(self):
         text = self.todo(self.out)
         for needle in ("paper.licence", "paper.contributions", "paper.autonomy", "negative result", "guarantor",
-                       "profile"):
+                       "profile", "definitions: define each method", "as the code of the runs implements it"):
             self.assertIn(needle, text)
         self.assertNotIn("instruction", json.dumps(self.out["draft"]).lower())
 
