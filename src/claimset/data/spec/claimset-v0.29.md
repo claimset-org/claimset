@@ -8,7 +8,7 @@ Claimset is the name of both the open format and the platform.
 
 A definition of a paper's own method written as a description of its formula ("an exponentially weighted sum, the weights being powers of …"), or of a variant as "the same equations at lag m", leaves a reader unable to compute or check the method, and the claims about it then rest on a model nobody can reconstruct.
 
-- §3.2, *The paper's own method or model*: its definition gives the equations that define it, as the paper writes them, every one of them; a variant gives its own equations in full.
+- §3.2, *The paper's own method or model*: its definition gives the equations that define it, as the paper writes them, every one of them; a variant gives its own equations in full; a form derived from another (an underlying state-space model) is a claim, not part of the definition.
 - New warning 26 flags a definition of the paper's own that a formal claim names but that contains no mathematics (§10.4).
 
 ## Changes in v0.28 (since v0.27)
@@ -409,7 +409,7 @@ Retracted papers are never deleted. All their claims inherit the retraction stat
 
 A definition explains in full only a term the paper introduces or uses in its own sense. A term the paper takes from elsewhere (it cites where the term comes from) is a **borrowed term**: its `definition` names the standard meaning in one line and states only what this paper specifies (e.g. `"Mean scaled interval score; here of the 95% prediction interval"`), and `source` says where the term is defined. A term the paper uses without defining or citing it, in its usual sense, needs no definition.
 
-**The paper's own method or model.** Its definition gives the equations that define it, as the paper writes them (LaTeX, §8 rule 6), with each symbol named: every equation of the method or model, not a description of them ("the weights being powers of …" is not a definition of a weighted sum; the sum is). A variant the paper introduces (seasonal, multivariate, with exogenous variables) is defined with its own equations in full, never as "the same equations at lag $m$": where its parameters and lags enter is what the variant is. When the paper gives a method in more than one form (a recursion and a weighted sum, a method and its state-space model), the definition gives each form the paper uses. Derivations are not restated: what they establish (a property, an equivalence, a condition) is a claim (§3.3).
+**The paper's own method or model.** Its definition gives the equations that define it, as the paper writes them (LaTeX, §8 rule 6), with each symbol named: every equation of the method or model, not a description of them ("the weights being powers of …" is not a definition of a weighted sum; the sum is). A variant the paper introduces (seasonal, multivariate, with exogenous variables) is defined with its own equations in full, never as "the same equations at lag $m$": where its parameters and lags enter is what the variant is. When the paper states a method in more than one form (a recursion and a weighted sum), the definition gives each form. A form the paper derives from another (an underlying state-space or ARIMA model) is not part of the definition: like every result of a derivation (a property, an equivalence, a condition), it is a claim (§3.3).
 
 ### 3.3 Claim
 
