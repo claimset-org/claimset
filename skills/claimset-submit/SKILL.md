@@ -67,6 +67,7 @@ Work in this order: principal claims → supporting claims → assumptions.
 - a result your claim builds on → `cited` support of that claim, `{"kind": "cited", "reference": "B3", "locator": "Theorem 2"}`;
 - what your claim answers, extends or contradicts → a relation of that claim, `{"type": "addresses", "reference": "B4", "note": "Selection among ETS models often misidentifies the type of trend."}`;
 - a borrowed term (MASE, ETS) → a one-line definition with what this work specifies (e.g. the interval level) and `"source": "B5"`.
+- your own method or model → a definition with its defining equations as you write them, every one of them, in LaTeX; a variant (seasonal, multivariate) with its own equations in full, never "the same equations at lag $m$" (W26).
 Leave out general knowledge that no claim rests on and justifications of routine choices (which accuracy measure, which software); put such choices in the evidence's `description` if they matter. Define in full only the terms the work introduces or uses in its own sense.
 
 **A claim is what the work shows or uses.** A statement that nothing in the work supports (no evidence, no citation, no warrant) and that no claim rests on is not a claim: framing ("accurate forecasts are crucial for business"), promise ("paves the way for"), sweeping generalisation ("it is well known"), speculation ("this could transform practice"). Leave it out. If it is a question the work leaves open (a conjecture it did not test, a case it could not settle, a direction for further work), record it under `open_questions`, as a question, with the claims it arises from: `{"id": "O1", "question": "Whether method M helps on weekly series is not established.", "claims": ["C2"]}`. The validator warns (W23) about a claim that nothing supports and nothing rests on.
@@ -261,6 +262,7 @@ Re-read the file as a sceptical reviewer who sees only one claim at a time. If t
 - Does each claim's scope describe that claim, not its section?
 - Does every refutation, replication and extension name the work it relates to?
 - Are limitations specific and attached to the right claims?
+- Does the definition of your method or model give every defining equation, and each variant its own (W26)? Could a reader compute the method from it?
 - Does every secondary result have something resting on it, or state a loss, limit or null result (W25)?
 - Is each claim one atom, with one subject, one comparator and one set of conditions? Does each statement hold one claim (W22)? Is each part of the setup a definition, listed in the evidence's `setup`?
 - Does any statement retell a table instead of stating a conclusion (W24)?

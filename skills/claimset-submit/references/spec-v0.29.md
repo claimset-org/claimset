@@ -1,10 +1,17 @@
-# Claimset — Specification v0.28 (draft)
+# Claimset — Specification v0.29 (draft)
 
-Status: working draft · Date: 2026-10-26 · Supersedes v0.27 (`spec/claimset-v0.27.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-26 · Supersedes v0.28 (`spec/claimset-v0.28.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.27
+## Changes since v0.28
+
+A definition of a paper's own method written as a description of its formula ("an exponentially weighted sum, the weights being powers of …"), or of a variant as "the same equations at lag m", leaves a reader unable to compute or check the method, and the claims about it then rest on a model nobody can reconstruct.
+
+- §3.2, *The paper's own method or model*: its definition gives the equations that define it, as the paper writes them, every one of them; a variant gives its own equations in full.
+- New warning 26 flags a definition of the paper's own that a formal claim names but that contains no mathematics (§10.4).
+
+## Changes in v0.28 (since v0.27)
 
 A claimset exported from a lab record numbers its claims in the order the hypotheses were written, and a hand-made one in the order its claims were found; neither is the order of the paper's argument, and the reading view follows file order.
 
@@ -401,6 +408,8 @@ Retracted papers are never deleted. All their claims inherit the retraction stat
 | `source` | object or string | Where a borrowed term is defined: a reference ID (`B3`, §3.13), `{target, id_type}` as for cited support (§4), or a global claim or definition ID of another claimset |
 
 A definition explains in full only a term the paper introduces or uses in its own sense. A term the paper takes from elsewhere (it cites where the term comes from) is a **borrowed term**: its `definition` names the standard meaning in one line and states only what this paper specifies (e.g. `"Mean scaled interval score; here of the 95% prediction interval"`), and `source` says where the term is defined. A term the paper uses without defining or citing it, in its usual sense, needs no definition.
+
+**The paper's own method or model.** Its definition gives the equations that define it, as the paper writes them (LaTeX, §8 rule 6), with each symbol named: every equation of the method or model, not a description of them ("the weights being powers of …" is not a definition of a weighted sum; the sum is). A variant the paper introduces (seasonal, multivariate, with exogenous variables) is defined with its own equations in full, never as "the same equations at lag $m$": where its parameters and lags enter is what the variant is. When the paper gives a method in more than one form (a recursion and a weighted sum, a method and its state-space model), the definition gives each form the paper uses. Derivations are not restated: what they establish (a property, an equivalence, a condition) is a claim (§3.3).
 
 ### 3.3 Claim
 
@@ -1011,6 +1020,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 23. A claim that is not principal, has no warrant and is not formal, whose only support is `argument`, `consensus`, `expert_judgement` or `unstated`, and on which no claim rests (by `depends_on` or `assumptions`): the paper neither shows nor uses it (§8 rule 9). Support it and link it, record it as an open question, or leave it out; in a converted paper, check that the source's argument uses it. The message names rhetorical wording when the statement has some: importance framing ("crucial", "paramount"), promise ("promising", "paves the way"), sweeping generalisation ("always", "it is well known"), speculation ("may", "could"). The wording alone never raises the warning.
 24. The statement of a claim with `empirical_quant` or `simulation` support repeats three or more values of the result tables it cites (§3.4, *Tables and claims*): state the pattern the paper concludes and cite the table or rows, repeating a value only when the conclusion turns on it; or, if the claim only retells the table, remove it and cite the table from the claims that use it. Numbers are found as for warning 17.
 25. A `secondary` `descriptive` claim with `empirical_quant` or `simulation` support (a result, not a conclusion drawn from results) on which nothing rests: no claim depends on it or lists it in `assumptions`, no warrant names it as a premise, no open question concerns it. Keep it only if it states a loss, limit or null result of the paper's own method; otherwise the result table of its evidence holds it (§3.3, *Secondary claims in converted papers*).
+26. A definition without `source` (a term of the paper's own) is named in the statement of a `formal` claim and contains no mathematics (`$…$`): if it is the paper's own method or model, give its defining equations (§3.2, *The paper's own method or model*).
 
 ## 11. Platform dependencies
 
