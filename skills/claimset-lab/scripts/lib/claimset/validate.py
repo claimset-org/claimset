@@ -118,7 +118,7 @@ CONVERSION_LICENCES = {
 
 ANAPHORA_RE = re.compile(r"^(this|these|those|it|they|such)\b|\b(as shown|the above|aforementioned|see section|"
                          r"see figure|see table|as mentioned|as discussed|previously described)\b", re.I)
-EVALUATIVE_RE = re.compile(r"\b(novel|significant(ly)?|remarkabl[ey]|groundbreaking|state-of-the-art|"
+EVALUATIVE_RE = re.compile(r"\b(novel|(?<!statistically )(?<!statistically in)significant(ly)?|remarkabl[ey]|groundbreaking|state-of-the-art|"
                            r"impressive|striking|important|crucial|first ever|unprecedented)\b", re.I)
 INSTRUCTION_RE = re.compile(r"\b(ignore (all|any|previous|prior)|you (should|must|are)|as an ai|language model,|"
                             r"system prompt|disregard|follow these|do not tell|assistant:|respond with)\b", re.I)
@@ -543,11 +543,17 @@ def validate(doc, published=False, local_root=None, revision=False):
         named |= {x for x in as_list(as_dict(w).get("premises")) if isinstance(x, str)}
     for q in coll["open_questions"]:
         named |= {x for x in as_list(as_dict(q).get("claims")) if isinstance(x, str)}
+    for cid, c in claims.items():                   # relations within the paper, either end (§3.7)
+        for rel in as_list(c.get("relations")):
+            rel = as_dict(rel)
+            if rel.get("id_type") == "local" and isinstance(rel.get("target"), str):
+                named |= {cid, rel["target"]}
     for cid, c in claims.items():
         if c.get("role") != "secondary" or c.get("type") != "descriptive" or cid in named:
             continue
         if any(as_dict(s).get("kind") in ("empirical_quant", "simulation") for s in as_list(c.get("support"))):
-            r.warn("W25", f"claims:{cid}", "a secondary result on which no claim, warrant or open question rests: keep it "
+            r.warn("W25", f"claims:{cid}", "a secondary result on which no claim, warrant or open question rests, and that "
+                                           "stands in no relation to another claim: keep it "
                                            "only if it states a loss, limit or null result of the paper's own method; "
                                            "otherwise the result table of its evidence holds it")
     for cid, c in claims.items():
