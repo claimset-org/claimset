@@ -1520,6 +1520,73 @@ class TestRulesV032(Base):
         self.assertIn("inherits C3", view)
 
 
+class TestRulesV033(Base):
+    """v0.33: a claim inherits the assumptions of the methods studied only for its own subject; those of the data,
+    design and variables for every claim on the evidence (spec §3.2, Assumptions of a term; warning 15)."""
+
+    def setUp(self):
+        self.d = load("submission-native.json")
+        self.c2 = claim(self.d, "C2")               # about.subject D2 (method M); E1 studies D2 and D3
+
+    def inherited(self, c):
+        from claimset.validate import inherited_assumptions
+        return inherited_assumptions(c, {x["id"]: x for x in self.d["definitions"]},
+                                     {e["id"]: e for e in self.d["evidence"]})
+
+    def test_subject_assumptions_are_inherited(self):
+        definition(self.d, "D2")["assumptions"] = ["C3"]
+        self.c2["assumptions"] = ["C1"]
+        self.assertEqual(self.inherited(self.c2), ["C3"])
+        self.assertNotIn("W15", self.rules(self.d)[1])
+        self.assertValid(self.d)
+
+    def test_comparator_assumptions_are_not_inherited(self):
+        definition(self.d, "D3")["assumptions"] = ["C3"]          # the seasonal naive method, compared with
+        self.c2["assumptions"] = ["C1"]
+        self.assertEqual(self.inherited(self.c2), [])
+        self.assertWarning(self.d, "W15")                         # C3 is supporting, and nothing rests on it
+
+    def test_assumptions_of_cases_hold_for_every_claim(self):
+        definition(self.d, "D4")["assumptions"] = ["C3"]          # the data
+        definition(self.d, "D5")["assumptions"] = ["C1"]          # the design
+        self.c2.pop("assumptions", None)
+        self.assertEqual(sorted(self.inherited(self.c2)), ["C1", "C3"])
+        self.assertNotIn("W15", self.rules(self.d)[1])
+
+    def test_group_subject_inherits_from_each_member(self):
+        self.d["definitions"].append({"id": "D9", "term": "the two methods", "kind": "method",
+                                      "definition": "Method M and the seasonal naive method.", "members": ["D2", "D3"]})
+        definition(self.d, "D3")["assumptions"] = ["C3"]
+        self.c2["about"]["subject"] = "D9"
+        self.assertEqual(self.inherited(self.c2), ["C3"])
+
+    def test_broader_terms_pass_on_their_assumptions(self):
+        self.d["definitions"].append({"id": "D9", "term": "forecasting method", "kind": "method",
+                                      "definition": "Any method that forecasts the series."})
+        definition(self.d, "D2")["broader"] = ["D9"]
+        definition(self.d, "D9")["assumptions"] = ["C3"]
+        self.assertEqual(self.inherited(self.c2), ["C3"])
+
+    def test_claim_without_about_inherits_from_every_term(self):
+        definition(self.d, "D3")["assumptions"] = ["C3"]
+        c = {k: v for k, v in self.c2.items() if k != "about"}
+        self.assertEqual(self.inherited(c), ["C3"])
+
+    def test_reading_view_and_migrate(self):
+        from claimset.migrate import migrate
+        from claimset.render import render
+        self.c2["assumptions"] = ["C1"]
+        definition(self.d, "D3")["assumptions"] = ["C3"]
+        self.assertNotIn("inherits C3", render(self.d))
+        definition(self.d, "D2")["assumptions"] = ["C3"]
+        self.assertIn("inherits C3", render(self.d))
+        definition(self.d, "D2").pop("assumptions")
+        self.d["schema_version"] = "0.32"
+        _, done, todo = migrate(self.d)
+        self.assertIn("schema_version 0.32 -> 0.33", done)
+        self.assertTrue(any(t.startswith("C2: no longer inherits C3") for t in todo))
+
+
 class TestMigrate(Base):
     """`claimset migrate`: setup roles renamed to those of v0.30, the version set to the current one; what needs
     judgement listed."""

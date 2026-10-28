@@ -8,6 +8,8 @@ contributors, models, lab identifiers). It adds nothing: every line comes from a
 
 import json
 
+from .validate import inherited_assumptions
+
 
 def _s(x):
     return x if isinstance(x, str) else json.dumps(x, ensure_ascii=False)
@@ -265,18 +267,8 @@ def render(doc):
     evid = {e.get("id"): e for e in doc.get("evidence") or [] if isinstance(e, dict)}
 
     def inherited(c):
-        """Assumptions a claim inherits from the definitions its evidence's setup names (§3.2)."""
-        out, seen = [], set()
-        stack = [d for s in c.get("support") or [] if isinstance(s, dict)
-                 for ids in (evid.get(s.get("evidence"), {}).get("setup") or {}).values() for d in ids or []]
-        while stack:
-            did = stack.pop(0)
-            if did in seen or did not in defs:
-                continue
-            seen.add(did)
-            out += [a for a in defs[did].get("assumptions") or [] if a not in out]
-            stack += list(defs[did].get("broader") or [])
-        return out
+        """Assumptions a claim inherits from the terms it rests on (§3.2)."""
+        return inherited_assumptions(c, defs, evid)
     unevidenced = [c for c in claims if c.get("role") != "principal" and _without_evidence(c)]
     order = {"principal": 0, "supporting": 1, "secondary": 2}
     main = sorted((c for c in claims if not any(c is u for u in unevidenced)),

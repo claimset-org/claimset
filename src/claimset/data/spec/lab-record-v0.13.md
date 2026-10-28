@@ -1,6 +1,6 @@
 # Claimset Lab Record — Specification v0.13 (draft)
 
-Status: working draft · Date: 2026-10-28 · Supersedes v0.12 · Companion to the claimset specification (`spec/claimset-v0.32.md`) and the revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-28 · Supersedes v0.12 · Companion to the claimset specification (`spec/claimset-v0.33.md`) and the revision specification (`spec/claimset-revision-v0.2.md`)
 
 ## Changes since v0.12
 
