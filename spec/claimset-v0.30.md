@@ -1,6 +1,6 @@
-# Claimset — Specification v0.30 (draft proposal)
+# Claimset — Specification v0.30 (draft)
 
-Status: proposal, not yet implemented by the validator · Date: 2026-10-28 · Supersedes v0.29 (`spec/claimset-v0.29.md`) · Companions: lab record specification (`spec/lab-record-v0.11.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-28 · Supersedes v0.29 (`spec/claimset-v0.29.md`) · Companions: lab record specification (`spec/lab-record-v0.11.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
@@ -13,7 +13,7 @@ A reader looking for papers asks what they studied, on what, how, and what they 
 - §3.3.5, new: claims gain `about`, the claim's atom (§8 rule 1) recorded as fields: `subject`, `relation`, `object`, `comparator`, `conditions`. Slots hold definition IDs, or short text for things the paper does not define. Required for principal claims, recommended for the others except assumptions. New rule 64; new warning 27.
 - §2.3: the reading view shows each definition's kind and leaves `about` out (the statement says it in words).
 - §11, §12: the platform resolves defined terms to shared entities across papers; alignment with PICO, SPIDER and the statement model of nanopublications and Wikidata.
-- §13: new open question 10, the frame is to be tested by a coding exercise across paper types before the validator implements it.
+- §13: new open question 10: the frame is to be tested by a coding exercise across paper types; roles, kinds or slots that coders cannot assign consistently are revised in a later version.
 - Appendix A and D updated; new Appendix E: a qualitative paper.
 
 ## Changes in v0.29 (since v0.28)
@@ -1149,7 +1149,7 @@ Platform functionality is specified in the platform requirements document. The f
 7. **JSON-LD context:** which existing vocabularies to map onto.
 8. **Guarantor obligations:** what research and conversion guarantors commit to, and how unresponsive guarantors are handled.
 9. **Non-commercial and no-derivatives sources:** whether `CC-BY-NC` sources can be converted, and on what terms.
-10. **The study frame and the atom across fields** (v0.30): whether the roles of a setup, the kinds of definitions and the slots of `about` can be assigned consistently across paper types (forecasting and other benchmarks, trials, surveys, qualitative studies, simulation studies, theory papers). To be settled by independent coders on papers of each type before the validator implements rules 63 and 64; roles, kinds or slots on which coders disagree are merged, redefined or dropped.
+10. **The study frame and the atom across fields** (v0.30): whether the roles of a setup, the kinds of definitions and the slots of `about` can be assigned consistently across paper types (forecasting and other benchmarks, trials, surveys, qualitative studies, simulation studies, theory papers). To be settled by independent coders on papers of each type; roles, kinds or slots on which coders disagree are merged, redefined or dropped in a later version.
 
 ## Appendix A: native paper — submission
 

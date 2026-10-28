@@ -32,6 +32,26 @@ def fixture_claimset():
             c.pop("novelty", None)
         elif c.get("novelty") == "new":
             c["novelty"] = "no_prior_found"
+    # Kinds and atoms, added in v0.30 (spec §3.2, §3.3.5)
+    kinds = {"D1": "method", "D2": "concept", "D3": "concept", "D4": "method", "D5": "method",
+             "D6": "method", "D7": "method", "D8": "method", "D9": "method"}
+    for dfn in d["definitions"]:
+        dfn["kind"] = kinds[dfn["id"]]
+    about = {
+        "C1": {"subject": "D4", "relation": "accepts models without", "object": "D3", "comparator": None,
+               "conditions": ["D9", "D8"]},
+        "C3": {"subject": "D6", "relation": "gives the same admissibility decision as", "object": None,
+               "comparator": "D5", "conditions": ["D8", "random additive ETS models"]},
+        "C4": {"subject": "D7", "relation": "gives the same admissibility decision as", "object": None,
+               "comparator": "the roots of the cancelled MA polynomial", "conditions": ["D8", "random additive ETS models"]},
+        "C16": {"subject": "the check in smooth", "relation": "gives the same decision as", "object": None,
+                "comparator": "the numpy prototype", "conditions": ["D8", "random additive ETS models"]},
+        "C22": {"subject": "the stability condition of the ADAM monograph", "relation": "holds for a model whose",
+                "object": "weights grow", "comparator": None, "conditions": ["ETS(A,N,A) with m = 12"]},
+    }
+    for c in d["claims"]:
+        if c["id"] in about:
+            c["about"] = about[c["id"]]
     return d
 
 

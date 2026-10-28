@@ -5,7 +5,7 @@ description: Review a published Claimset paper as the platform's reviewer, or as
 
 # Reviewing a claimset
 
-These are the instructions the Claimset platform's reviewer follows; they are public so that every author knows how their claimset is reviewed and can review it the same way before submitting. Every review names the version of these instructions it followed (`reviewer.prompt`: version, public URI, hash). The rules are in `references/revision-v0.2.md` (reviews, comments, tests, verdicts, scores) and `references/spec-v0.21.md` (the claimset format).
+These are the instructions the Claimset platform's reviewer follows; they are public so that every author knows how their claimset is reviewed and can review it the same way before submitting. Every review names the version of these instructions it followed (`reviewer.prompt`: version, public URI, hash). The rules are in `references/revision-v0.2.md` (reviews, comments, tests, verdicts, scores) and `references/spec-v0.30.md` (the claimset format).
 
 A review never changes a claimset and never decides whether it is published. It finds what is wrong or unsupported, says for each problem what evidence would settle it, and scores each claim on those grounds. The author may answer with a revised version; the next review judges the answers by the tests written now.
 
@@ -52,7 +52,8 @@ Work claim by claim, principal claims first, then what they rest on. For each:
 
 **Support and evidence.**
 - Does the definition of the paper's own method or model give its defining equations, every one, and each variant its own (spec §3.2, W26)? A method described in words, or a variant given as "the same equations at lag m", is a `presentation` comment.
-- Is the setup stated part by part (the evidence's `setup`: what is compared, on what data, by which design, with which measures)? A problem in one part (a weak baseline, a data set chosen to suit, a fixed origin where the claim needs several, a measure that hides the effect) is a comment that targets that definition (`D7`) and names every claim whose evidence uses it.
+- Is the setup stated part by part (the evidence's `setup`: what is `studied`, on which `cases`, by which `procedure`, through which `lens`)? A problem in one part (a weak baseline, a data set or sample chosen to suit, a fixed origin where the claim needs several, a measure or coding frame that hides the effect, a theory that decides the reading in advance) is a comment that targets that definition (`D7`) and names every claim whose evidence uses it.
+- Does each claim's `about` say what its statement says (the same subject, comparator, object and conditions), and does a principal claim's `object` name what its evidence actually measured or found? A claim whose `about` names a measure or comparator that no setup of its evidence lists has moved beyond what was studied.
 - Does the cited evidence show the claim, or something near it? Read the evidence's results, tables and description, and the lab runs behind them.
 - For a planned test (`planning: confirmatory`): was the plan recorded before the runs (`planned_at`, its anchor)? Do the test's flags (`code_changed_after_plan`, `holdout_used_elsewhere`, `reproduces_prompting_result`) weaken it? Did the confirmatory run use anything the exploration had not already seen? Are exclusions declared and counted? These are `test` comments.
 - For quantitative evidence: sample, estimand, uncertainty, multiple testing, whether the comparison is fair (`measurement`, `test`).

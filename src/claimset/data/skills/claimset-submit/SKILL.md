@@ -7,7 +7,7 @@ description: Turn a piece of research (draft paper, analysis, code, results) int
 
 A claimset is a research paper written for LLM readers: a flat JSON file of atomic, self-contained claims plus the definitions, evidence, assumptions, limitations, warrants and artefacts that support, condition and limit them. You write every field. A human decides two things (guarantor and licence), and you ask them before you finish.
 
-The normative rules are in `references/spec-v0.21.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
+The normative rules are in `references/spec-v0.30.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
 
 **Versions.** This skill, its spec and its validator are one version. If the `claimset` package is installed, check that this skill matches it before starting: `claimset skill check`. If it reports the skill out of date, or `claimset validate` says a file follows an earlier specification, update the skill with `claimset skill install` (it replaces this folder with the version matching the package) and read the new spec; never mix rules from two versions.
 
@@ -68,6 +68,7 @@ Work in this order: principal claims → supporting claims → assumptions.
 - what your claim answers, extends or contradicts → a relation of that claim, `{"type": "addresses", "reference": "B4", "note": "Selection among ETS models often misidentifies the type of trend."}`;
 - a borrowed term (MASE, ETS) → a one-line definition with what this work specifies (e.g. the interval level) and `"source": "B5"`.
 - your own method or model → a definition with its defining equations as you write them, every one of them, in LaTeX; a variant (seasonal, multivariate) with its own equations in full, never "the same equations at lag $m$" (W26).
+- every definition gets a `kind` saying what the term names: `method` · `intervention` · `population` · `data` · `setting` · `design` · `measure` · `concept` · `theory` · `other` (spec §3.2). It is required for any term named in a setup or in a claim's `about` (rule 63). A theme or a newly named phenomenon you find is a `concept`.
 Leave out general knowledge that no claim rests on and justifications of routine choices (which accuracy measure, which software); put such choices in the evidence's `description` if they matter. Define in full only the terms the work introduces or uses in its own sense.
 
 **A claim is what the work shows or uses.** A statement that nothing in the work supports (no evidence, no citation, no warrant) and that no claim rests on is not a claim: framing ("accurate forecasts are crucial for business"), promise ("paves the way for"), sweeping generalisation ("it is well known"), speculation ("this could transform practice"). Leave it out. If it is a question the work leaves open (a conjecture it did not test, a case it could not settle, a direction for further work), record it under `open_questions`, as a question, with the claims it arises from: `{"id": "O1", "question": "Whether method M helps on weekly series is not established.", "claims": ["C2"]}`. The validator warns (W23) about a claim that nothing supports and nothing rests on.
@@ -86,6 +87,13 @@ Leave out general knowledge that no claim rests on and justifications of routine
 "M is more accurate than ETS at short horizons and faster to fit" is two claims. The validator flags most of these signs (W22); check each flagged statement.
 
 Write each claim as an **atom** before writing its statement: *subject* (the method, model, group or population it is about), *relation* (what is asserted), *comparator* (what it is compared with, if anything; a named group counts as one), *conditions* (data, setting, sample size, horizon). One claim is one atom. Two subjects, two comparators or two sets of conditions are two claims, whatever the wording: "M beats N on monthly data and P on quarterly data" is two claims. Atoms are grouped only when they share subject, comparator and conditions and differ in the measure or summary: "M has a lower mean and median MASE than N on monthly data, but a higher MSIS" stays one claim, with the table that holds the numbers. A conclusion you draw over several atoms ("M is the most robust variant") is a claim of its own, with `depends_on` listing the atoms.
+
+**Record the atom in `about`** (spec §3.3.5; required for principal claims, rule 64; recommended for the others, W27; never on assumptions): `{"subject": "D2", "relation": "has lower error than", "object": "D8", "comparator": "D3", "conditions": ["D5"]}`. `object` is what the relation links the subject to (the measure, outcome, property or theme), or `null`; a list of measure IDs when the atom is grouped by measure. Each slot is a definition ID, or a short noun phrase for something you do not define; `relation` is always text and carries any negation ("does not reduce"). Every ID in `about` must be marked in the statement. Examples by kind of work:
+- benchmark: subject the method, object the measures, comparator the other method, conditions the data set;
+- trial: subject the intervention, object the outcome, comparator the control, conditions the population and setting;
+- qualitative study: subject the phenomenon or the participants, relation "is experienced as" or "is described as", object the theme (a `concept`), conditions the sample and setting; the interpretation stays in the warrant;
+- formal result: subject the model, relation "is identifiable when", object the property or `null`, conditions the theorem's conditions.
+A finding that is not one relation (a typology, a process with stages) is a `concept` definition, named as the `object` with relation "is characterised by". `about` never changes what the statement says.
 
 Not every pattern in a table is a claim. Write a side result as a `secondary` claim only when another claim, a warrant or an open question rests on it, or when it states a loss, a limit or a null result of your method; the result table records the rest (W25).
 
@@ -149,19 +157,20 @@ Each claim needs at least one support entry. Use these exact pointer fields:
 
 One evidence object per analysis, reused by every claim it supports; the validator warns (W18) about two evidence objects with the same code version and the same results. Write `description` so it stands alone (what was done, on what data, how).
 
-**Split the setup into its parts.** An evaluation is made of parts that many claims share and that readers and reviewers need to name one at a time. Record each part once as a definition and list them in the evidence's `setup`, by role:
-- `compared`: what is compared: the methods, models or treatments, each with the settings that define it (in forecasting: the competing methods, e.g. "ETS, automatic selection by AICc, smooth 4.6.0");
-- `data`: what it is compared on: each data set or population, with its size and selection (e.g. "M3 monthly: 1,428 series, holdout of 18");
-- `design`: how the comparison is made: fixed or rolling origin, the number of origins, horizons, refits, the holdout;
-- `measures`: what is measured and how it is aggregated: each error measure or outcome (e.g. "MASE, averaged over series and horizons").
+**Split the setup into its parts.** A study is made of parts that many claims share and that readers and reviewers need to name one at a time. Record each part once as a definition (with its `kind`) and list them in the evidence's `setup`, by role (spec §3.4; recommended for all evidence except formal, W28):
+- `studied`: what the study is about or compares: methods with the settings that define them, interventions, exposures, the phenomenon explored (e.g. "ETS, automatic selection by AICc, smooth 4.6.0");
+- `cases`: what or whom it is studied on: data sets, populations, participants, sites, documents, with size and selection (e.g. "M3 monthly: 1,428 series, holdout of 18"; "18 nurses in their first two years at two rural hospitals");
+- `procedure`: how the cases are obtained and analysed: evaluation scheme (origins, horizons, refits), trial or survey design, sampling and data collection, analytic approach;
+- `lens`: what is recorded and through what it is read: error measures and outcomes with their aggregation, instruments, a coding frame, a theory used to read the data (e.g. "MASE, averaged over series and horizons");
+- `context`: where and when, when it bounds the study.
 
 ```json
-"definitions": [{"id": "D5", "term": "M3 monthly", "definition": "The 1,428 monthly series of the M3 competition; the last 18 observations of each held out.", "source": "B4"},
-                {"id": "D7", "term": "rolling origin", "definition": "Eight forecast origins, 18 steps apart; each method refitted at every origin; horizons 1 to 18."}],
-"evidence": [{"id": "E2", "setup": {"compared": ["D1", "D2", "D3"], "data": ["D5"], "design": ["D7"], "measures": ["D8", "D9"]}, …}]
+"definitions": [{"id": "D5", "term": "M3 monthly", "kind": "data", "definition": "The 1,428 monthly series of the M3 competition; the last 18 observations of each held out.", "source": "B4"},
+                {"id": "D7", "term": "rolling origin", "kind": "design", "definition": "Eight forecast origins, 18 steps apart; each method refitted at every origin; horizons 1 to 18."}],
+"evidence": [{"id": "E2", "setup": {"studied": ["D1", "D2", "D3"], "cases": ["D5"], "procedure": ["D7"], "lens": ["D8", "D9"]}, …}]
 ```
 
-A borrowed part (a published data set, method or measure) names its `source`; the definition says what this work specifies. Evidence objects that share a part point to the same definition, and statements mark the parts they name (`[[D7:rolling origin]]`). The description still says in a sentence what was done.
+A part's role is what it does in this study; its kind is what it is. A regression used as the analysis is `procedure`, a regression method being compared is `studied`. A borrowed part (a published data set, method, measure, instrument or analytic approach) names its `source`; the definition says what this work specifies. Evidence objects that share a part point to the same definition, and statements mark the parts they name (`[[D7:rolling origin]]`). The description still says in a sentence what was done. Files written under v0.29 or earlier: `claimset migrate FILE` renames the old roles (compared, data, design, measures) and lists the kinds and atoms left to add.
 
 Fill the profile fields:
 - `quant`: design, estimand, n, model (the statistical model); `estimate` and `interval` for a single result, otherwise `results`.
@@ -264,7 +273,7 @@ Re-read the file as a sceptical reviewer who sees only one claim at a time. If t
 - Are limitations specific and attached to the right claims?
 - Does the definition of your method or model give every defining equation, and each variant its own (W26)? Could a reader compute the method from it?
 - Does every secondary result have something resting on it, or state a loss, limit or null result (W25)?
-- Is each claim one atom, with one subject, one comparator and one set of conditions? Does each statement hold one claim (W22)? Is each part of the setup a definition, listed in the evidence's `setup`?
+- Is each claim one atom, with one subject, one comparator and one set of conditions, recorded in its `about` with every ID marked in the statement? Does each statement hold one claim (W22)? Is each part of the setup a definition with a `kind`, listed in the evidence's `setup` (W28)?
 - Does any statement retell a table instead of stating a conclusion (W24)?
 - Are all numbers identical to the structured results and the source tables? Does each claim cite only the results its statement reports? (The validator warns, W12, when a cited result does not appear in the statement, and W17 when a number in the statement matches no result.)
 - Does every `no_prior_found` or `refutation` claim cite the closest prior result you found?
