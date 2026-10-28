@@ -3,8 +3,10 @@
 Claims are ordered by role (principal, supporting, secondary, then assumptions), each group by the first place
 the paper makes the claim (its earliest source span); claims without spans keep their file order within their
 group. Warrants follow the order of the claims that use them; definitions, limitations and open questions keep
-their order and lose their gaps. Every reference in the file is rewritten: ID fields, lists of IDs and the
-[[Dn:term]] marks in text. Lab-record IDs (`lab_event`, `lab_runs`) and table cells are left alone.
+their order and lose their gaps. Every reference in the file is rewritten: ID fields, lists of IDs, the
+dimensions and values of observations (table columns, row labels, cells and the keys and values of conditions),
+the targets of relations within the paper (`id_type: local`) and the [[Dn:term]] marks in text. Lab-record IDs
+(`lab_event`, `lab_runs`), source spans, the targets of relations to other works and text are left alone.
 """
 
 import re
@@ -53,12 +55,15 @@ def plan(doc):
     return mapping
 
 
-KEEP = {"lab_event", "lab_runs", "label", "columns", "row_labels", "source_spans", "target"}
+KEEP = {"lab_event", "lab_runs", "source_spans", "target"}
 
 
 def rewrite(x, mapping):
     if isinstance(x, dict):
-        return {k: (v if k in KEEP else rewrite(v, mapping)) for k, v in x.items()}
+        out = {mapping.get(k, k): (v if k in KEEP else rewrite(v, mapping)) for k, v in x.items()}
+        if x.get("id_type") == "local" and isinstance(x.get("target"), str):
+            out["target"] = mapping.get(x["target"], x["target"])          # a claim of this paper
+        return out
     if isinstance(x, list):
         return [rewrite(v, mapping) for v in x]
     if isinstance(x, str):

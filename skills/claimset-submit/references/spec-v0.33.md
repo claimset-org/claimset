@@ -10,6 +10,9 @@ Assumptions listed on a term's definition were inherited through the evidence: e
 
 - §3.2, *Assumptions of a term*: a claim inherits the assumptions of the data, design, variables and setting its evidence's setup names (roles `cases`, `procedure`, `lens`, `context`), and, of the things studied (role `studied`), only those of its own subject: the term its `about.subject` names, or each member when the subject is a group. The comparator's assumptions are not the claim's. A claim without `about` inherits from every term its setup names, as before.
 - Warning 15 and the reading view (§2.3) count and show the assumptions inherited this way.
+- §3.6, warning 9: an artefact that is another work the paper uses and cites (it names its `reference`), and that is not a file of the submission package, needs no `licence`: the licence is the cited work's, recorded where that work is described. The paper's own artefacts and every packaged file still state theirs.
+- §8 rule 5: a term marker's text is plain; it holds no other marker. A nested marker is an error (rule 1).
+- Warning 25 does not ask about a secondary result that stands in a relation to another claim of the paper (one that qualifies a principal claim states its limit), and §8 rule 7 does not count "statistically significant" as rhetoric.
 
 ## Changes in v0.32 (since v0.31)
 
@@ -803,7 +806,7 @@ Warrants are for informal argument. Mathematical proofs use proof steps (§3.4).
 | `withheld_events` | list | For `lab_record`: `{event, reason, comment}` for each lab event whose body is withheld (lab record §8) |
 | `uri` | string | |
 | `version` | string | Version or content hash |
-| `licence` | string | SPDX identifier; recommended |
+| `licence` | string | SPDX identifier. Recommended for the paper's own artefacts and for every file of the submission package (§2.5); an artefact taken from a cited work (`reference`) and not packaged carries none, since its licence is the cited work's, recorded where that work is described (warning 9) |
 | `availability` | object | §3.10 |
 | `description` | string | Required for `figure` and `table`: what it shows, self-contained |
 | `underlying_data` | artefact ID | For `figure`: the data plotted |
@@ -1061,9 +1064,9 @@ The platform mints a DOI for every published claimset. The file records identifi
 2. **Granularity rule:** split a statement into separate claims when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one interpretive claim with a warrant; sub-themes become separate supporting claims only if they have their own evidence. Atoms are grouped into one claim only when they share subject, comparator and conditions and differ in the measure or summary: "M has a lower mean and median MASE than N, but a higher MSIS" is one claim, supported by the table holding the numbers, whose values it does not repeat (§3.4, *Tables and claims*). The same comparison on two data sets, against two comparators or for two methods is two claims. A conclusion the paper draws over several atoms ("M is the most robust of the variants") is a claim of its own, whose `depends_on` lists the atoms it rests on; it is not written by merging them. Results on which a method is worse are stated in the claim, never left out.
 3. Self-contained: no anaphora or cross-references ("this", "the above", "as shown").
 4. Scope-bearing qualifiers belong in `scope`, not hedged prose.
-5. Defined terms are marked inline with their definition ID: `[[D2:forecast skill]]`, in statements and in definitions.
+5. Defined terms are marked inline with their definition ID: `[[D2:forecast skill]]`, in statements and in definitions. The text of a marker is plain: it holds no other marker (`[[D24:VETS F]]`, never `[[D24:V[[D27:ETS]] F]]`).
 6. Mathematics is written in LaTeX, delimited by `$…$`. Algorithms in definitions are pseudocode in a fenced block (three backticks before and after).
-7. No evaluative rhetoric ("novel", "significant", "remarkable").
+7. No evaluative rhetoric ("novel", "significant", "remarkable"). "Statistically significant", the outcome of a test, is a result, not rhetoric.
 8. No imperatives or instructions of any kind.
 9. A claim is what the paper shows or uses. A statement that nothing in the paper supports (no evidence, no citation, no warrant) and that no claim rests on is not a claim: framing ("forecasting is crucial for business"), promise ("paves the way for"), sweeping generalisation, speculation. Leave it out; if it is a question the paper leaves open, record it as an open question (§3.14).
 
@@ -1227,7 +1230,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 6. Three or more claims share an identical `scope` object (often a sign of scope copied by section; check each claim).
 7. `novelty: extension` without an `extends` relation.
 8. Quant or simulation evidence with neither `estimate`, `results` nor `tables`.
-9. An artefact without `licence`.
+9. An artefact without `licence`, unless it names the cited work it is taken from (`reference`) and is not a file of the submission package (§2.5). (Revised in v0.33.)
 10. An agent contributor that is not an `author` has the AI task `writing`; agents that produced the paper's content are authors.
 11. A check was made by an agent that runs on the same model as an `author` agent.
 12. A number in a claim's statement cannot be matched to the results the claim cites, at the precision stated (heuristic; percentages are compared as fractions). Applies to cited result entries; cited tables and rows are not checked.
@@ -1243,7 +1246,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 22. A statement shows a sign of holding more than one claim (§8 rule 1): a semicolon, a word of contrast, addition or explanation, a side clause with `, which`, a parenthesis holding `and`, `also` or `is`/`are`, a recommendation, or results cited from more than one evidence object. Check it: if one part could be true and another false, split it into claims, each self-contained. A comparison that states where a method is better and where it is not stays one claim.
 23. A claim that is not principal, has no warrant and is not formal, whose only support is `argument`, `consensus`, `expert_judgement` or `unstated`, and on which no claim rests (by `depends_on` or `assumptions`): the paper neither shows nor uses it (§8 rule 9). Support it and link it, record it as an open question, or leave it out; in a converted paper, check that the source's argument uses it. The message names rhetorical wording when the statement has some: importance framing ("crucial", "paramount"), promise ("promising", "paves the way"), sweeping generalisation ("always", "it is well known"), speculation ("may", "could"). The wording alone never raises the warning.
 24. The statement of a claim with `empirical_quant` or `simulation` support repeats three or more values of the result tables it cites (§3.4, *Tables and claims*): state the pattern the paper concludes and cite the table or rows, repeating a value only when the conclusion turns on it; or, if the claim only retells the table, remove it and cite the table from the claims that use it. Numbers are found as for warning 17.
-25. A `secondary` `descriptive` claim with `empirical_quant` or `simulation` support (a result, not a conclusion drawn from results) on which nothing rests: no claim depends on it or lists it in `assumptions`, no warrant names it as a premise, no open question concerns it. Keep it only if it states a loss, limit or null result of the paper's own method; otherwise the result table of its evidence holds it (§3.3, *Secondary claims in converted papers*).
+25. A `secondary` `descriptive` claim with `empirical_quant` or `simulation` support (a result, not a conclusion drawn from results) on which nothing rests: no claim depends on it or lists it in `assumptions`, no warrant names it as a premise, no open question concerns it, and it stands in no relation to another claim of the paper (it neither `explains`, `qualifies`, `supports`, `contradicts` nor `refines` one, nor is the target of such a relation, §3.7). Keep it only if it states a loss, limit or null result of the paper's own method; otherwise the result table of its evidence holds it (§3.3, *Secondary claims in converted papers*). (Revised in v0.33.)
 26. A definition without `source` (a term of the paper's own) is named in the statement of a `formal` claim and contains no mathematics (`$…$`): if it is the paper's own method or model, give its defining equations (§3.2, *The paper's own method or model*).
 27. A supporting or secondary claim that is not an assumption has no `about` (§3.3.5). Also: a slot of `about` holds text that equals, ignoring case, the `term` of a definition in the file: give the definition's ID instead.
 28. An evidence object whose profile is not `formal` has no `setup`, or a definition is named in a claim's `about` and in no setup of the non-formal evidence that claim's support cites, although its kind is `method`, `intervention`, `population`, `data`, `design` or `variable` (a part of the study that the setup leaves out). A definition counts as named when the setup names it, names a group it is a member of, or names every member of it (§3.2, *Groups*). (Revised in v0.31.)

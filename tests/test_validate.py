@@ -1071,6 +1071,21 @@ class TestRulesV027(Base):
     def test_w25_secondary_result_nothing_rests_on(self):
         self.assertWarning(self.d, "W25")
 
+    def test_w25_secondary_result_that_qualifies_a_claim_passes(self):
+        claim(self.d, "C9")["relations"] = [{"type": "qualifies", "target": "C2", "id_type": "local"}]
+        self.assertNotIn("W25", self.rules(self.d)[1])                    # v0.33: it states a limit of C2
+
+    def test_w25_secondary_result_another_claim_explains_passes(self):
+        claim(self.d, "C2")["relations"] = [{"type": "explains", "target": "C9", "id_type": "local"}]
+        self.assertNotIn("W25", self.rules(self.d)[1])
+
+    def test_s7_statistical_significance_is_not_rhetoric(self):
+        claim(self.d, "C9")["statement"] = ("Method M has a statistically significantly higher median MASE than ETS "
+                                            "on the yearly retail series.")
+        self.assertNotIn("S7", self.rules(self.d)[1])
+        claim(self.d, "C9")["statement"] = "Method M is a significant advance on ETS for the yearly retail series."
+        self.assertIn("S7", self.rules(self.d)[1])
+
 
 class TestRulesV029(Base):
     """Warning W26: an own definition a formal claim names, with no mathematics."""
@@ -1585,6 +1600,34 @@ class TestRulesV033(Base):
         _, done, todo = migrate(self.d)
         self.assertIn("schema_version 0.32 -> 0.33", done)
         self.assertTrue(any(t.startswith("C2: no longer inherits C3") for t in todo))
+
+
+class TestTermMarkers(Base):
+    """§8 rule 5: a defined-term marker holds plain text, never another marker (rule 1)."""
+
+    def test_nested_marker_is_an_error(self):
+        d = load("submission-native.json")
+        self.assertValid(d)
+        definition(d, "D3")["definition"] = "Compared with [[D2:method [[D1:forecast skill]] M]]."
+        self.assertRule(d, "1")
+
+
+class TestArtefactLicence(Base):
+    """Warning 9 (revised in v0.33): a licence for the paper's own artefacts and packaged files, not for another
+    work the paper cites."""
+
+    def test_w9(self):
+        d = load("submission-native.json")
+        d["references"] = d.get("references") or []
+        d["references"].append({"id": "B9", "id_type": "doi", "target": "10.1016/j.ijforecast.2019.04.014"})
+        d["artefacts"].append({"id": "A9", "kind": "data", "description": "M4 competition data", "reference": "B9"})
+        claim(d, "C2")["support"][0].setdefault("artefacts", []).append("A9")
+        self.assertNotIn("W9", self.rules(d)[1])                       # cited, not packaged
+        d["artefacts"][-1]["uri"] = "files/m4.csv"
+        self.assertIn("W9", self.rules(d)[1])                          # packaged: the file needs its licence
+        d["artefacts"][-1].pop("uri")
+        d["artefacts"][-1].pop("reference")
+        self.assertIn("W9", self.rules(d)[1])                          # the paper's own
 
 
 class TestMigrate(Base):

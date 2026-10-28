@@ -102,6 +102,7 @@ PREFIX = {"definitions": "D", "claims": "C", "evidence": "E", "warrants": "W",
 ORCID_RE = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TERM_RE = re.compile(r"\[\[(D\d+):[^\]]+\]\]")
+NESTED_MARK_RE = re.compile(r"\[\[D\d+:[^\]]*\[\[")
 
 # Rule 31: source licences that permit conversion → the licences the claimset may carry (spec §3.1).
 _BY = {"CC0-1.0", "CC-BY-4.0", "CC-BY-SA-4.0"}
@@ -117,7 +118,7 @@ CONVERSION_LICENCES = {
 
 ANAPHORA_RE = re.compile(r"^(this|these|those|it|they|such)\b|\b(as shown|the above|aforementioned|see section|"
                          r"see figure|see table|as mentioned|as discussed|previously described)\b", re.I)
-EVALUATIVE_RE = re.compile(r"\b(novel|significant(ly)?|remarkabl[ey]|groundbreaking|state-of-the-art|"
+EVALUATIVE_RE = re.compile(r"\b(novel|(?<!statistically )(?<!statistically in)significant(ly)?|remarkabl[ey]|groundbreaking|state-of-the-art|"
                            r"impressive|striking|important|crucial|first ever|unprecedented)\b", re.I)
 INSTRUCTION_RE = re.compile(r"\b(ignore (all|any|previous|prior)|you (should|must|are)|as an ai|language model,|"
                             r"system prompt|disregard|follow these|do not tell|assistant:|respond with)\b", re.I)
@@ -542,11 +543,17 @@ def validate(doc, published=False, local_root=None, revision=False):
         named |= {x for x in as_list(as_dict(w).get("premises")) if isinstance(x, str)}
     for q in coll["open_questions"]:
         named |= {x for x in as_list(as_dict(q).get("claims")) if isinstance(x, str)}
+    for cid, c in claims.items():                   # relations within the paper, either end (§3.7)
+        for rel in as_list(c.get("relations")):
+            rel = as_dict(rel)
+            if rel.get("id_type") == "local" and isinstance(rel.get("target"), str):
+                named |= {cid, rel["target"]}
     for cid, c in claims.items():
         if c.get("role") != "secondary" or c.get("type") != "descriptive" or cid in named:
             continue
         if any(as_dict(s).get("kind") in ("empirical_quant", "simulation") for s in as_list(c.get("support"))):
-            r.warn("W25", f"claims:{cid}", "a secondary result on which no claim, warrant or open question rests: keep it "
+            r.warn("W25", f"claims:{cid}", "a secondary result on which no claim, warrant or open question rests, and that "
+                                           "stands in no relation to another claim: keep it "
                                            "only if it states a loss, limit or null result of the paper's own method; "
                                            "otherwise the result table of its evidence holds it")
     for cid, c in claims.items():
@@ -608,7 +615,8 @@ def validate(doc, published=False, local_root=None, revision=False):
         if "archive_uri" in a and not (isinstance(a["archive_uri"], str) and a["archive_uri"].strip()):
             r.err("1", f"{w}.archive_uri", "must be a persistent identifier or archive URI (a SWHID, DOI or archived URL)")
         check_availability(r, w, a.get("availability"))
-        if not a.get("licence"):
+        cited = a.get("reference") and not is_relative_uri(a.get("uri"))     # another work's, described there
+        if not a.get("licence") and not cited:
             r.warn("W9", f"{w}.licence", "recommended: state the artefact's licence (SPDX identifier)")
 
     # ---------- Models ----------
@@ -962,6 +970,8 @@ def text_checks(r, where, text, ids):
     for m in TERM_RE.finditer(text):
         if ids.get(m.group(1), (None,))[0] != "definitions":
             r.err("1", where, f"defined-term marker refers to unknown definition {m.group(1)}")
+    for m in NESTED_MARK_RE.finditer(text):
+        r.err("1", where, f"a defined-term marker holds plain text, not another marker: '{m.group(0)}…' (§8 rule 5)")
     if INSTRUCTION_RE.search(text):
         r.err("safe-ingest", where, "text looks like an instruction addressed to a reader or model; remove it")
 
