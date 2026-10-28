@@ -25,7 +25,7 @@ Research is iterative, so the format has a companion: the **lab record**, an app
 pip install git+https://github.com/claimset-org/claimset
 ```
 
-The package has no dependencies beyond the Python standard library (Python 3.9 or later). It carries the specifications and the agent skills of its version:
+The package has no dependencies beyond the Python standard library (Python 3.10 or later). It carries the specifications and the agent skills of its version:
 
 ```
 claimset spec                  # the claimset specification this version validates against

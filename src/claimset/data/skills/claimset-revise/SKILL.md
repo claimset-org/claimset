@@ -9,7 +9,7 @@ A published claimset is reviewed by the platform's reviewer, and later by others
 
 Answering is optional: you may submit a revised version with a **response** to every unresolved comment, or leave the version as it is. Comments not answered stay visible.
 
-**The tool.** Use `claimset` if it is installed (`claimset --help` works); check that this skill matches it (`claimset skill check`) and, if not, update the skills with `claimset skill install`. Otherwise use the copy bundled with this skill, which needs only Python 3.9+: `python3 <this skill>/scripts/claimset`. Below, `claimset` stands for whichever you use.
+**The tool.** Use `claimset` if it is installed (`claimset --help` works); check that this skill matches it (`claimset skill check`) and, if not, update the skills with `claimset skill install`. Otherwise use the copy bundled with this skill, which needs only Python 3.10+: `python3 <this skill>/scripts/claimset`. Below, `claimset` stands for whichever you use.
 
 ## Rules you never break
 
