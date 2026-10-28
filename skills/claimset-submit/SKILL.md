@@ -1,13 +1,13 @@
 ---
 name: claimset-submit
-description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.21 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
+description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.32 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
 ---
 
 # Preparing a Claimset submission
 
 A claimset is a research paper written for LLM readers: a flat JSON file of atomic, self-contained claims plus the definitions, evidence, assumptions, limitations, warrants and artefacts that support, condition and limit them. You write every field. A human decides two things (guarantor and licence), and you ask them before you finish.
 
-The normative rules are in `references/spec-v0.30.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
+The normative rules are in `references/spec-v0.32.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
 
 **Versions.** This skill, its spec and its validator are one version. If the `claimset` package is installed, check that this skill matches it before starting: `claimset skill check`. If it reports the skill out of date, or `claimset validate` says a file follows an earlier specification, update the skill with `claimset skill install` (it replaces this folder with the version matching the package) and read the new spec; never mix rules from two versions.
 
@@ -38,6 +38,7 @@ Ask the person who supervised the work, in a single message:
 3. **Other human contributors:** anyone who collected data, ran experiments or conducted interviews, with their CRediT roles.
 4. **Licence:** which licence? Suggest `CC-BY-4.0` as the default for open research.
 5. **Confidentiality:** is any data, code or material not publicly shareable? If so, why (personal data, commercial, legal, ethics, security)?
+6. **Declarations:** who funded the work (funder and award number), and are there competing interests? If people took part: which ethics committee approved it (and its reference), and what did participants consent to, including publication of quotations? These go in `paper.declarations`; an empty funding list and "None declared." are declarations too (W29).
 
 Ask only these. Do not ask for a DOI, a publication date or a classification: the platform assigns them.
 
@@ -68,7 +69,8 @@ Work in this order: principal claims → supporting claims → assumptions.
 - what your claim answers, extends or contradicts → a relation of that claim, `{"type": "addresses", "reference": "B4", "note": "Selection among ETS models often misidentifies the type of trend."}`;
 - a borrowed term (MASE, ETS) → a one-line definition with what this work specifies (e.g. the interval level) and `"source": "B5"`.
 - your own method or model → a definition with its defining equations as you write them, every one of them, in LaTeX; a variant (seasonal, multivariate) with its own equations in full, never "the same equations at lag $m$" (W26).
-- every definition gets a `kind` saying what the term names: `method` · `intervention` · `population` · `data` · `setting` · `design` · `measure` · `concept` · `theory` · `other` (spec §3.2). It is required for any term named in a setup or in a claim's `about` (rule 63). A theme or a newly named phenomenon you find is a `concept`.
+- every definition gets a `kind` saying what the term names: `method` · `intervention` · `population` · `data` · `setting` · `design` · `variable` · `concept` · `theory` · `other` (spec §3.2). It is required for any term named in a setup or in a claim's `about` (rule 63). A theme or a newly named phenomenon you find is a `concept`; what you record about each case (a score, an outcome, an error measure, a judgement) is a `variable`.
+- link terms: a group lists its `members` (the compared methods); a parameter, component or data subset is `part_of` its whole (the smoothing parameter of M, M3 monthly of M3); a variant is a kind of its `broader` term (seasonal M of M). A term with a registry identifier gives it in `identifiers` (`chebi:15377`, `ncbitaxon:9606`, `rrid:…`, `ecli:…`, a data set's `doi:…`). Assumptions that hold wherever a method, design or data set is used go on its definition (`assumptions`), once; evidence whose setup names it inherits them. Definitions mark the other terms they use (`[[D4:…]]`); an algorithm is written as pseudocode in a fenced block.
 Leave out general knowledge that no claim rests on and justifications of routine choices (which accuracy measure, which software); put such choices in the evidence's `description` if they matter. Define in full only the terms the work introduces or uses in its own sense.
 
 **A claim is what the work shows or uses.** A statement that nothing in the work supports (no evidence, no citation, no warrant) and that no claim rests on is not a claim: framing ("accurate forecasts are crucial for business"), promise ("paves the way for"), sweeping generalisation ("it is well known"), speculation ("this could transform practice"). Leave it out. If it is a question the work leaves open (a conjecture it did not test, a case it could not settle, a direction for further work), record it under `open_questions`, as a question, with the claims it arises from: `{"id": "O1", "question": "Whether method M helps on weekly series is not established.", "claims": ["C2"]}`. The validator warns (W23) about a claim that nothing supports and nothing rests on.
@@ -88,8 +90,8 @@ Leave out general knowledge that no claim rests on and justifications of routine
 
 Write each claim as an **atom** before writing its statement: *subject* (the method, model, group or population it is about), *relation* (what is asserted), *comparator* (what it is compared with, if anything; a named group counts as one), *conditions* (data, setting, sample size, horizon). One claim is one atom. Two subjects, two comparators or two sets of conditions are two claims, whatever the wording: "M beats N on monthly data and P on quarterly data" is two claims. Atoms are grouped only when they share subject, comparator and conditions and differ in the measure or summary: "M has a lower mean and median MASE than N on monthly data, but a higher MSIS" stays one claim, with the table that holds the numbers. A conclusion you draw over several atoms ("M is the most robust variant") is a claim of its own, with `depends_on` listing the atoms.
 
-**Record the atom in `about`** (spec §3.3.5; required for principal claims, rule 64; recommended for the others, W27; never on assumptions): `{"subject": "D2", "relation": "has lower error than", "object": "D8", "comparator": "D3", "conditions": ["D5"]}`. `object` is what the relation links the subject to (the measure, outcome, property or theme), or `null`; a list of measure IDs when the atom is grouped by measure. Each slot is a definition ID, or a short noun phrase for something you do not define; `relation` is always text and carries any negation ("does not reduce"). Every ID in `about` must be marked in the statement. Examples by kind of work:
-- benchmark: subject the method, object the measures, comparator the other method, conditions the data set;
+**Record the atom in `about`** (spec §3.3.5; required for principal claims, rule 64; recommended for the others, W27; never on assumptions): `{"subject": "D2", "relation": "has lower error than", "object": "D8", "comparator": "D3", "conditions": ["D5"]}`. `object` is what the relation links the subject to (the variable, outcome, property or theme), or `null`; a list of variable IDs when the atom is grouped by variable. Each slot is a definition ID, or a short noun phrase for something you do not define; `relation` is always text and carries any negation ("does not reduce"). Every ID in `about` must be marked in the statement. Examples by kind of work:
+- benchmark: subject the method, object the error measures (variables), comparator the other method, conditions the data set;
 - trial: subject the intervention, object the outcome, comparator the control, conditions the population and setting;
 - qualitative study: subject the phenomenon or the participants, relation "is experienced as" or "is described as", object the theme (a `concept`), conditions the sample and setting; the interpretation stays in the warrant;
 - formal result: subject the model, relation "is identifiable when", object the property or `null`, conditions the theorem's conditions.
@@ -176,25 +178,36 @@ A part's role is what it does in this study; its kind is what it is. A regressio
 
 Fill the profile fields:
 - `quant`: design, estimand, n, model (the statistical model); `estimate` and `interval` for a single result, otherwise `results`.
-- `qual`: data_sources, n_participants_or_cases, sampling, analytic_approach, exemplars, reflexivity.
+- `qual`: data_sources, n_participants_or_cases, sampling, analytic_approach, reflexivity; excerpts are results (below).
 - `simulation`: model, parameters (artefact), runs, seeds, `results`.
 - `formal`: foundation (e.g. `ZFC`), assumptions, steps (each `{id, statement, by, rule}`), proof_artefact, checker. No `theorem` field: the formal claim's statement is the theorem.
 
-**Results.** Every number that a claim quotes goes into the evidence's `results` list, one entry per number:
+**Results are observations** (spec §3.4): each the value of a variable, observed under conditions. Every value a claim reports goes into the evidence's `results`, one entry per value, in any evidence except formal:
 
 ```json
-"results": [{"id": "R1", "quantity": "speed-up of low-rank over full covariance filter", "value": 10.55,
-             "conditions": {"missing_values": 1, "data": "ETS(A,N,A)"}, "artefact": "A8"}]
+"results": [{"id": "R1", "variable": "D11", "value": 10.55, "unit": "1", "n": 500,
+             "conditions": {"D7": "D2", "missing values": 1}, "artefact": "A8"}]
 ```
 
-Numbers that form a table (several quantities for several methods, datasets or settings) go into a result table instead, one per table, not one entry per number:
+- `variable`: what is observed, a definition of kind `variable` (or a `concept` whose presence is observed), or text.
+- `value`: a number, a category (a definition ID or a word), a boolean, or an excerpt `{text, locator}` (an interview passage, a passage of a judgment, a linguistic example with `gloss` and `translation`).
+- `conditions`: where the observation lies, `{dimension: value}`, dimensions and values naming definitions where they exist. When the dimension is a group (the compared methods), the value is one of its members.
+- `unit` (a UCUM code: `ms`, `%`, `mg/L`), `interval`, `n`.
+- A value read off a figure says so: `"read_from": {"artefact": "A5", "precision": 0.01}`.
+- A contrast (a difference, ratio, effect size or the p-value of a comparison) names the other side with the reserved condition `comparator`: `{"D7": "D2", "comparator": "D3"}`.
+
+Values that form a table go into a table instead, one per table. Rows and columns are dimensions or variables; cells may be any value type:
 
 ```json
 "tables": [{"id": "T1", "description": "Mean MASE and MSIS of three methods on the M3 monthly series, horizons 1 to 18",
-            "conditions": {"dataset": "M3 monthly"}, "row_labels": ["method"], "columns": ["mean MASE", "mean MSIS"],
-            "rows": [{"id": "r1", "label": ["CES"], "values": [0.861, 6.95]},
-                     {"id": "r2", "label": ["ETS"], "values": [0.874, 6.71]}]}]
+            "conditions": {"D5": "D14"}, "row_labels": ["D7"], "columns": ["D8", "D9"], "units": ["1", "1"],
+            "rows": [{"id": "r1", "label": ["D1"], "values": [0.861, 6.95]},
+                     {"id": "r2", "label": ["D2"], "values": [0.874, 6.71]}]}]
 ```
+
+A column may carry conditions of its own: `{"variable": "D8", "conditions": {"horizon": 1}}`. Data larger than the paper reports (per series, per participant) go in a CSV artefact with `columns` naming each column's variable or dimension; cite its rows as `A4#row=12`.
+
+**Figures** (`kind: figure`) have a `function`: `data_plot` (record its values as observations and list them in `shows`), `specimen` (an image or recording that is evidence: record what you read from it with `read_from`), or `diagram` (an illustration: never cited as support; write what it shows into definitions). Images are files of the submission package, never embedded in the JSON.
 
 Claims cite a table (`E2.T1`) or a row (`E2.T1.r1`) in their support's `results`. A claimset distils the argument; it does not re-encode every table of the research, so record the tables the claims rest on.
 
@@ -248,12 +261,26 @@ A formal result you cite and apply is `cited` support of your claim, not a claim
 - **Paper**: title (descriptive, no rhetoric), licence, contributions, `autonomy`, contribution_record, `origin: "native"`. Nothing else at paper level.
 - **Classification**: give 3–8 precise `keywords` (e.g. `"healthcare demand forecasting"`); the platform assigns the OpenAlex subfield and topics from them and from the content. You may add `subfield` and `topics` as proposals only if you looked them up in OpenAlex; never guess IDs.
 
+### 9a. Package the files
+
+Figures, specimen images, recordings, bulk data, instruments and stimuli that are not already held elsewhere (a commit on a git host, a data repository) travel with the claimset in a **submission package** (spec §2.5), a BagIt folder or zip:
+
+```
+bagit.txt
+manifest-sha256.txt          (sha256 and path of every file under data/)
+data/paper.claimset.json
+data/files/fig3.png
+```
+
+Each packaged artefact has a `uri` relative to `data/` (`"files/fig3.png"`) and `version` `sha256:<hex>` of the file, which the manifest repeats. In a repository, keep the files in `claimset/<study>/files/`. Never put an image into the JSON.
+
 ### 10. Validate and fix
 
 Run:
 
 ```
 claimset validate claimset.json          # if the claimset package is installed
+claimset validate submission/            # a submission package: the claimset and its files
 python3 scripts/validate.py claimset.json  # otherwise, the bundled copy
 ```
 

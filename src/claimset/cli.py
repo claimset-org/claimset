@@ -16,14 +16,9 @@ from .lab import cli as _lab_cli
 
 
 def _cmd_validate(args):
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"ERROR: cannot read {args.file}: {exc}", file=sys.stderr)
+    rep = _validate.validate_path(args.file, published=args.published, revision=args.revision)
+    if rep is None:
         return 1
-    rep = _validate.validate(doc, published=args.published, local_root=_validate.claimset_folder(args.file),
-                             revision=args.revision)
     _validate.print_report(rep, published=args.published, as_json=args.json)
     return 1 if rep.errors else 0
 
@@ -197,7 +192,7 @@ def build_parser():
     sub = p.add_subparsers(dest="command", metavar="command")
 
     v = sub.add_parser("validate", help="validate a claimset file against the specification")
-    v.add_argument("file", help="path to the claimset JSON file")
+    v.add_argument("file", help="path to the claimset JSON file, or to a submission package (a BagIt folder or zip)")
     v.add_argument("--published", action="store_true",
                    help="check a published file instead of a submission")
     v.add_argument("--revision", action="store_true",

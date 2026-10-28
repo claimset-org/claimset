@@ -697,11 +697,11 @@ def add_parser(subparsers):
     p = cmd("question", cmd_question, "record a research question")
     p.add_argument("text")
 
-    p = cmd("term", cmd_term, "record a term: a method, data set, population, design, measure, concept or "
+    p = cmd("term", cmd_term, "record a term: a method, data set, population, design, variable, concept or "
                               "theory the study names (the claimset's definitions are exported from these)")
     p.add_argument("term", help="the term as the study writes it, e.g. \"MASE\"")
     p.add_argument("--kind", required=True,
-                   choices=["method", "intervention", "population", "data", "setting", "design", "measure",
+                   choices=["method", "intervention", "population", "data", "setting", "design", "variable",
                             "concept", "theory", "other"])
     p.add_argument("--definition", required=True,
                    help="what the term means here; for the study's own method, every defining equation")
@@ -717,7 +717,7 @@ def add_parser(subparsers):
     p.add_argument("--relation", metavar="TEXT", help="about: what is asserted of the subject, e.g. \"has lower "
                                                        "error than\"")
     p.add_argument("--object", nargs="+", metavar="TM|TEXT",
-                   help="about: the measure, outcome, property or theme (several measure terms for one atom)")
+                   help="about: the variable, outcome, property or theme (several variable terms for one atom)")
     p.add_argument("--comparator", metavar="TM|TEXT", help="about: what the subject is compared with")
     p.add_argument("--condition", action="append", default=[], metavar="TM|TEXT",
                    help="about: a data set, population, setting or other condition; repeat for several")

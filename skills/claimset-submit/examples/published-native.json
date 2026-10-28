@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.31",
+  "schema_version": "0.32",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -11,6 +11,10 @@
       "keywords": [
         "retail demand forecasting"
       ]
+    },
+    "declarations": {
+      "funding": [],
+      "competing_interests": "None declared."
     },
     "contributions": [
       "C2"
@@ -92,7 +96,7 @@
     {
       "id": "D1",
       "term": "forecast skill",
-      "kind": "measure",
+      "kind": "variable",
       "definition": "Relative reduction in mean absolute scaled error against a seasonal naive benchmark, averaged over series and horizons."
     },
     {

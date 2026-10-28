@@ -1,6 +1,6 @@
 # Claimset — Specification v0.32 (draft)
 
-Status: working draft, not yet implemented by the validator · Date: 2026-10-28 · Supersedes v0.31 (`spec/claimset-v0.31.md`) · Companions: lab record specification (`spec/lab-record-v0.13.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-28 · Supersedes v0.31 (`spec/claimset-v0.31.md`) · Companions: lab record specification (`spec/lab-record-v0.13.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
@@ -22,7 +22,7 @@ Every field reports its findings as values of something observed on something un
   - §3.2: a definition lists the `assumptions` the thing it names rests on (the error distribution of a model, the randomisation of a design); evidence whose setup names it inherits them. New rule 73; warning 15 counts them.
   - §3.4: a contrast between two positions on a dimension (a difference, a ratio, an effect size, the p-value of a comparison) is an observation with the reserved condition `comparator`. New rule 74.
   - §3.2, §8: definitions mark the terms they use (`[[D4:…]]`), and a term the paper defines in its own words that is a standard or another paper's term says so by `identifiers` or `source`.
-- Companion lab record v0.13 renames the term kind `measure` to `variable`.
+- Companion lab record v0.13 renames the term kind `measure` to `variable`. Files written under v0.31 are brought over with `claimset migrate`, which renames `measure` and `quantity` and lists what needs judgement (figure functions, excerpts that were `exemplars`, declarations); `claimset validate` accepts a submission package as well as a file.
 
 ## Changes in v0.31 (since v0.30)
 
@@ -1293,11 +1293,12 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.17",
+  "schema_version": "0.32",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
     "classification": {"keywords": ["retail demand forecasting"]},
+    "declarations": {"funding": [], "competing_interests": "None declared."},
     "contributions": ["C2"],
     "autonomy": "human_supervised",
     "contribution_record": "complete",
@@ -1439,6 +1440,7 @@ The output of `claimset render` for the submission in Appendix A. Statements kee
 ```text
 CLAIMSET Method M against the seasonal naive benchmark on UK monthly retail sales
 licence CC-BY-4.0; contributions C2
+declarations funding: none | competing interests: None declared.
 
 DEFINITIONS
 D1 [variable] forecast skill: Relative reduction in mean absolute scaled error against a seasonal naive benchmark, averaged over series and horizons.

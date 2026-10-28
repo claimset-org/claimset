@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.31",
+  "schema_version": "0.32",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -7,6 +7,10 @@
       "keywords": [
         "retail demand forecasting"
       ]
+    },
+    "declarations": {
+      "funding": [],
+      "competing_interests": "None declared."
     },
     "contributions": [
       "C2"
@@ -109,7 +113,7 @@
     {
       "id": "D1",
       "term": "mean absolute scaled error",
-      "kind": "measure",
+      "kind": "variable",
       "definition": "Mean absolute scaled error; here the mean relative reduction of method M against the seasonal naive method, averaged over series and horizons."
     },
     {
@@ -379,7 +383,7 @@
       "results": [
         {
           "id": "R1",
-          "quantity": "mean relative MASE reduction, method M vs seasonal naive",
+          "variable": "mean relative MASE reduction, method M vs seasonal naive",
           "value": 0.08,
           "interval": {
             "level": 0.95,
@@ -428,7 +432,7 @@
       "results": [
         {
           "id": "R1",
-          "quantity": "mean relative MASE reduction, method M vs seasonal naive",
+          "variable": "mean relative MASE reduction, method M vs seasonal naive",
           "value": -0.004,
           "interval": {
             "level": 0.9,

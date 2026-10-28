@@ -13,7 +13,7 @@ from pathlib import Path
 from .. import SPEC_VERSION
 from .anchor import covers, read_anchors
 from . import decision as _decision
-from .core import (SETUP_ROLES, TERM_ID_RE, TERM_MARK_RE, LabError, State, agent_base, file_hash, final_statuses,
+from .core import (RENAMED_KINDS, SETUP_ROLES, TERM_ID_RE, TERM_MARK_RE, LabError, State, agent_base, file_hash, final_statuses,
                    is_withheld, plan_flags, verify)
 
 FINAL = {"supported", "not_supported", "inconclusive", "revised", "abandoned"}
@@ -240,7 +240,8 @@ class _Exporter:
                 rid = f"R{len(results) + 1}"
                 refs[res["id"]] = f"{eid}.{rid}"
                 entry = {"id": rid}
-                entry.update({k: res["body"][k] for k in ("quantity", "value", "unit", "interval", "conditions")
+                entry.update({("variable" if k == "quantity" else k): res["body"][k]
+                              for k in ("quantity", "value", "unit", "interval", "conditions")
                               if res["body"].get(k) is not None})
                 results.append(entry)
         visible = [r for r in runs if not is_withheld(r)]
@@ -674,7 +675,8 @@ class _Exporter:
             did = f"D{len(definitions) + 1}"
             for v in self.versions(e["id"]):
                 dmap[v] = did
-            d = {"id": did, "term": cur["body"].get("term"), "kind": cur["body"].get("kind"),
+            kind = cur["body"].get("kind")
+            d = {"id": did, "term": cur["body"].get("term"), "kind": RENAMED_KINDS.get(kind, kind),
                  "definition": cur["body"].get("definition")}
             if cur["body"].get("source"):
                 d["source"] = cur["body"]["source"]
@@ -704,7 +706,15 @@ class _Exporter:
                 self.todo(f"claims.{c['id']}.about", f"give the about of {c['id']}: its atom as subject, relation, "
                                                      f"object, comparator and conditions (required if it is "
                                                      f"principal; record it on the hypothesis next time)")
+        by_name = {d["term"].strip().lower(): d["id"] for d in definitions
+                   if isinstance(d.get("term"), str) and d.get("kind") == "variable"}
         for ev in self.evidence:
+            for res in ev.get("results") or []:
+                var = res.get("variable")
+                if isinstance(var, str) and var.strip().lower() in by_name:
+                    res["variable"] = by_name[var.strip().lower()]
+                if isinstance(res.get("conditions"), dict):
+                    res["conditions"] = {swap(k): swap(v) for k, v in res["conditions"].items()}
             if isinstance(ev.get("setup"), dict):
                 ev["setup"] = {role: [swap(i) for i in ids] for role, ids in ev["setup"].items()}
             elif ev.get("profile") != "formal":

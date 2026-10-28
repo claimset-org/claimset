@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.31"
+SCHEMA_VERSION = "0.32"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -58,9 +58,13 @@ ENUM = {
     "design_model_role": {"subject", "instrument", "annotator", "generator", "baseline"},
     "reasoning": {"deductive", "inductive", "abductive", "analogical", "interpretive"},
     "artefact_kind": {"code", "data", "protocol", "proof", "model", "software", "figure", "table",
-                      "prompt", "trace", "manuscript", "lab_record", "other"},
+                      "prompt", "trace", "manuscript", "lab_record", "instrument", "stimulus", "codebook",
+                      "recording", "other"},
+    "figure_function": {"data_plot", "specimen", "diagram"},
+    "derived_how": {"reanalysis", "subset", "pooled", "extension"},
+    "ethics_decision": {"approved", "exempt", "not_required"},
     "relation": {"supports", "contradicts", "extends", "refines", "replicates", "fails_to_replicate", "supersedes",
-                 "addresses"},
+                 "addresses", "explains", "qualifies"},
     "limitation_category": {"sampling", "sample_size", "measurement", "confounding", "data_quality",
                             "model_specification", "analytic_flexibility", "researcher_position",
                             "computational", "other"},
@@ -81,12 +85,13 @@ ENUM = {
     "weights": {"open", "api_only"},
     "support_kind": {"empirical_quant", "empirical_qual", "simulation", "demonstration", "formal_proof",
                      "argument", "cited", "consensus", "expert_judgement", "assumption", "unstated"},
-    "id_type": {"doi", "arxiv", "handle", "pmid", "isbn", "url", "physical", "reference", "claimset_local"},
-    "rel_id_type": {"claimset", "doi", "arxiv", "handle", "pmid", "isbn", "url", "physical", "claimset_local"},
+    "id_type": {"doi", "arxiv", "handle", "pmid", "isbn", "url", "curie", "physical", "reference", "claimset_local"},
+    "rel_id_type": {"claimset", "doi", "arxiv", "handle", "pmid", "isbn", "url", "curie", "physical", "claimset_local",
+                    "local"},
     "by": {"author", "reviewer"},
     "reviewer_type": {"ai", "human"},
     "strength": {"high", "moderate", "low", "very_low"},
-    "definition_kind": {"method", "intervention", "population", "data", "setting", "design", "measure", "concept",
+    "definition_kind": {"method", "intervention", "population", "data", "setting", "design", "variable", "concept",
                         "theory", "other"},
 }
 
@@ -270,7 +275,7 @@ def process_warnings(r, doc, claims, coll, by_id, converted):
         if not isinstance(e, dict):
             continue
         code = as_dict(e.get("execution")).get("code_version")
-        results = sorted(json.dumps([as_dict(x).get("quantity"), as_dict(x).get("value"), as_dict(x).get("conditions")],
+        results = sorted(json.dumps([as_dict(x).get("variable"), as_dict(x).get("value"), as_dict(x).get("conditions")],
                                     sort_keys=True) for x in as_list(e.get("results")))
         if not code or not results:
             continue
@@ -487,6 +492,7 @@ def validate(doc, published=False, local_root=None, revision=False):
             e = by_id(as_dict(s).get("evidence"), "evidence")
             if e is not None:
                 out += list(as_list(e.get("assumptions")))
+                out += inherited_assumptions(e, by_id)
         return [x for x in out if isinstance(x, str)]
 
     reached, stack = set(), [cid for cid, c in claims.items() if c.get("role") == "principal"]
@@ -522,7 +528,8 @@ def validate(doc, published=False, local_root=None, revision=False):
     for dfn in coll["definitions"]:
         dfn = as_dict(dfn)
         did, text = dfn.get("id"), dfn.get("definition")
-        if did in marked_formal and not dfn.get("source") and isinstance(text, str) and "$" not in text:
+        if did in marked_formal and not dfn.get("source") and isinstance(text, str) and "$" not in text \
+                and "```" not in text:
             r.warn("W26", f"definitions:{did}", "a term of the paper's own that a formal claim names, with no "
                                               "mathematics: if it is the paper's method or model, give its "
                                               "defining equations as the paper writes them")
@@ -580,6 +587,7 @@ def validate(doc, published=False, local_root=None, revision=False):
                           "must be a non-empty string or {target, id_type} with id_type from the list for cited support")
 
     check_frame(r, coll, claims, by_id)
+    check_v032(r, paper, coll, claims, by_id, ids, converted, published)
 
     # ---------- Artefacts ----------
     for a in coll["artefacts"]:
@@ -591,6 +599,7 @@ def validate(doc, published=False, local_root=None, revision=False):
             r.err("1", w, "figures and tables require a description")
         if a.get("underlying_data"):
             ref("1", f"{w}.underlying_data", a["underlying_data"], "artefacts")
+        check_artefact_v032(r, w, a, ref, by_id, coll)
         if a.get("reference") is not None:
             ref("54", f"{w}.reference", a["reference"], "references")
         if "archive_uri" in a and not (isinstance(a["archive_uri"], str) and a["archive_uri"].strip()):
@@ -687,11 +696,11 @@ def validate(doc, published=False, local_root=None, revision=False):
             if not re.match(r"^(AC\d+\.)?RN\d+$", str(lr)):
                 r.err("1", f"{w}.lab_runs", f"'{lr}' is not a lab-record run ID (RN1, RN2, …)")
         if e.get("profile") in ("quant", "simulation"):
-            res = as_list(e.get("results"))
-            if e.get("estimate") is None and not res and not as_list(e.get("tables")):
+            if e.get("estimate") is None and not as_list(e.get("results")) and not as_list(e.get("tables")):
                 r.warn("W8", w, "no estimate and no results: add a structured results list for the numbers this evidence produced")
+        if e.get("profile") != "formal":
             seen_r = set()
-            for i, rs in enumerate(res):
+            for i, rs in enumerate(as_list(e.get("results"))):
                 rs = as_dict(rs)
                 rw = f"{w}.results[{i}]"
                 rid = rs.get("id")
@@ -701,17 +710,28 @@ def validate(doc, published=False, local_root=None, revision=False):
                     r.err("38", rw, f"duplicate result id {rid}")
                 else:
                     seen_r.add(rid)
-                if not rs.get("quantity"):
-                    r.err("38", rw, "missing quantity")
-                if not isinstance(rs.get("value"), (int, float)) or isinstance(rs.get("value"), bool):
-                    r.err("38", rw, "value must be a number")
+                check_result(r, rw, rs, ref)
                 if rs.get("artefact"):
                     ref("38", f"{rw}.artefact", rs["artefact"], "artefacts")
             check_tables(r, w, e, ref)
-        elif e.get("results"):
-            r.err("38", w, "results are used only in quant and simulation evidence")
-        if e.get("profile") not in ("quant", "simulation") and e.get("tables"):
-            r.err("48", w, "result tables are used only in quant and simulation evidence")
+        else:
+            if e.get("results"):
+                r.err("66", w, "formal evidence has no results: its claims are proved, not observed")
+            if e.get("tables"):
+                r.err("48", w, "formal evidence has no tables")
+        if "exemplars" in e:
+            r.err("66", f"{w}.exemplars", "removed in v0.32: each excerpt is a result whose value is the excerpt, "
+                                          "{text, locator} (§3.4, Excerpts and qualitative evidence)")
+        for j, dv in enumerate(as_list(e.get("derived_from"))):
+            dv = as_dict(dv)
+            dw = f"{w}.derived_from[{j}]"
+            if dv.get("evidence") == e.get("id"):
+                r.err("72", dw, "evidence is not derived from itself")
+            else:
+                ref("72", f"{dw}.evidence", dv.get("evidence"), "evidence")
+            check_enum(r, "72", f"{dw}.how", dv.get("how"), "derived_how", required=True)
+        if "derived_from" in e and (not isinstance(e["derived_from"], list) or not e["derived_from"]):
+            r.err("72", f"{w}.derived_from", "a non-empty list of {evidence, how}")
         if "source_spans" in e and not (isinstance(e["source_spans"], list)
                                         and all(isinstance(x, str) and x for x in e["source_spans"])):
             r.err("1", f"{w}.source_spans", "must be a list of non-empty strings")
@@ -886,7 +906,7 @@ def validate(doc, published=False, local_root=None, revision=False):
 
     # ---------- Computed verifiability (rule 13) ----------
     for cid, c in claims.items():
-        exp_v, exp_flags, notes = compute_verifiability(c, by_id)
+        exp_v, exp_flags, notes = compute_verifiability(c, by_id, read_from_artefacts(coll))
         if c.get("hypothesis") and not is_assumption(c):
             if lab["level"] not in (None, "public"):
                 exp_flags.add("lab_record_withheld")
@@ -966,7 +986,14 @@ ABOUT_SLOTS = ("subject", "relation", "object", "comparator", "conditions")
 DEF_ID_RE = re.compile(r"^D\d+$")
 # Kinds of the parts a setup should name (warning 28): a defined term of these kinds in a claim's `about` is a part
 # of the study the claim's evidence should list.
-SETUP_PART_KINDS = {"method", "intervention", "population", "data", "design", "measure"}
+SETUP_PART_KINDS = {"method", "intervention", "population", "data", "design", "variable"}
+CURIE_RE = re.compile(r"^[a-z][a-z0-9._-]*:\S+$")
+ROW_REF_RE = re.compile(r"^(A\d+)#row=(\d+)(?:-(\d+))?$")
+EXCERPT_FIELDS = {"text", "locator", "language", "gloss", "translation"}
+ENCODING_KEYS = {"x", "y", "colour", "shape", "size", "panel"}
+LOCAL_RELATION_TYPES = {"supports", "contradicts", "refines", "explains", "qualifies"}
+#: Relation types for other works only (§3.7)
+EXTERNAL_ONLY_RELATIONS = {"replicates", "fails_to_replicate", "supersedes", "addresses"}
 
 
 def check_frame(r, coll, claims, by_id):
@@ -986,7 +1013,10 @@ def check_frame(r, coll, claims, by_id):
         d = as_dict(d)
         if isinstance(d.get("term"), str):
             terms[d["term"].strip().lower()] = d.get("id")
-        if "kind" in d and d["kind"] not in ENUM["definition_kind"]:
+        if d.get("kind") == "measure":
+            r.err("68", f"definitions:{d.get('id')}.kind", "renamed in v0.32: the kind measure is now variable "
+                                                          "(`claimset migrate` renames it)")
+        elif "kind" in d and d["kind"] not in ENUM["definition_kind"]:
             r.err("63", f"definitions:{d.get('id')}.kind",
                   f"'{d['kind']}' is not a kind: {', '.join(sorted(ENUM['definition_kind']))}")
 
@@ -1030,18 +1060,18 @@ def check_frame(r, coll, claims, by_id):
                 continue
             if f == "object" and isinstance(v, list):
                 if not v:
-                    r.err("64", f"{w}.about.object", "a list of measures is not empty")
+                    r.err("64", f"{w}.about.object", "a list of variables is not empty")
                 for i, x in enumerate(v):
                     d = by_id(x, "definitions") if isinstance(x, str) and DEF_ID_RE.match(x) else None
-                    if d is None or d.get("kind") != "measure":
+                    if d is None or d.get("kind") != "variable":
                         r.err("64", f"{w}.about.object[{i}]", "a list in object holds only IDs of definitions of "
-                                                              "kind measure (atoms grouped by measure, §8 rule 2)")
+                                                              "kind variable (atoms grouped by variable, §8 rule 2)")
                     slots.append((f"object[{i}]", x))
             elif isinstance(v, str) and v.strip():
                 slots.append((f, v))
             else:
                 r.err("64", f"{w}.about.{f}", "null, a definition ID or a short text" +
-                      (", or a list of measure definition IDs" if f == "object" else ""))
+                      (", or a list of variable definition IDs" if f == "object" else ""))
         conds = about.get("conditions")
         if not isinstance(conds, list):
             r.err("64", f"{w}.about.conditions", "a list (empty when the claim holds without conditions)")
@@ -1333,8 +1363,55 @@ def _is_number(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
 
 
+def value_ok(v):
+    """A value of an observation (rule 66): a number, a non-empty string (a category: a definition ID or a code),
+    a boolean, or an excerpt {text, locator, language, gloss, translation}."""
+    if isinstance(v, bool) or _is_number(v):
+        return True
+    if isinstance(v, str):
+        return bool(v.strip())
+    if isinstance(v, dict):
+        return (set(v) <= EXCERPT_FIELDS and isinstance(v.get("text"), str) and v["text"].strip() != ""
+                and isinstance(v.get("locator"), str) and v["locator"].strip() != ""
+                and all(isinstance(v[k], str) for k in v))
+    return False
+
+
+def _coord_ok(k, v):
+    return isinstance(k, str) and k.strip() and (isinstance(v, bool) or _is_number(v)
+                                                 or (isinstance(v, str) and v.strip()))
+
+
+def check_result(r, rw, rs, ref):
+    """Rule 66: one result entry (an observation)."""
+    if "quantity" in rs:
+        r.err("66", f"{rw}.quantity", "renamed in v0.32: what is observed is the result's variable "
+                                      "(`claimset migrate` renames it)")
+    if not isinstance(rs.get("variable"), str) or not rs["variable"].strip():
+        r.err("66", rw, "missing variable: what is observed (a definition ID or text)")
+    if not value_ok(rs.get("value")):
+        r.err("66", f"{rw}.value", "a number, a category, a boolean, or an excerpt {text, locator}")
+    if "unit" in rs and rs["unit"] is not None and not (isinstance(rs["unit"], str) and rs["unit"].strip()):
+        r.err("66", f"{rw}.unit", "a UCUM code or text")
+    if "n" in rs and not (isinstance(rs["n"], int) and not isinstance(rs["n"], bool) and rs["n"] >= 0):
+        r.err("66", f"{rw}.n", "a non-negative integer")
+    if "interval" in rs and not isinstance(rs["interval"], dict):
+        r.err("66", f"{rw}.interval", "{level, lower, upper}")
+    conds = rs.get("conditions")
+    if conds is not None and (not isinstance(conds, dict) or not all(_coord_ok(k, v) for k, v in conds.items())):
+        r.err("66", f"{rw}.conditions", "an object of dimension: value, each a definition ID, text, number or boolean")
+    rf = rs.get("read_from")
+    if rf is not None:
+        rf = as_dict(rf)
+        a = ref("66", f"{rw}.read_from.artefact", rf.get("artefact"), "artefacts")
+        if a is not None and a.get("kind") not in ("figure", "recording"):
+            r.err("66", f"{rw}.read_from", "values are read from a figure or a recording")
+        if rf.get("precision") in (None, ""):
+            r.err("66", f"{rw}.read_from", "give the precision of the reading")
+
+
 def check_tables(r, w, e, ref):
-    """Rule 48: result tables (spec §3.4)."""
+    """Rule 48: tables, compact forms of observations (spec §3.4)."""
     tables = e.get("tables")
     if tables is None:
         return
@@ -1356,17 +1433,25 @@ def check_tables(r, w, e, ref):
             seen.add(tid)
         if not isinstance(t.get("description"), str) or not t.get("description").strip():
             r.err("48", tw, "missing description")
-        if "conditions" in t and not isinstance(t["conditions"], dict):
-            r.err("48", f"{tw}.conditions", "must be an object")
+        if "conditions" in t and (not isinstance(t["conditions"], dict)
+                                  or not all(_coord_ok(k, v) for k, v in t["conditions"].items())):
+            r.err("48", f"{tw}.conditions", "an object of dimension: value")
         labels, cols = t.get("row_labels"), t.get("columns")
         if not isinstance(labels, list) or not all(isinstance(x, str) and x for x in labels):
-            r.err("48", f"{tw}.row_labels", "must be a list of names (possibly empty)")
+            r.err("48", f"{tw}.row_labels", "must be a list of dimensions (possibly empty)")
             labels = None
-        if not isinstance(cols, list) or not cols or not all(isinstance(x, str) and x for x in cols):
-            r.err("48", f"{tw}.columns", "must be a non-empty list of names")
+
+        def col_ok(c):
+            if isinstance(c, str):
+                return bool(c.strip())
+            return (isinstance(c, dict) and set(c) <= {"variable", "conditions"} and isinstance(c.get("variable"), str)
+                    and c["variable"].strip() != "" and isinstance(c.get("conditions", {}), dict)
+                    and all(_coord_ok(k, v) for k, v in c.get("conditions", {}).items()))
+        if not isinstance(cols, list) or not cols or not all(col_ok(x) for x in cols):
+            r.err("48", f"{tw}.columns", "a non-empty list, each a variable or {variable, conditions}")
             cols = None
-        elif len(set(cols)) != len(cols):
-            r.err("48", f"{tw}.columns", "column names must be unique")
+        elif len({json.dumps(x, sort_keys=True) for x in cols}) != len(cols):
+            r.err("48", f"{tw}.columns", "columns must be distinct")
         if cols is not None and "units" in t:
             u = t["units"]
             if not isinstance(u, list) or len(u) != len(cols) or not all(x is None or isinstance(x, str) for x in u):
@@ -1375,7 +1460,7 @@ def check_tables(r, w, e, ref):
         if not isinstance(rows, list) or not rows:
             r.err("48", f"{tw}.rows", "must be a non-empty list")
             rows = []
-        seen_rows, any_number = set(), False
+        seen_rows, any_value = set(), False
         for j, row in enumerate(rows):
             rw = f"{tw}.rows[{j}]"
             if not isinstance(row, dict):
@@ -1390,7 +1475,7 @@ def check_tables(r, w, e, ref):
                 seen_rows.add(rid)
             lab = row.get("label")
             if labels is not None and (not isinstance(lab, list) or len(lab) != len(labels)
-                                       or not all(isinstance(x, (str, int, float)) and not isinstance(x, bool) for x in lab)):
+                                       or not all(_coord_ok("x", x) for x in lab)):
                 r.err("48", f"{rw}.label", f"must have one entry per row label ({len(labels)})")
             vals = row.get("values")
             if cols is not None and (not isinstance(vals, list) or len(vals) != len(cols)):
@@ -1399,12 +1484,13 @@ def check_tables(r, w, e, ref):
                 for v in vals:
                     if v is None:
                         continue
-                    if _is_number(v):
-                        any_number = True
+                    if value_ok(v):
+                        any_value = True
                     else:
-                        r.err("48", f"{rw}.values", f"'{v}' is not a number or null")
-        if rows and not any_number:
-            r.err("48", tw, "the table has no numeric value")
+                        r.err("48", f"{rw}.values", f"'{v}' is not a value (number, category, boolean or excerpt) "
+                                                    f"or null")
+        if rows and not any_value:
+            r.err("48", tw, "the table has no value")
         if t.get("artefact"):
             ref("48", f"{tw}.artefact", t["artefact"], "artefacts")
         if "source_spans" in t and not (isinstance(t["source_spans"], list)
@@ -1412,10 +1498,390 @@ def check_tables(r, w, e, ref):
             r.err("48", f"{tw}.source_spans", "must be a list of non-empty strings")
 
 
-def result_ref_resolves(ref_id, evidence_id, e):
-    """Rule 38: E<n>.R<m>, E<n>.T<m> or E<n>.T<m>.r<k> within the evidence a support entry points to."""
+def observations(e):
+    """Every observation of an evidence object as (where, variable, conditions, value, unit): its results and the
+    cells of its tables, each cell with the table's, the row's and the column's conditions (§3.4)."""
+    out = []
+    for i, rs in enumerate(as_list(e.get("results"))):
+        rs = as_dict(rs)
+        out.append((f"results[{i}]", rs.get("variable"), as_dict(rs.get("conditions")), rs.get("value"), rs.get("unit")))
+    for i, t in enumerate(as_list(e.get("tables"))):
+        t = as_dict(t)
+        labels = [x for x in as_list(t.get("row_labels")) if isinstance(x, str)]
+        cols = as_list(t.get("columns"))
+        units = as_list(t.get("units"))
+        for j, row in enumerate(as_list(t.get("rows"))):
+            row = as_dict(row)
+            base = dict(as_dict(t.get("conditions")))
+            base.update({k: v for k, v in zip(labels, as_list(row.get("label")))})
+            for k, (c, v) in enumerate(zip(cols, as_list(row.get("values")))):
+                cond = dict(base)
+                var = c if isinstance(c, str) else as_dict(c).get("variable")
+                if isinstance(c, dict):
+                    cond.update(as_dict(c.get("conditions")))
+                out.append((f"tables[{i}].rows[{j}].values[{k}]", var, cond, v,
+                            units[k] if k < len(units) else None))
+    return out
+
+
+def inherited_assumptions(e, by_id):
+    """The assumptions evidence inherits from the definitions its setup names, and their broader terms (§3.2)."""
+    out, seen = [], set()
+    stack = [d for ids_ in as_dict(e.get("setup")).values() for d in as_list(ids_) if isinstance(d, str)]
+    while stack:
+        did = stack.pop()
+        if did in seen:
+            continue
+        seen.add(did)
+        d = by_id(did, "definitions")
+        if d is None:
+            continue
+        out += [a for a in as_list(d.get("assumptions")) if isinstance(a, str)]
+        stack += [b for b in as_list(d.get("broader")) if isinstance(b, str)]
+    return out
+
+
+def read_from_artefacts(coll):
+    """Artefacts some observation is read from (§3.4, read_from)."""
+    out = set()
+    for e in coll["evidence"]:
+        for rs in as_list(as_dict(e).get("results")):
+            a = as_dict(as_dict(rs).get("read_from")).get("artefact")
+            if isinstance(a, str):
+                out.add(a)
+    return frozenset(out)
+
+
+def is_relative_uri(u):
+    return isinstance(u, str) and u.strip() != "" and not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", u) \
+        and not u.startswith("/")
+
+
+def check_artefact_v032(r, w, a, ref, by_id, coll):
+    """Rule 67: figures by function, what a data plot shows, its encoding, and the columns of bulk data."""
+    kind = a.get("kind")
+    if kind == "figure":
+        check_enum(r, "67", f"{w}.function", a.get("function"), "figure_function", required=True)
+    elif "function" in a:
+        r.err("67", f"{w}.function", "only figures have a function")
+    if "shows" in a:
+        shows = a["shows"]
+        if a.get("function") != "data_plot":
+            r.err("67", f"{w}.shows", "only a data_plot shows observations")
+        elif not isinstance(shows, list) or not shows:
+            r.err("67", f"{w}.shows", "a non-empty list of result, table or row references, or bulk data artefacts")
+        else:
+            for x in shows:
+                x = str(x)
+                if re.match(r"^A\d+$", x):
+                    ref("67", f"{w}.shows", x, "artefacts")
+                    continue
+                m = re.match(r"^(E\d+)\.", x)
+                e = by_id(m.group(1), "evidence") if m else None
+                if not result_ref_resolves(x, m.group(1) if m else None, e, by_id):
+                    r.err("67", f"{w}.shows", f"'{x}' does not resolve to a result, table or row")
+    if "encoding" in a:
+        enc = a["encoding"]
+        if not isinstance(enc, dict) or not set(enc) <= ENCODING_KEYS \
+                or not all(isinstance(v, str) and v.strip() for v in enc.values()):
+            r.err("67", f"{w}.encoding", f"an object of {', '.join(sorted(ENCODING_KEYS))}, each a definition ID or text")
+        else:
+            for k, v in enc.items():
+                if DEF_ID_RE.match(v):
+                    ref("67", f"{w}.encoding.{k}", v, "definitions")
+    if "columns" in a:
+        cols = a["columns"]
+        if kind not in ("data", "table"):
+            r.err("67", f"{w}.columns", "columns are given for bulk data (kind data or table)")
+        if not isinstance(cols, list) or not cols:
+            r.err("67", f"{w}.columns", "a non-empty list of {name, variable or dimension, unit}")
+        else:
+            for i, c in enumerate(cols):
+                c = as_dict(c)
+                cw = f"{w}.columns[{i}]"
+                if not isinstance(c.get("name"), str) or not c["name"].strip():
+                    r.err("67", cw, "missing name")
+                if ("variable" in c) == ("dimension" in c):
+                    r.err("67", cw, "exactly one of variable and dimension")
+                term = c.get("variable", c.get("dimension"))
+                if isinstance(term, str) and DEF_ID_RE.match(term):
+                    ref("67", cw, term, "definitions")
+                elif not (isinstance(term, str) and term.strip()):
+                    r.err("67", cw, "the variable or dimension, a definition ID or text")
+    if a.get("locator") is not None and not (isinstance(a["locator"], str) and a["locator"].strip()):
+        r.err("1", f"{w}.locator", "where in the cited work, as text")
+
+
+def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
+    """Rules 66 (terms of observations), 68, 69, 70 (published files), 71 (cycles), 72 (cycles), 73, 74;
+    warnings 29 and 30 (spec v0.32)."""
+    defs = {as_dict(d).get("id"): as_dict(d) for d in coll["definitions"]}
+
+    def members_of(g, seen=()):
+        out = set()
+        for m in as_list(defs.get(g, {}).get("members")):
+            if isinstance(m, str) and m not in seen:
+                out |= {m} | members_of(m, seen + (g,))
+        return out
+
+    # ----- definitions: part_of, broader, identifiers, assumptions, marks (rules 68, 73) -----
+    for did, d in defs.items():
+        dw = f"definitions:{did}"
+        for link in ("part_of", "broader"):
+            if link not in d:
+                continue
+            lst = d[link]
+            if not isinstance(lst, list) or not lst or not all(isinstance(x, str) for x in lst):
+                r.err("68", f"{dw}.{link}", "a non-empty list of definition IDs")
+                continue
+            for x in lst:
+                if x == did:
+                    r.err("68", f"{dw}.{link}", "a term is not linked to itself")
+                elif x not in defs:
+                    r.err("68", f"{dw}.{link}", f"{x} does not resolve to a definition")
+                elif link == "broader" and d.get("kind") and defs[x].get("kind") \
+                        and defs[x]["kind"] != d["kind"]:
+                    r.err("68", f"{dw}.broader", f"{x} is of kind {defs[x]['kind']}: a narrower term has the kind of "
+                                                 f"its broader term")
+        if "identifiers" in d:
+            idl = d["identifiers"]
+            if not isinstance(idl, list) or not idl or not all(isinstance(x, str) and CURIE_RE.match(x) for x in idl):
+                r.err("68", f"{dw}.identifiers", "a non-empty list of compact identifiers prefix:local "
+                                                 "(e.g. chebi:15377, ncbitaxon:9606, doi:10.…)")
+        if "assumptions" in d:
+            al = d["assumptions"]
+            if not isinstance(al, list) or not al:
+                r.err("73", f"{dw}.assumptions", "a non-empty list of assumption claim IDs")
+            else:
+                for x in al:
+                    c = claims.get(x)
+                    if c is None or not is_assumption(c):
+                        r.err("73", f"{dw}.assumptions", f"{x} is not an assumption claim")
+        text_checks(r, f"{dw}.definition", d.get("definition"), ids)
+    for link in ("part_of", "broader"):
+        def reaches(a, target, seen):
+            for x in as_list(defs.get(a, {}).get(link)):
+                if x == target or (isinstance(x, str) and x not in seen and reaches(x, target, seen | {x})):
+                    return True
+            return False
+        for did, d in defs.items():
+            if isinstance(d.get(link), list) and any(isinstance(x, str) and x != did and reaches(x, did, {x})
+                                                     for x in d[link]):
+                r.err("68", f"definitions:{did}.{link}", f"{link} forms a cycle: a term is not linked to itself "
+                                                        f"through other terms")
+    for b in coll["references"]:
+        b = as_dict(b)
+        if b.get("id_type") == "curie" and not CURIE_RE.match(str(b.get("target") or "")):
+            r.err("68", f"references:{b.get('id')}.target", "a compact identifier prefix:local")
+
+    # ----- terms of observations (rules 66, 74; warning 30) -----
+    terms = {as_dict(d).get("term", "").strip().lower(): did for did, d in defs.items()
+             if isinstance(as_dict(d).get("term"), str)}
+
+    def variable_ok(v):
+        d = defs.get(v)
+        if d is None:
+            return False
+        if d.get("kind") in ("variable", "concept"):
+            return True
+        ms = members_of(v)
+        return bool(ms) and all(defs.get(m, {}).get("kind") in ("variable", "concept") for m in ms)
+
+    for e in coll["evidence"]:
+        e = as_dict(e)
+        if e.get("profile") == "formal":
+            continue
+        w = f"evidence:{e.get('id')}"
+        for t in as_list(e.get("tables")):
+            for x in as_list(as_dict(t).get("row_labels")):
+                if isinstance(x, str) and DEF_ID_RE.match(x) and x not in defs:
+                    r.err("66", f"{w}.tables:{as_dict(t).get('id')}.row_labels", f"{x} does not resolve to a definition")
+        for where, var, cond, value, _unit in observations(e):
+            ow = f"{w}.{where}"
+            if isinstance(var, str) and DEF_ID_RE.match(var.strip()):
+                if var not in defs:
+                    r.err("66", f"{ow}.variable", f"{var} does not resolve to a definition")
+                elif not variable_ok(var):
+                    r.err("66", f"{ow}.variable", f"{var} is of kind {defs[var].get('kind')}: a variable names a "
+                                                  f"definition of kind variable or concept, or a group of them")
+            elif isinstance(var, str) and var.strip().lower() in terms:
+                r.warn("W30", f"{ow}.variable", f"'{var}' is the term of {terms[var.strip().lower()]}: give the ID")
+            groups = []
+            for k, v in cond.items():
+                for x in (k, v):
+                    if isinstance(x, str) and DEF_ID_RE.match(x) and x not in defs:
+                        r.err("66", f"{ow}.conditions", f"{x} does not resolve to a definition")
+                if k == "comparator":
+                    continue
+                if k in defs and members_of(k):
+                    groups.append(k)
+                    if isinstance(v, str) and DEF_ID_RE.match(v) and v in defs and v not in members_of(k):
+                        r.err("66", f"{ow}.conditions", f"{v} is not a member of {k}, the dimension it lies on")
+            comp = cond.get("comparator")
+            if isinstance(comp, str) and DEF_ID_RE.match(comp) and comp in defs and groups \
+                    and not any(comp in members_of(g) for g in groups):
+                r.err("74", f"{ow}.conditions.comparator", f"{comp} is a member of none of the dimensions "
+                                                           f"{', '.join(groups)}: a comparator lies on the dimension "
+                                                           f"whose value it replaces")
+            if isinstance(value, str) and DEF_ID_RE.match(value) and value not in defs:
+                r.err("66", f"{ow}.value", f"{value} does not resolve to a definition")
+
+    # ----- figures without observations (warning 30) -----
+    read_from = read_from_artefacts(coll)
+    for a in coll["artefacts"]:
+        a = as_dict(a)
+        if a.get("kind") != "figure":
+            continue
+        if a.get("function") == "data_plot" and not a.get("shows") and not a.get("underlying_data"):
+            r.warn("W30", f"artefacts:{a.get('id')}", "a data plot that names neither the observations it shows nor "
+                                                      "its underlying data: record its values as observations")
+        if a.get("function") == "specimen" and a.get("id") not in read_from:
+            r.warn("W30", f"artefacts:{a.get('id')}", "a specimen from which no observation is read: record what "
+                                                      "the paper reads from it, with read_from")
+    if published:
+        for a in coll["artefacts"]:
+            a = as_dict(a)
+            if is_relative_uri(a.get("uri")):
+                r.err("70", f"artefacts:{a.get('id')}.uri", "a published file names no relative paths: the platform "
+                                                            "assigns the location of each packaged file")
+
+    # ----- relations within the paper: explains forms no cycle (rule 71) -----
+    explains = {cid: [rel.get("target") for rel in (as_dict(x) for x in as_list(c.get("relations")))
+                      if rel.get("id_type") == "local" and rel.get("type") == "explains"]
+                for cid, c in claims.items()}
+
+    def cyc(graph, start):
+        stack, seen = list(graph.get(start, [])), set()
+        while stack:
+            x = stack.pop()
+            if x == start:
+                return True
+            if x in seen:
+                continue
+            seen.add(x)
+            stack += graph.get(x, [])
+        return False
+    for cid in claims:
+        if cyc(explains, cid):
+            r.err("71", f"claims:{cid}.relations", "explains forms a cycle among the paper's claims")
+    derived = {as_dict(e).get("id"): [as_dict(x).get("evidence") for x in as_list(as_dict(e).get("derived_from"))]
+               for e in coll["evidence"]}
+    for eid in derived:
+        if cyc(derived, eid):
+            r.err("72", f"evidence:{eid}.derived_from", "derived_from forms a cycle")
+
+    # ----- declarations (rule 69, warning 29) -----
+    decl = paper.get("declarations")
+    if decl is not None:
+        if not isinstance(decl, dict):
+            r.err("69", "paper.declarations", "an object {funding, competing_interests, ethics, consent}")
+        else:
+            extra = set(decl) - {"funding", "competing_interests", "ethics", "consent"}
+            if extra:
+                r.err("69", "paper.declarations", f"only funding, competing_interests, ethics and consent, not "
+                                                  f"{sorted(extra)}")
+            if "funding" in decl:
+                if not isinstance(decl["funding"], list):
+                    r.err("69", "paper.declarations.funding", "a list (empty when there is no funding)")
+                for i, f in enumerate(as_list(decl.get("funding"))):
+                    f = as_dict(f)
+                    if not isinstance(f.get("funder"), str) or not f["funder"].strip():
+                        r.err("69", f"paper.declarations.funding[{i}]", "missing funder")
+            if "ethics" in decl:
+                if not isinstance(decl["ethics"], list):
+                    r.err("69", "paper.declarations.ethics", "a list (empty when no ethics review was needed)")
+                for i, x in enumerate(as_list(decl.get("ethics"))):
+                    x = as_dict(x)
+                    if not isinstance(x.get("body"), str) or not x["body"].strip():
+                        r.err("69", f"paper.declarations.ethics[{i}]", "missing body")
+                    check_enum(r, "69", f"paper.declarations.ethics[{i}].decision", x.get("decision"),
+                               "ethics_decision", required=True)
+            for f in ("competing_interests", "consent"):
+                if f in decl and not (isinstance(decl[f], str) and decl[f].strip()):
+                    r.err("69", f"paper.declarations.{f}", "non-empty text")
+    if not converted and (not isinstance(decl, dict) or "funding" not in decl or "competing_interests" not in decl):
+        r.warn("W29", "paper.declarations", "declare funding and competing interests, as the guarantor states them "
+                                            "(an empty funding list and \"None declared.\" are declarations)")
+
+
+def validate_package(path):
+    """Rule 70: a submission package (BagIt, RFC 8493): a folder or a zip holding bagit.txt, manifest-sha256.txt
+    and data/ with one claimset file and the files its artefacts name. Returns (report, claimset document)."""
+    import hashlib
+    import tempfile
+    import zipfile
+    root = Path(path)
+    tmp = None
+    if root.is_file() and zipfile.is_zipfile(root):
+        tmp = tempfile.TemporaryDirectory()
+        with zipfile.ZipFile(root) as z:
+            z.extractall(tmp.name)
+        inner = [p for p in Path(tmp.name).iterdir() if p.is_dir()]
+        root = inner[0] if len(inner) == 1 and not (Path(tmp.name) / "bagit.txt").exists() else Path(tmp.name)
+    r = Report()
+    manifest = {}
+    mpath = root / "manifest-sha256.txt"
+    if not (root / "bagit.txt").is_file() or not mpath.is_file():
+        r.err("70", str(path), "a package has bagit.txt and manifest-sha256.txt (BagIt, RFC 8493)")
+        return r, None
+    for line in mpath.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            digest, _, name = line.strip().partition(" ")
+            manifest[name.strip().lstrip("*")] = digest.strip().lower()
+    files = sorted((root / "data").glob("*.claimset.json")) or sorted((root / "data").glob("*.json"))
+    if len(files) != 1:
+        r.err("70", str(path), "the package's data/ holds exactly one claimset file")
+        return r, None
+    doc = json.loads(files[0].read_text(encoding="utf-8"))
+
+    def sha(p):
+        h = hashlib.sha256()
+        with open(p, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    for name, digest in manifest.items():
+        f = root / name
+        if not f.is_file():
+            r.err("70", name, "listed in the manifest but not in the package")
+        elif sha(f) != digest:
+            r.err("70", name, "checksum differs from the manifest")
+    for a in as_list(doc.get("artefacts")):
+        a = as_dict(a)
+        u = a.get("uri")
+        if not is_relative_uri(u):
+            continue
+        aw = f"artefacts:{a.get('id')}.uri"
+        rel = f"data/{u}"
+        f = root / rel
+        if not f.is_file():
+            r.err("70", aw, f"{u} is not in the package")
+            continue
+        digest = sha(f)
+        if manifest.get(rel) != digest:
+            r.err("70", aw, f"{u} is not in the manifest with its checksum")
+        if a.get("version") != f"sha256:{digest}":
+            r.err("70", f"artefacts:{a.get('id')}.version", f"sha256:{digest}, the checksum of {u}")
+    if tmp is not None:
+        tmp.cleanup()
+    return r, doc
+
+
+def result_ref_resolves(ref_id, evidence_id, e, by_id=None):
+    """Rule 38: E<n>.R<m>, E<n>.T<m> or E<n>.T<m>.r<k> within the evidence a support entry points to, or rows of a
+    bulk data artefact of that evidence, A<n>#row=<k>[-<l>] (RFC 7111)."""
     if e is None:
         return False
+    rm = ROW_REF_RE.match(ref_id)
+    if rm:
+        held = set(as_list(e.get("artefacts"))) | {as_dict(x).get("artefact") for x in as_list(e.get("results"))} \
+            | {as_dict(t).get("artefact") for t in as_list(e.get("tables"))}
+        if rm.group(1) not in held:
+            return False
+        a = by_id(rm.group(1), "artefacts") if by_id else None
+        if by_id and (a is None or a.get("kind") not in ("data", "table")):
+            return False
+        return rm.group(3) is None or int(rm.group(3)) >= int(rm.group(2))
     m = re.match(r"^(E\d+)\.(R\d+|T\d+)(?:\.(r\d+))?$", ref_id)
     if not m or m.group(1) != evidence_id:
         return False
@@ -1463,7 +1929,11 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
         k = s.get("kind")
         check_enum(r, "10", f"{sw}.kind", k, "support_kind", required=True)
         for aid in as_list(s.get("artefacts")):
-            ref("10", f"{sw}.artefacts", aid, "artefacts")
+            art = ref("10", f"{sw}.artefacts", aid, "artefacts")
+            if art is not None and art.get("kind") == "figure" and art.get("function") == "diagram" \
+                    and k != "demonstration":
+                r.err("67", f"{sw}.artefacts", f"{aid} is a diagram: it illustrates and is never evidence; cite the "
+                                               f"observations or the definition it shows")
         profile_for = {"empirical_quant": "quant", "empirical_qual": "qual",
                        "simulation": "simulation", "formal_proof": "formal"}
         if k in profile_for:
@@ -1473,11 +1943,12 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
             if k == "simulation" and e is not None and not (as_list(s.get("artefacts")) or as_list(e.get("artefacts"))):
                 r.err("10", sw, "simulation support requires an artefact")
             if s.get("results"):
-                if k not in ("empirical_quant", "simulation"):
-                    r.err("38", f"{sw}.results", "results references only on empirical_quant and simulation support")
+                if k == "formal_proof":
+                    r.err("38", f"{sw}.results", "results references only on empirical and simulation support")
                 for ref_id in as_list(s.get("results")):
-                    if not result_ref_resolves(str(ref_id), s.get("evidence"), e):
-                        r.err("38", f"{sw}.results", f"'{ref_id}' does not resolve to a result, table or table row of {s.get('evidence')}")
+                    if not result_ref_resolves(str(ref_id), s.get("evidence"), e, by_id):
+                        r.err("38", f"{sw}.results", f"'{ref_id}' does not resolve to a result, table, table row or "
+                                                     f"bulk data rows of {s.get('evidence')}")
         elif k == "demonstration":
             if not as_list(s.get("artefacts")):
                 r.err("10", sw, "demonstration support requires artefacts")
@@ -1489,6 +1960,8 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
             if not s.get("target"):
                 r.err("10", sw, "cited support requires reference, or target with id_type")
             check_enum(r, "10", f"{sw}.id_type", s.get("id_type"), "id_type", required=True)
+            if s.get("id_type") == "curie" and not CURIE_RE.match(str(s.get("target") or "")):
+                r.err("68", f"{sw}.target", "a compact identifier prefix:local")
             if s.get("id_type") == "url" and not s.get("archive_uri"):
                 r.err("10", sw, "url citations require archive_uri")
             if s.get("id_type") == "reference" and not converted:
@@ -1558,6 +2031,17 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
         if not rel.get("target"):
             r.err("34", rw, "missing reference, or target with id_type")
         check_enum(r, "34", f"{rw}.id_type", rel.get("id_type"), "rel_id_type", required=True)
+        if rel.get("id_type") == "local":
+            tgt = rel.get("target")
+            if tgt == cid or ids.get(tgt, (None,))[0] != "claims":
+                r.err("71", f"{rw}.target", f"'{tgt}' is not another claim of this paper")
+            if rel.get("type") not in LOCAL_RELATION_TYPES:
+                r.err("71", f"{rw}.type", f"within the paper a relation is one of {', '.join(sorted(LOCAL_RELATION_TYPES))}")
+            if rel.get("type") == "explains" and tgt in as_list(c.get("depends_on")):
+                r.err("71", rw, f"explains {tgt} and lists it in depends_on: an explanation is not a premise of the "
+                                f"result it explains, nor the result of the explanation")
+        if rel.get("id_type") == "curie" and not CURIE_RE.match(str(rel.get("target") or "")):
+            r.err("68", f"{rw}.target", "a compact identifier prefix:local")
         if rel.get("id_type") == "url" and not rel.get("archive_uri"):
             r.err("34", rw, "url targets require archive_uri")
         if "self" in rel and not isinstance(rel.get("self"), bool):
@@ -1694,7 +2178,7 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
             r.err("23", aw, "in converted papers, by: author assessments require source_span")
 
 
-def compute_verifiability(c, by_id):
+def compute_verifiability(c, by_id, read_from=frozenset()):
     """Return (verifiability, flags, notes) per spec section 5."""
     notes = []
     support = [as_dict(s) for s in as_list(c.get("support"))]
@@ -1741,10 +2225,13 @@ def compute_verifiability(c, by_id):
             continue
         levels.append(as_dict(a.get("availability")).get("level"))
         if a.get("kind") == "figure":
-            if not a.get("underlying_data"):
-                flags.add("figure_without_data")
-            else:
+            if a.get("underlying_data"):
                 queue.append(a["underlying_data"])
+            if a.get("function") == "specimen":
+                if aid not in read_from:
+                    flags.add("figure_without_data")
+            elif not a.get("underlying_data") and not as_list(a.get("shows")):
+                flags.add("figure_without_data")
 
     if any(l == "unavailable" for l in levels):
         return "unverifiable", flags, notes
@@ -1887,16 +2374,36 @@ def main(argv):
         print(__doc__)
         return 2
     path = argv[1]
+    published = "--published" in argv
+    rep = validate_path(path, published=published, revision="--revision" in argv)
+    if rep is None:
+        return 1
+    print_report(rep, published=published, as_json="--json" in argv)
+    return 1 if rep.errors else 0
+
+
+def validate_path(path, published=False, revision=False):
+    """Validate a claimset file, or a submission package (a BagIt folder or zip, rule 70). None if unreadable."""
+    import zipfile
+    p = Path(path)
+    if p.is_dir() or (p.is_file() and zipfile.is_zipfile(p)):
+        try:
+            prep, doc = validate_package(p)
+        except (OSError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
+            print(f"ERROR: cannot read {path}: {exc}", file=sys.stderr)
+            return None
+        if doc is None:
+            return prep
+        rep = validate(doc, published=published, revision=revision)
+        rep.errors[:0] = prep.errors
+        return rep
     try:
         with open(path, encoding="utf-8") as fh:
             doc = json.load(fh)
     except (OSError, json.JSONDecodeError) as exc:
-        print(f"ERROR: cannot read {path}: {exc}")
-        return 1
-    published = "--published" in argv
-    rep = validate(doc, published=published, local_root=claimset_folder(path), revision="--revision" in argv)
-    print_report(rep, published=published, as_json="--json" in argv)
-    return 1 if rep.errors else 0
+        print(f"ERROR: cannot read {path}: {exc}", file=sys.stderr)
+        return None
+    return validate(doc, published=published, local_root=claimset_folder(path), revision=revision)
 
 
 def print_report(rep, published=False, as_json=False):
