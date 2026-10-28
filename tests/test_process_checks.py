@@ -370,7 +370,10 @@ class TestCliWarnings(TestCli):
         self.assertEqual((code, out), (0, "PL1"))
         self.assertIn("--new-data", err)
         self.assertIn("edge_band", err)
-        code, out, err = self.plan("--new-data", "seeds 100-199", "--exclusion", "edge=within 1e-8 of 1")
+        self.assertIn("no setup", err)
+        self.run_cli("lab", "term", "X", "--kind", "method", "--definition", "Method X as run.", "--by", "AC2")
+        code, out, err = self.plan("--new-data", "seeds 100-199", "--exclusion", "edge=within 1e-8 of 1",
+                                   "--studied", "TM1")
         self.assertEqual((code, out, err), (0, "PL2", ""))
         body = Lab(Path(self.tmp.name) / "lab").state().get("PL2")["body"]
         self.assertEqual(body["new_data"], "seeds 100-199")
@@ -378,6 +381,37 @@ class TestCliWarnings(TestCli):
         code, _, err = self.plan("--exclusion", "no rule")
         self.assertEqual(code, 1)
         self.assertIn("--exclusion", err)
+
+    def test_hypothesis_about_and_plan_setup(self):
+        """Lab record v0.12: terms, a hypothesis's about, a plan's setup, and the warning when the plan does not
+        study what the hypothesis is about (§5.7.6)."""
+        self.setup_lab()
+        for term, kind in (("X", "method"), ("Y", "method"), ("MASE", "measure"), ("MSIS", "measure"),
+                           ("M3 monthly", "data")):
+            self.run_cli("lab", "term", term, "--kind", kind, "--definition", f"{term} as used here.", "--by", "AC2")
+        code, out, err = self.run_cli("lab", "hypothesis", "[[TM1:X]] has lower [[TM3:MASE]] than [[TM2:Y]] on "
+                                      "[[TM5:M3 monthly]].", "--question", "Q1", "--subject", "TM1", "--relation",
+                                      "has lower error than", "--object", "TM3", "--comparator", "TM2",
+                                      "--condition", "TM5", "--by", "AC2")
+        self.assertEqual((code, out), (0, "H2"))
+        about = Lab(Path(self.tmp.name) / "lab").state().get("H2")["body"]["about"]
+        self.assertEqual(about, {"subject": "TM1", "relation": "has lower error than", "object": "TM3",
+                                 "comparator": "TM2", "conditions": ["TM5"]})
+        base = ("lab", "plan", "--kind", "confirmatory", "--hypotheses", "H2", "--design", "d", "--analysis", "a",
+                "--framework", "deterministic", "--quantity", "d=mean difference", "--supported", "d > 0",
+                "--not-supported", "d < 0", "--by", "AC2")
+        code, _, err = self.run_cli(*base, "--studied", "TM1", "TM2", "--cases", "TM5", "--lens", "TM4")
+        self.assertEqual(code, 0)
+        self.assertIn("TM3", err)                       # the hypothesis is about MASE; the plan measures MSIS
+        code, _, err = self.run_cli(*base, "--studied", "TM1", "TM2", "--cases", "TM5", "--lens", "TM3")
+        self.assertEqual((code, err), (0, ""))
+        # L21: a term named in about must be marked in the statement; setup names only terms
+        code, _, err = self.run_cli("lab", "hypothesis", "X beats Y.", "--question", "Q1", "--subject", "TM1",
+                                    "--relation", "beats", "--by", "AC2")
+        self.assertEqual(code, 1)
+        self.assertIn("L21", err)
+        code, _, err = self.run_cli(*base, "--studied", "H2")
+        self.assertEqual(code, 1)
 
 
 if __name__ == "__main__":

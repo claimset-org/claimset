@@ -1,6 +1,6 @@
 # Claimset — Specification v0.30 (draft)
 
-Status: working draft · Date: 2026-10-28 · Supersedes v0.29 (`spec/claimset-v0.29.md`) · Companions: lab record specification (`spec/lab-record-v0.11.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-28 · Supersedes v0.29 (`spec/claimset-v0.29.md`) · Companions: lab record specification (`spec/lab-record-v0.12.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
@@ -15,6 +15,7 @@ A reader looking for papers asks what they studied, on what, how, and what they 
 - §11, §12: the platform resolves defined terms to shared entities across papers; alignment with PICO, SPIDER and the statement model of nanopublications and Wikidata.
 - §13: new open question 10: the frame is to be tested by a coding exercise across paper types; roles, kinds or slots that coders cannot assign consistently are revised in a later version.
 - Appendix A and D updated; new Appendix E: a qualitative paper.
+- Companion lab record v0.12 records terms, hypothesis atoms and plan setups before the data are seen, and exports them as definitions, `about` and `setup`. Files written under v0.23 to v0.29 are brought over with `claimset migrate`, which renames the setup roles and lists the kinds and atoms left to add.
 
 ## Changes in v0.29 (since v0.28)
 

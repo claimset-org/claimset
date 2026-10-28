@@ -13,7 +13,8 @@ from pathlib import Path
 from .. import SPEC_VERSION
 from .anchor import covers, read_anchors
 from . import decision as _decision
-from .core import LabError, State, agent_base, file_hash, final_statuses, is_withheld, plan_flags, verify
+from .core import (SETUP_ROLES, TERM_ID_RE, TERM_MARK_RE, LabError, State, agent_base, file_hash, final_statuses,
+                   is_withheld, plan_flags, verify)
 
 FINAL = {"supported", "not_supported", "inconclusive", "revised", "abandoned"}
 OUTCOMES = ("supported", "not_supported", "inconclusive")
@@ -257,6 +258,14 @@ class _Exporter:
               "availability": {"level": "public"}, "lab_runs": [r["id"] for r in runs]}
         if results:
             ev["results"] = results
+        setup = {}
+        for p in plans:
+            for role, ids in (p["body"].get("setup") or {}).items():
+                for i in ids:
+                    if i not in setup.setdefault(role, []):
+                        setup[role].append(i)
+        if setup:
+            ev["setup"] = {role: setup[role] for role in SETUP_ROLES if setup.get(role)}
         execution = {}
         commits = {r["body"].get("code_version") for r in visible}
         if len(commits) == 1 and None not in commits and len(visible) == len(runs):
@@ -296,6 +305,9 @@ class _Exporter:
         else:
             claim = dict({"id": cid, "statement": version["body"].get("statement")}, **{k: v for k, v in claim.items()
                                                                                        if k != "id"})
+            if isinstance(version["body"].get("about"), dict):
+                claim = dict({k: claim[k] for k in ("id", "statement")}, about=dict(version["body"]["about"]),
+                             **{k: v for k, v in claim.items() if k not in ("id", "statement")})
         cited_runs, cited_results, other = [], [], []
         for ref in list(status["body"].get("evidence") or []):
             ev = st.get(ref)
@@ -635,27 +647,84 @@ class _Exporter:
             {"where": "paper.autonomy", "what": "set autonomy (exported as unknown): autonomous, human_supervised or "
                                                 "human_assisted"},
             {"where": "paper.classification.keywords", "what": "propose keywords"},
-            {"where": "definitions", "what": "define each method or model of the study's own that a planned test "
-                                             "compares, with every equation that defines it as the code of the runs "
-                                             "implements it (a variant with its own equations in full), and check each "
-                                             "against that code (claimset §3.2, W26); the supervisor's approval covers "
-                                             "the definitions too"},
+            {"where": "definitions", "what": "check the definitions exported from the record's terms, and add any "
+                                             "the claims need that the record lacks, each with its kind; each method "
+                                             "or model of the study's own that a planned test compares gives every "
+                                             "equation that defines it as the code of the runs implements it (a "
+                                             "variant with its own equations in full), checked against that code "
+                                             "(claimset §3.2, W26); remove definitions this paper does not use; the "
+                                             "supervisor's approval covers the definitions too"},
             {"where": "paper.contribution_record", "what": "confirm that every contributor is listed (exported from "
                                                            "everyone who wrote to the lab record)"},
         ]
         return paper
+
+    def export_terms(self):
+        """Definitions from the record's terms (§5.19), in record order, and the term IDs in statements, abouts
+        and setups replaced by definition IDs."""
+        st = self.st
+        dmap, definitions = {}, []
+        for e in self.roots:
+            if e["type"] != "term":
+                continue
+            cur = st.latest(e["id"])
+            if is_withheld(cur):
+                self.todo("definitions", f"term {cur['id']} is withheld; define it if a claim needs it")
+                continue
+            did = f"D{len(definitions) + 1}"
+            for v in self.versions(e["id"]):
+                dmap[v] = did
+            d = {"id": did, "term": cur["body"].get("term"), "kind": cur["body"].get("kind"),
+                 "definition": cur["body"].get("definition")}
+            if cur["body"].get("source"):
+                d["source"] = cur["body"]["source"]
+                self.todo(f"definitions.{did}.source", f"{did} ({d['term']}) is borrowed: list its source "
+                                                        f"({cur['body']['source']}) in references and point source "
+                                                        f"at that entry (B1, …)")
+            definitions.append(d)
+            self.mapping[did] = cur["id"]
+
+        def swap(v):
+            return dmap.get(v.strip(), v) if isinstance(v, str) and TERM_ID_RE.match(v.strip()) else v
+
+        def marks(text):
+            return TERM_MARK_RE.sub(lambda m: m.group(0).replace(m.group(1), dmap.get(m.group(1), m.group(1)), 1),
+                                    text) if isinstance(text, str) else text
+
+        for c in self.claims:
+            c["statement"] = marks(c.get("statement"))
+            ab = c.get("about")
+            if isinstance(ab, dict):
+                c["about"] = {"subject": swap(ab.get("subject")), "relation": ab.get("relation"),
+                              "object": [swap(x) for x in ab["object"]] if isinstance(ab.get("object"), list)
+                              else swap(ab.get("object")),
+                              "comparator": swap(ab.get("comparator")),
+                              "conditions": [swap(x) for x in ab.get("conditions") or []]}
+            elif "assumption" not in {s.get("kind") for s in c.get("support") or []}:
+                self.todo(f"claims.{c['id']}.about", f"give the about of {c['id']}: its atom as subject, relation, "
+                                                     f"object, comparator and conditions (required if it is "
+                                                     f"principal; record it on the hypothesis next time)")
+        for ev in self.evidence:
+            if isinstance(ev.get("setup"), dict):
+                ev["setup"] = {role: [swap(i) for i in ids] for role, ids in ev["setup"].items()}
+            elif ev.get("profile") != "formal":
+                self.todo(f"evidence.{ev['id']}.setup", f"give the setup of {ev['id']}: the definitions of what it "
+                                                        f"studied, on what cases, by what procedure, through what "
+                                                        f"lens (record it on the plan next time)")
+        return definitions
 
     def run(self):
         self.export_contributors()
         self.export_hypotheses()
         self.export_checks()
         self.export_assumptions()
+        definitions = self.export_terms()
         for c in self.claims:
             c.pop("_targets", None)
         lab_aid = self.export_artefacts()
         paper = self.export_paper(lab_aid)
         draft = {"schema_version": SPEC_VERSION, "paper": paper, "contributors": self.contributors,
-                 "models": self.models, "definitions": [], "claims": self.claims, "evidence": self.evidence,
+                 "models": self.models, "definitions": definitions, "claims": self.claims, "evidence": self.evidence,
                  "warrants": [], "limitations": self.limitations, "artefacts": self.artefacts}
         return {"draft": draft, "completion": self.completion, "mapping": self.mapping}
 
