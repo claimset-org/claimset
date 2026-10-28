@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.30"
+SCHEMA_VERSION = "0.31"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -1053,6 +1053,25 @@ def check_frame(r, coll, claims, by_id):
                     r.err("64", f"{w}.about.conditions[{i}]", "a definition ID or a short text")
         marked = set(TERM_RE.findall(c.get("statement") or "")) if isinstance(c.get("statement"), str) else set()
         cited = {as_dict(s).get("evidence") for s in as_list(c.get("support"))} - {None}
+        # only evidence that can have a setup counts: formal evidence has none (rule 61)
+        cited = {eid for eid in cited if as_dict(by_id(eid, "evidence")).get("profile") not in ("formal", None)}
+
+        def members_of(g, seen=()):
+            out = set()
+            for m in as_list(as_dict(by_id(g, "definitions")).get("members")):
+                if isinstance(m, str) and m not in seen:
+                    out |= {m} | members_of(m, seen + (g,))
+            return out
+
+        def named_in(v, eid, seen=()):
+            """A part is named in a setup directly, as a member of a group named there, or as a group whose members
+            are all named there (§3.2, Groups)."""
+            names = in_setup.get(eid, set())
+            if v in names or any(v in members_of(g) for g in names):
+                return True
+            members = as_list(as_dict(by_id(v, "definitions")).get("members"))
+            return bool(members) and all(isinstance(m, str) and m not in seen and named_in(m, eid, seen + (v,))
+                                         for m in members)
         for path, v in slots:
             v = v.strip()
             if DEF_ID_RE.match(v):
@@ -1065,7 +1084,7 @@ def check_frame(r, coll, claims, by_id):
                     r.err("64", f"{w}.about.{path}", f"{v} is not marked in the statement: write [[{v}:{d.get('term')}]] "
                                                      f"where the statement names it")
                 if (cited and d.get("kind") in SETUP_PART_KINDS
-                        and not any(v in in_setup.get(eid, set()) for eid in cited)):
+                        and not any(named_in(v, eid) for eid in cited)):
                     r.warn("W28", f"{w}.about.{path}", f"{v} ({d.get('kind')}) is part of the study the claim rests on "
                                                        f"but no setup of its evidence ({', '.join(sorted(cited))}) "
                                                        f"names it")
@@ -1076,6 +1095,35 @@ def check_frame(r, coll, claims, by_id):
         d = as_dict(d)
         if d.get("id") in framed and "kind" not in d:
             r.err("63", f"definitions:{d.get('id')}", "named in a setup or a claim's about, so it needs a kind")
+
+    # Groups (rule 65): members are other definitions of the group's kind; no group contains itself
+    defs = {as_dict(d).get("id"): as_dict(d) for d in coll["definitions"]}
+    for d in defs.values():
+        if "members" not in d:
+            continue
+        did, members = d.get("id"), d.get("members")
+        if not isinstance(members, list) or not members or not all(isinstance(m, str) for m in members):
+            r.err("65", f"definitions:{did}.members", "a non-empty list of definition IDs")
+            continue
+        if not d.get("kind"):
+            r.err("65", f"definitions:{did}.kind", "a group needs a kind, the kind of its members")
+        for m in members:
+            if m == did:
+                r.err("65", f"definitions:{did}.members", "a group is not a member of itself")
+            elif m not in defs:
+                r.err("65", f"definitions:{did}.members", f"{m} does not resolve to a definition")
+            elif d.get("kind") and defs[m].get("kind") != d.get("kind"):
+                r.err("65", f"definitions:{did}.members", f"{m} is of kind {defs[m].get('kind')}, the group of kind "
+                                                          f"{d.get('kind')}: members have the group's kind")
+    def contains(group, target, seen):
+        for m in as_list(defs.get(group, {}).get("members")):
+            if m == target or (m not in seen and contains(m, target, seen | {m})):
+                return True
+        return False
+    for did, d in defs.items():
+        if isinstance(d.get("members"), list) and any(m != did and contains(m, did, {m}) for m in d["members"]
+                                                      if isinstance(m, str)):
+            r.err("65", f"definitions:{did}.members", "a group is a member of itself through other groups")
 
 # Wording typical of rhetoric (spec §8 rule 9); reported only with warning W23, never alone
 RHETORIC_CUES = [
