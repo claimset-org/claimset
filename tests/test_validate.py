@@ -1630,6 +1630,61 @@ class TestArtefactLicence(Base):
         self.assertIn("W9", self.rules(d)[1])                          # the paper's own
 
 
+class TestPackage(Base):
+    """`claimset package`: a BagIt bag of the claimset and the files its artefacts name (spec §2.5, rule 70)."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name) / "study"
+        (self.dir / "files").mkdir(parents=True)
+        (self.dir / "files" / "fig1.png").write_bytes(b"image bytes")
+        d = load("submission-native.json")
+        d["artefacts"].append({"id": "A3", "kind": "figure", "function": "diagram", "description": "Design.",
+                               "uri": "files/fig1.png", "licence": "CC-BY-4.0"})
+        self.src = self.dir / "paper.claimset.json"
+        self.src.write_text(json.dumps(d), encoding="utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_folder_and_zip_validate(self):
+        from claimset.package import build
+        from claimset.validate import validate_path
+        for name in ("bag", "bag.zip"):
+            out = Path(self.tmp.name) / name
+            changes, files = build(self.src, out)
+            self.assertEqual(files, ["files/fig1.png"])
+            self.assertTrue(changes and changes[0].startswith("A3: version"))
+            rep = validate_path(str(out))
+            self.assertEqual([e for e in rep.errors if e["rule"] == "70"], [])
+            self.assertEqual(rep.errors, [], rep.errors)
+        a3 = json.loads(self.src.read_text())["artefacts"][-1]
+        self.assertNotIn("version", a3)                                   # the source is left alone without --update
+
+    def test_update_writes_versions_back(self):
+        from claimset.package import build
+        build(self.src, Path(self.tmp.name) / "bag", update_source=True)
+        self.assertTrue(json.loads(self.src.read_text())["artefacts"][-1]["version"].startswith("sha256:"))
+
+    def test_refusals(self):
+        from claimset.package import PackageError, build
+        d = json.loads(self.src.read_text())
+        for uri in ("files/missing.png", "../outside.png"):
+            d["artefacts"][-1]["uri"] = uri
+            self.src.write_text(json.dumps(d))
+            with self.assertRaises(PackageError):
+                build(self.src, Path(self.tmp.name) / f"bag-{len(uri)}")
+
+    def test_cli(self):
+        out = Path(self.tmp.name) / "cli.zip"
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = cli.main(["package", str(self.src), "-o", str(out)])
+        self.assertEqual(code, 0, buf.getvalue())
+        self.assertIn("packaged 1 file(s)", buf.getvalue())
+
+
 class TestMigrate(Base):
     """`claimset migrate`: setup roles renamed to those of v0.30, the version set to the current one; what needs
     judgement listed."""

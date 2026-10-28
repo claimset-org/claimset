@@ -376,7 +376,7 @@ data/
 - An artefact held elsewhere (a commit on a git host, a data repository, a DOI) is not packaged: it keeps its `uri` and `version` as before, and the platform archives it (§3.6).
 - A package with no files is the claimset file alone, which may be submitted as it is.
 - At publication the platform stores each packaged file by its checksum, so a correction or revision that keeps a file stores it once, and replaces its relative `uri` with the file's permanent location (§2.2). A published file names no relative paths.
-- In a repository, a paper's files live in its study folder, `claimset/<study>/files/` (§2.4), and the package is built from there.
+- In a repository, a paper's files live in its study folder, `claimset/<study>/files/` (§2.4), and the package is built from there (`claimset package`, which copies the files, sets each `version` and writes the manifest).
 - A converted paper packages a file taken from its source (a figure, a supplementary table) only under the source's licence, which conversion already requires to permit derivatives (§3.1); the artefact names its `reference` and `locator` in the source.
 
 ## 3. Object types

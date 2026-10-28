@@ -272,7 +272,7 @@ data/paper.claimset.json
 data/files/fig3.png
 ```
 
-Each packaged artefact has a `uri` relative to `data/` (`"files/fig3.png"`) and `version` `sha256:<hex>` of the file, which the manifest repeats. In a repository, keep the files in `claimset/<study>/files/`. Never put an image into the JSON.
+Each packaged artefact has a `uri` relative to `data/` (`"files/fig3.png"`) and `version` `sha256:<hex>` of the file, which the manifest repeats. In a repository, keep the files in `claimset/<study>/files/`. Never put an image into the JSON. Build the package with `claimset package claimset/<study>/<paper>.claimset.json -o <paper>.zip` (add `--update` to write the checksums into the claimset file too); it validates what it built.
 
 ### 10. Validate and fix
 
