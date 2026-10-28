@@ -745,7 +745,7 @@ class TestReadingView(Base):
         self.assertLess(len(self.render(d)), len(json.dumps(d, separators=(",", ":"))))
 
     def test_appendix_d_matches_the_renderer(self):
-        spec = (ROOT / "spec" / "claimset-v0.29.md").read_text(encoding="utf-8")
+        spec = (ROOT / "spec" / "claimset-v0.30.md").read_text(encoding="utf-8")
         self.assertIn(self.render(load("submission-native.json")), spec)
 
     def test_render_command_refuses_invalid_file(self):
@@ -865,32 +865,43 @@ class TestRulesV022(Base):
 
 
 class TestRulesV023(Base):
-    """Rule 61 (the parts of an evaluation) and warning W22 (a statement that may hold several claims)."""
+    """Rule 61 (the parts of a study, roles renamed in v0.30) and warning W22 (a statement that may hold several
+    claims)."""
 
     def setUp(self):
         self.d = load("submission-native.json")
-        self.d["definitions"] += [
-            {"id": "D2", "term": "method M", "definition": "Method M with its default settings."},
-            {"id": "D3", "term": "UK retail series", "definition": "1,200 monthly retail sales series, 2010-2024."},
-            {"id": "D4", "term": "rolling origin", "definition": "12 origins, horizons 1 to 12, refitted at each."},
-            {"id": "D5", "term": "MASE", "definition": "Mean absolute scaled error, averaged over series."}]
         self.e1 = next(e for e in self.d["evidence"] if e["id"] == "E1")
 
     def test_61_setup_valid(self):
-        self.e1["setup"] = {"compared": ["D2"], "data": ["D3"], "design": ["D4"], "measures": ["D5", "D1"]}
+        self.e1["setup"] = {"studied": ["D2", "D3"], "cases": ["D4"], "procedure": ["D5"], "lens": ["D1"]}
+        self.assertValid(self.d)
+        self.d["definitions"].append({"id": "D6", "term": "UK store network", "kind": "setting",
+                                      "definition": "The stores of one UK retailer, 2010-2024."})
+        self.e1["setup"]["context"] = ["D6"]
         self.assertValid(self.d)
 
     def test_61_setup_in_reading_view(self):
         from claimset.render import render
-        self.e1["setup"] = {"compared": ["D2"], "data": ["D3"], "design": ["D4"], "measures": ["D5"]}
-        self.assertIn("setup: compared D2; data D3; design D4; measures D5", render(self.d))
+        self.e1["setup"] = {"studied": ["D2"], "cases": ["D4"], "procedure": ["D5"], "lens": ["D1"]}
+        self.assertIn("setup: studied D2; cases D4; procedure D5; lens D1", render(self.d))
 
     def test_61_setup_must_name_definitions_by_role(self):
-        for bad in ({"compared": ["D9"]}, {"compared": ["C2"]}, {"methods": ["D2"]}, {"data": []}, {"design": "D4"},
-                    {}, ["D2"]):
+        for bad in ({"studied": ["D9"]}, {"studied": ["C2"]}, {"methods": ["D2"]}, {"cases": []},
+                    {"procedure": "D5"}, {}, ["D2"]):
             d = copy.deepcopy(self.d)
             next(e for e in d["evidence"] if e["id"] == "E1")["setup"] = bad
             self.assertRule(d, "61")
+
+    def test_61_old_role_names_are_rejected_with_their_new_names(self):
+        self.e1["setup"] = {"compared": ["D2"], "data": ["D4"], "design": ["D5"], "measures": ["D1"]}
+        rep = validate(self.d)
+        msgs = [e["message"] for e in rep.errors if e["rule"] == "61"]
+        self.assertEqual(len(msgs), 4)
+        self.assertTrue(any("now studied" in m for m in msgs))
+
+    def test_61_no_setup_on_formal_evidence(self):
+        self.e1["profile"] = "formal"
+        self.assertRule(self.d, "61")
 
     def test_w22_signs_of_several_claims(self):
         base = "Method M reduces MASE against seasonal naive on monthly retail series"
@@ -1077,6 +1088,148 @@ class TestRulesV029(Base):
 
     def test_w26_own_method_described_in_words(self):
         self.assertWarning(self.d, "W26")
+
+
+class TestRulesV030(Base):
+    """Rules 63 (definition kinds) and 64 (a claim's about), warnings W27 and W28 (spec §3.2, §3.3.5, §3.4)."""
+
+    def setUp(self):
+        self.d = load("submission-native.json")
+        self.c2 = claim(self.d, "C2")
+        self.e1 = next(e for e in self.d["evidence"] if e["id"] == "E1")
+
+    def no_warning(self, code):
+        _, warnings = self.rules(self.d)
+        self.assertNotIn(code, warnings)
+
+    # ----- rule 63 -----
+    def test_63_valid_kinds(self):
+        self.assertValid(self.d)
+
+    def test_63_unknown_kind(self):
+        definition(self.d, "D2")["kind"] = "algorithm"
+        self.assertRule(self.d, "63")
+
+    def test_63_kind_required_when_framed(self):
+        definition(self.d, "D2").pop("kind")
+        self.assertRule(self.d, "63")
+
+    def test_63_kind_optional_when_not_framed(self):
+        self.d["definitions"].append({"id": "D6", "term": "store network", "definition": "The stores of one retailer."})
+        self.assertValid(self.d)
+
+    # ----- rule 64 -----
+    def test_64_principal_claim_needs_about(self):
+        self.c2.pop("about")
+        self.assertRule(self.d, "64")
+
+    def test_64_assumption_has_no_about(self):
+        claim(self.d, "C1")["about"] = {"subject": "monthly retail sales series", "relation": "exhibit",
+                                        "object": "annual seasonality", "comparator": None, "conditions": []}
+        self.assertRule(self.d, "64")
+
+    def test_64_text_slots_are_valid(self):
+        self.c2["about"] = {"subject": "D2", "relation": "improves", "object": "D1",
+                            "comparator": "the naive benchmark of the paper", "conditions": ["monthly series"]}
+        self.assertValid(self.d)
+
+    def test_64_null_object_and_comparator(self):
+        self.c2["about"].update(object=None, comparator=None, conditions=[])
+        self.assertValid(self.d)
+
+    def test_64_object_list_of_measures(self):
+        self.d["definitions"].append({"id": "D6", "term": "MSIS", "kind": "measure",
+                                      "definition": "Mean scaled interval score of the 95% interval."})
+        self.c2["statement"] = self.c2["statement"].replace("improves", "improves [[D6:MSIS]] and")
+        self.c2["about"]["object"] = ["D1", "D6"]
+        self.assertValid(self.d)
+        self.c2["about"]["object"] = ["D1", "D4"]          # D4 is data, not a measure
+        self.assertRule(self.d, "64")
+
+    def test_64_malformed(self):
+        for bad in ({"subject": "D2"},                                                       # missing slots
+                    dict(self.c2["about"], relation=""),
+                    dict(self.c2["about"], relation="D1"),                                  # relation as an ID
+                    dict(self.c2["about"], conditions="D4"),                                # not a list
+                    dict(self.c2["about"], object=[]),
+                    dict(self.c2["about"], comparator=3),
+                    dict(self.c2["about"], extra="x"),
+                    {k: v for k, v in self.c2["about"].items() if k != "comparator"},       # comparator missing
+                    ["D2", "improves"]):
+            d = copy.deepcopy(self.d)
+            claim(d, "C2")["about"] = bad
+            self.assertRule(d, "64")
+
+    def test_64_id_must_resolve(self):
+        self.c2["about"]["subject"] = "D9"
+        self.assertRule(self.d, "64")
+
+    def test_64_id_must_be_marked_in_statement(self):
+        self.c2["statement"] = self.c2["statement"].replace("[[D3:seasonal naive method]]", "seasonal naive method")
+        self.assertRule(self.d, "64")
+
+    # ----- W27 -----
+    def test_w27_supporting_claim_without_about(self):
+        self.d["claims"].append({"id": "C4", "statement": "[[D2:Method M]] is faster to fit than the "
+                                 "[[D3:seasonal naive method]].", "type": "descriptive", "role": "secondary",
+                                 "novelty": "no_prior_found",
+                                 "support": [{"kind": "empirical_quant", "evidence": "E1"}],
+                                 "provenance": "author_stated"})
+        self.assertWarning(self.d, "W27")
+        claim(self.d, "C4")["about"] = {"subject": "D2", "relation": "is faster to fit than", "object": None,
+                                        "comparator": "D3", "conditions": []}
+        self.no_warning("W27")
+
+    def test_w27_text_equal_to_a_term(self):
+        self.c2["about"]["comparator"] = "Seasonal naive method"
+        self.assertWarning(self.d, "W27")
+
+    # ----- W28 -----
+    def test_w28_evidence_without_setup(self):
+        self.no_warning("W28")
+        self.e1.pop("setup")
+        self.assertWarning(self.d, "W28")
+
+    def test_w28_part_named_in_about_missing_from_setup(self):
+        self.e1["setup"]["studied"] = ["D2"]                                # D3 (the comparator) left out
+        self.assertWarning(self.d, "W28")
+
+    def test_w28_not_for_concepts(self):
+        definition(self.d, "D3")["kind"] = "concept"                      # not a part a setup must name
+        self.e1["setup"]["studied"] = ["D2"]
+        self.no_warning("W28")
+
+
+class TestMigrate(Base):
+    """`claimset migrate`: setup roles renamed to those of v0.30; what needs judgement listed."""
+
+    def test_renames_roles_and_lists_what_is_left(self):
+        from claimset.migrate import migrate
+        d = load("submission-native.json")
+        d["schema_version"] = "0.29"
+        e1 = next(e for e in d["evidence"] if e["id"] == "E1")
+        e1["setup"] = {"compared": ["D2", "D3"], "data": ["D4"], "design": ["D5"], "measures": ["D1"]}
+        definition(d, "D2").pop("kind")
+        claim(d, "C2").pop("about")
+        out, done, todo = migrate(d)
+        self.assertEqual(next(e for e in out["evidence"] if e["id"] == "E1")["setup"],
+                         {"studied": ["D2", "D3"], "cases": ["D4"], "procedure": ["D5"], "lens": ["D1"]})
+        self.assertEqual(out["schema_version"], "0.30")
+        self.assertEqual(len(done), 5)
+        self.assertTrue(any(t.startswith("D2") for t in todo))
+        self.assertTrue(any(t.startswith("C2") and "rule 64" in t for t in todo))
+        self.assertEqual(d["schema_version"], "0.29")          # the input is not changed
+
+    def test_cli_refuses_published_file(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+            json.dump(load("published-native.json"), fh)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            from contextlib import redirect_stderr
+            with redirect_stderr(io.StringIO()):
+                self.assertEqual(cli.main(["migrate", fh.name]), 1)
+        Path(fh.name).unlink()
 
 
 if __name__ == "__main__":

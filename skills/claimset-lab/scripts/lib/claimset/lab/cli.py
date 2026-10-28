@@ -205,11 +205,33 @@ def cmd_question(args):
     return _write(args, "question", {"text": args.text})
 
 
+def _about_from_args(args):
+    """A hypothesis's `about` from --subject, --relation, --object, --comparator and --condition, or None."""
+    given = [args.subject, args.relation, args.object, args.comparator, args.condition]
+    if not any(given):
+        return None
+    if not args.subject or not args.relation:
+        raise LabError("schema", "about: give at least --subject and --relation (and --object, --comparator, "
+                                 "--condition where they apply)")
+    obj = args.object or []
+    return {"subject": args.subject, "relation": args.relation,
+            "object": None if not obj else (obj[0] if len(obj) == 1 else obj),
+            "comparator": args.comparator, "conditions": list(args.condition or [])}
+
+
+def cmd_term(args):
+    return _write(args, "term", {"term": args.term, "kind": args.kind, "definition": args.definition,
+                                 "source": args.source})
+
+
 def cmd_hypothesis(args):
-    return _write(args, "hypothesis", {
-        "statement": args.statement, "question": args.question,
-        "origin": "from_exploration" if args.from_exploration else "a_priori",
-        "prompted_by": args.prompted_by})
+    body = {"statement": args.statement, "question": args.question,
+            "origin": "from_exploration" if args.from_exploration else "a_priori",
+            "prompted_by": args.prompted_by}
+    about = _about_from_args(args)
+    if about is not None:
+        body["about"] = about
+    return _write(args, "hypothesis", body)
 
 
 def cmd_assume(args):
@@ -345,7 +367,10 @@ def cmd_plan(args):
         name, rule = x.split("=", 1)
         exclusions.append({"name": name.strip(), "rule": rule.strip()})
     commit, dirty = code_version(os.getcwd(), _lab(args).root)
+    setup = {role: list(getattr(args, role)) for role in ("studied", "cases", "procedure", "lens", "context")
+             if getattr(args, role)}
     body = {"kind": args.kind, "hypotheses": args.hypotheses, "design": design, "analysis": args.analysis,
+            "setup": setup or None,
             "new_data": args.new_data, "exclusions": exclusions or None, "addresses": addresses or None,
             "decision": decision,
             "runs": args.runs, "criterion": args.criterion, "data": data, "holdout": holdout,
@@ -672,12 +697,30 @@ def add_parser(subparsers):
     p = cmd("question", cmd_question, "record a research question")
     p.add_argument("text")
 
+    p = cmd("term", cmd_term, "record a term: a method, data set, population, design, measure, concept or "
+                              "theory the study names (the claimset's definitions are exported from these)")
+    p.add_argument("term", help="the term as the study writes it, e.g. \"MASE\"")
+    p.add_argument("--kind", required=True,
+                   choices=["method", "intervention", "population", "data", "setting", "design", "measure",
+                            "concept", "theory", "other"])
+    p.add_argument("--definition", required=True,
+                   help="what the term means here; for the study's own method, every defining equation")
+    p.add_argument("--source", help="where a borrowed term is defined: a DOI, arXiv ID or citation")
+
     p = cmd("hypothesis", cmd_hypothesis, "record a hypothesis")
-    p.add_argument("statement")
+    p.add_argument("statement", help="mark the terms it names: [[TM3:MASE]]")
     p.add_argument("--question", required=True, help="question ID")
     p.add_argument("--from-exploration", action="store_true",
                    help="the hypothesis was suggested by results (give --prompted-by)")
     p.add_argument("--prompted-by", nargs="+", default=[], metavar="ID")
+    p.add_argument("--subject", metavar="TM|TEXT", help="about: what the hypothesis is about (a term ID or text)")
+    p.add_argument("--relation", metavar="TEXT", help="about: what is asserted of the subject, e.g. \"has lower "
+                                                       "error than\"")
+    p.add_argument("--object", nargs="+", metavar="TM|TEXT",
+                   help="about: the measure, outcome, property or theme (several measure terms for one atom)")
+    p.add_argument("--comparator", metavar="TM|TEXT", help="about: what the subject is compared with")
+    p.add_argument("--condition", action="append", default=[], metavar="TM|TEXT",
+                   help="about: a data set, population, setting or other condition; repeat for several")
 
     p = cmd("assume", cmd_assume, "record an assumption")
     p.add_argument("statement")
@@ -729,6 +772,13 @@ def add_parser(subparsers):
     p.add_argument("--design", help="what will be run, on what, with which settings (required, except with "
                                      "--comment: the test's procedure)")
     p.add_argument("--analysis", required=True, help="what will be computed from the outputs")
+    for role, what in (("studied", "what the test studies or compares: methods, interventions, a phenomenon"),
+                       ("cases", "what or whom it is tested on: data sets, populations, participants"),
+                       ("procedure", "how: evaluation scheme, trial design, sampling, analytic approach"),
+                       ("lens", "what is measured or how it is read: measures, outcomes, instruments, a coding "
+                                "frame"),
+                       ("context", "where and when, when it bounds the test")):
+        p.add_argument(f"--{role}", nargs="+", default=[], metavar="TM", help=f"setup: {what} (term IDs)")
     p.add_argument("--comment", metavar="ID",
                    help="run a review comment's resolution test: its global ID (<claimset>@v<n>/RV<k>.c<m>); the "
                         "decision rule is the test (supported: its withdrawn rule; not supported: its upheld rule)")

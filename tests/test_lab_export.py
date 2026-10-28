@@ -163,7 +163,8 @@ class TestMapping(ExportCase):
     def test_completion_list_names_decisions(self):
         text = self.todo(self.out)
         for needle in ("paper.licence", "paper.contributions", "paper.autonomy", "negative result", "guarantor",
-                       "profile", "definitions: define each method", "as the code of the runs implements it"):
+                       "profile", "definitions: check the definitions", "as the code of the runs implements it",
+                       ".about: give the about", ".setup: give the setup"):
             self.assertIn(needle, text)
         self.assertNotIn("instruction", json.dumps(self.out["draft"]).lower())
 
@@ -174,9 +175,82 @@ class TestMapping(ExportCase):
         human["positions"] = ["supervisor", "guarantor"]
         c1 = self.claim(self.out, self.h)
         c1["role"] = "principal"
+        c1["about"] = {"subject": "X", "relation": "improves", "object": "Y", "comparator": None,
+                       "conditions": ["monthly data"]}
         draft["paper"]["contributions"] = [c1["id"]]
         rep = validate(draft)
         self.assertEqual(rep.errors, [])
+
+
+class TestTerms(ExportCase):
+    """Lab record v0.12: terms become definitions; a hypothesis's about and a plan's setup become the claim's
+    about and its evidence's setup, with term IDs replaced by definition IDs (§9)."""
+
+    def setUp(self):
+        super().setUp()
+        self.t = {name: self.add("term", {"term": name, "kind": kind, "definition": f"{name} as used here."})
+                  for name, kind in (("X", "method"), ("naive", "method"), ("Y error", "measure"),
+                                     ("monthly series", "data"))}
+        t = self.t
+        self.hx = self.hyp(f"[[{t['X']}:X]] has lower [[{t['Y error']}:Y error]] than [[{t['naive']}:naive]] on "
+                           f"[[{t['monthly series']}:monthly series]].",
+                           about={"subject": t["X"], "relation": "has lower error than", "object": t["Y error"],
+                                  "comparator": t["naive"], "conditions": [t["monthly series"]]})
+        pl = self.plan(hypotheses=[self.hx], decision=rule("monthly"),
+                       setup={"studied": [t["X"], t["naive"]], "cases": [t["monthly series"]],
+                              "lens": [t["Y error"]]})
+        _, rs = self.run_(0.08, "monthly", plan=pl)
+        self.status(self.hx, "supported", rs, plan=pl)
+        self.out = export(self.lab)
+
+    def test_definitions_about_and_setup(self):
+        draft = self.out["draft"]
+        self.assertEqual([(d["id"], d["term"], d["kind"]) for d in draft["definitions"]],
+                         [("D1", "X", "method"), ("D2", "naive", "method"), ("D3", "Y error", "measure"),
+                          ("D4", "monthly series", "data")])
+        c = self.claim(self.out, self.hx)
+        self.assertEqual(c["statement"], "[[D1:X]] has lower [[D3:Y error]] than [[D2:naive]] on "
+                                         "[[D4:monthly series]].")
+        self.assertEqual(c["about"], {"subject": "D1", "relation": "has lower error than", "object": "D3",
+                                      "comparator": "D2", "conditions": ["D4"]})
+        ev = next(e for e in draft["evidence"] if e["id"] == c["support"][0]["evidence"])
+        self.assertEqual(ev["setup"], {"studied": ["D1", "D2"], "cases": ["D4"], "lens": ["D3"]})
+
+    def test_completed_draft_validates_without_adding_about(self):
+        draft = self.out["draft"]
+        draft["paper"]["licence"] = "CC-BY-4.0"
+        next(c for c in draft["contributors"] if c["type"] == "human")["positions"] = ["supervisor", "guarantor"]
+        c = self.claim(self.out, self.hx)
+        c["role"] = "principal"
+        draft["paper"]["contributions"] = [c["id"]]
+        rep = validate(draft)
+        self.assertEqual([e for e in rep.errors if e["rule"] in ("61", "63", "64")], [])
+        self.assertNotIn(f"claims.{c['id']}.about", self.todo(self.out))
+
+    def test_term_needs_kind_and_definition(self):
+        for body in ({"term": "Z", "definition": "z"}, {"term": "Z", "kind": "algorithm", "definition": "z"},
+                     {"term": "Z", "kind": "method"}):
+            with self.assertRaises(LabError):
+                self.add("term", body)
+
+    def test_setup_names_only_terms(self):
+        with self.assertRaises(LabError):
+            self.plan(hypotheses=[self.hx], decision=rule("monthly"), setup={"studied": [self.hx]})
+        with self.assertRaises(LabError):
+            self.plan(hypotheses=[self.hx], decision=rule("monthly"), setup={"compared": [self.t["X"]]})
+
+    def test_object_list_only_measures(self):
+        t = self.t
+        with self.assertRaises(LabError) as cm:
+            self.hyp(f"[[{t['X']}:X]] beats [[{t['naive']}:naive]] on [[{t['monthly series']}:monthly series]].",
+                     about={"subject": t["X"], "relation": "beats", "object": [t["Y error"], t["monthly series"]],
+                            "comparator": t["naive"], "conditions": []})
+        self.assertEqual(cm.exception.rule, "L21")
+
+    def test_term_marks_must_name_terms(self):
+        with self.assertRaises(LabError) as cm:
+            self.hyp("[[TM99:Z]] helps.")
+        self.assertEqual(cm.exception.rule, "L21")
 
 
 class TestDetails(ExportCase):

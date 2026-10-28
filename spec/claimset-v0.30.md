@@ -1,10 +1,30 @@
-# Claimset — Specification v0.28 (draft)
+# Claimset — Specification v0.30 (draft)
 
-Status: working draft · Date: 2026-10-26 · Supersedes v0.27 (`spec/claimset-v0.27.md`) · Companions: lab record specification (`spec/lab-record-v0.10.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-28 · Supersedes v0.29 (`spec/claimset-v0.29.md`) · Companions: lab record specification (`spec/lab-record-v0.12.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.27
+## Changes since v0.29
+
+A reader looking for papers asks what they studied, on what, how, and what they found about it: "which papers compare ETS with ARIMA on the M4 data by MASE", "what is known about role ambiguity among rural nurses". Until v0.29 the answer was spread over three partial records of the same thing (free-text `scope`, the forecasting-shaped `setup` of evidence, the closed lists of the qualitative profile), and the atom that §8 asks a writer to form first was never written down. This version records one frame of a study, in terms that fit any empirical design, and records each claim's atom over that frame, so that papers and claims can be found by the things they are about, whatever their field or method.
+
+- §3.4, *Setup*: the roles are renamed and generalised so that they fit quantitative, qualitative, simulation and mixed designs: `studied` (was `compared`), `cases` (was `data`), `procedure` (was `design`), `lens` (was `measures`), and a new role `context`. A table maps the roles onto PICO (trials) and SPIDER (qualitative evidence synthesis). Setup is recommended for every evidence object except formal ones. Rule 61 revised; new warning 28.
+- §3.2: definitions gain `kind`, a closed list saying what sort of thing a term names (a method, a population, a measure, a concept, …). Required for definitions named in a setup or in a claim's `about`. New rule 63.
+- §3.3.5, new: claims gain `about`, the claim's atom (§8 rule 1) recorded as fields: `subject`, `relation`, `object`, `comparator`, `conditions`. Slots hold definition IDs, or short text for things the paper does not define. Required for principal claims, recommended for the others except assumptions. New rule 64; new warning 27.
+- §2.3: the reading view shows each definition's kind and leaves `about` out (the statement says it in words).
+- §11, §12: the platform resolves defined terms to shared entities across papers; alignment with PICO, SPIDER and the statement model of nanopublications and Wikidata.
+- §13: new open question 10: the frame is to be tested by a coding exercise across paper types; roles, kinds or slots that coders cannot assign consistently are revised in a later version.
+- Appendix A and D updated; new Appendix E: a qualitative paper.
+- Companion lab record v0.12 records terms, hypothesis atoms and plan setups before the data are seen, and exports them as definitions, `about` and `setup`. Files written under v0.23 to v0.29 are brought over with `claimset migrate`, which renames the setup roles and lists the kinds and atoms left to add.
+
+## Changes in v0.29 (since v0.28)
+
+A definition of a paper's own method written as a description of its formula ("an exponentially weighted sum, the weights being powers of …"), or of a variant as "the same equations at lag m", leaves a reader unable to compute or check the method, and the claims about it then rest on a model nobody can reconstruct.
+
+- §3.2, *The paper's own method or model*: its definition gives the equations that define it, as the paper writes them, every one of them; a variant gives its own equations in full; a form derived from another (an underlying state-space model) is a claim, not part of the definition.
+- New warning 26 flags a definition of the paper's own that a formal claim names but that contains no mathematics (§10.4).
+
+## Changes in v0.28 (since v0.27)
 
 A claimset exported from a lab record numbers its claims in the order the hypotheses were written, and a hand-made one in the order its claims were found; neither is the order of the paper's argument, and the reading view follows file order.
 
@@ -275,8 +295,8 @@ Top-level layout:
 
 A claimset is stored and exchanged as JSON: the canonical file, which tools validate, the platform publishes and corrections patch. A model that reads the paper is given its **reading view**: a plain-text rendering of the same claimset. JSON field names, quotation marks and the fields that serve tools, audit and publication take a large share of a file and carry nothing a reader needs; the reading view leaves them out.
 
-- **Kept:** the title, licence, source of a converted paper, contributions and exploration counts; definitions; claims with their type, role, novelty (when not `no_prior_found`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes, and test; evidence with its description, design fields, setup, estimate, results, tables and proof steps; warrants; limitations; open questions; artefact descriptions; references.
-- **Left out:** `provenance`, `field_provenance`, `source_spans`, `corrections`, availability, artefact locations, versions and licences, contributors, models, execution records, lab-record identifiers, `schema_version` and the platform's publication fields.
+- **Kept:** the title, licence, source of a converted paper, contributions and exploration counts; definitions with their kind; claims with their type, role, novelty (when not `no_prior_found`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes, and test; evidence with its description, design fields, setup, estimate, results, tables and proof steps; warrants; limitations; open questions; artefact descriptions; references.
+- **Left out:** `about` (the statement says the same in words; `about` serves search), `provenance`, `field_provenance`, `source_spans`, `corrections`, availability, artefact locations, versions and licences, contributors, models, execution records, lab-record identifiers, `schema_version` and the platform's publication fields.
 
 - **Order:** claims are grouped by role: principal claims, then supporting claims, then secondary claims, each group in file order. Claims that are not principal and whose support is only `argument` or `unstated` follow, under CLAIMS WITHOUT EVIDENCE, so a reader sees at once what the paper asserts or argues without evidence. Principal claims stay with the principal claims whatever their support.
 
@@ -398,9 +418,29 @@ Retracted papers are never deleted. All their claims inherit the retraction stat
 | `id` | string | `D1` … |
 | `term` | string | |
 | `definition` | string | One term, one meaning, used rigidly throughout |
+| `kind` | enum | What sort of thing the term names (below). Required when the definition is named in an evidence `setup` (§3.4) or a claim's `about` (§3.3.5); recommended otherwise |
 | `source` | object or string | Where a borrowed term is defined: a reference ID (`B3`, §3.13), `{target, id_type}` as for cited support (§4), or a global claim or definition ID of another claimset |
 
+**Kinds.** The kind says what a term names, whatever role it plays in a study; the role is given by the setup (§3.4) and the claim's `about` (§3.3.5). One term has one kind.
+
+| Kind | The term names … | Examples |
+|---|---|---|
+| `method` | a method, model, algorithm, estimator or analysis procedure, with the settings this paper uses | ETS with AICc selection; a logistic regression; a proposed forecasting model |
+| `intervention` | something applied to, or experienced by, the cases: a treatment, programme, policy, exposure or event | a nurse-led discharge programme; a minimum-wage increase; shift work |
+| `population` | the people, organisations or other units sampled or studied | registered nurses in rural hospitals; UK listed firms |
+| `data` | a data set, corpus, document collection or data-generating process | the M3 monthly series; 34 interview transcripts; a simulated AR(1) process |
+| `setting` | a place, institution, period or circumstance in which cases are observed | two district hospitals in Wales; 2010–2024 |
+| `design` | how a study or evaluation is arranged: trial or survey design, evaluation scheme, sampling and data collection, analytic approach | rolling origin with 8 origins; a cluster-randomised trial; purposive sampling with semi-structured interviews; reflexive thematic analysis |
+| `measure` | what is recorded about each case and how it is scored or aggregated: an error measure, outcome, scale, instrument, coding scheme | MASE averaged over series; 30-day readmission; the Maslach Burnout Inventory |
+| `concept` | a construct, property, phenomenon or theme the paper names, studies or finds | role ambiguity; forecastability; "loss of clinical identity" |
+| `theory` | a theory or theoretical framework the paper uses or proposes | role theory; the resource-based view |
+| `other` | anything else; a term often given this kind is a sign that the list needs a value | |
+
+A term the paper introduces as a finding (a theme, a typology, a newly named phenomenon) is a `concept`. The paper's own method or model is a `method`, defined in full as below.
+
 A definition explains in full only a term the paper introduces or uses in its own sense. A term the paper takes from elsewhere (it cites where the term comes from) is a **borrowed term**: its `definition` names the standard meaning in one line and states only what this paper specifies (e.g. `"Mean scaled interval score; here of the 95% prediction interval"`), and `source` says where the term is defined. A term the paper uses without defining or citing it, in its usual sense, needs no definition.
+
+**The paper's own method or model.** Its definition gives the equations that define it, as the paper writes them (LaTeX, §8 rule 6), with each symbol named: every equation of the method or model, not a description of them ("the weights being powers of …" is not a definition of a weighted sum; the sum is). A variant the paper introduces (seasonal, multivariate, with exogenous variables) is defined with its own equations in full, never as "the same equations at lag $m$": where its parameters and lags enter is what the variant is. When the paper states a method in more than one form (a recursion and a weighted sum), the definition gives each form. A form the paper derives from another (an underlying state-space or ARIMA model) is not part of the definition: like every result of a derivation (a property, an equivalence, a condition), it is a claim (§3.3).
 
 ### 3.3 Claim
 
@@ -408,6 +448,7 @@ A definition explains in full only a term the paper introduces or uses in its ow
 |---|---|---|
 | `id` | string | `C1` … |
 | `statement` | string | Self-contained sentence (rules in §8) |
+| `about` | object | The claim's atom as fields: `subject`, `relation`, `object`, `comparator`, `conditions` (§3.3.5). Required for principal claims; recommended for supporting and secondary claims; absent on assumption claims |
 | `type` | enum | `descriptive` · `associational` · `causal` · `predictive` · `interpretive` · `formal` · `methodological` (choosing: §3.3.1) |
 | `role` | enum | `principal` (a contribution) · `supporting` (one of the paper's own claims that a contribution rests on, directly or through other claims, by `depends_on` or `assumptions`) · `secondary` (a finding of the paper that no contribution rests on: a side result, a negative or null result reported in its own right) |
 | `novelty` | enum | `no_prior_found` · `replication` · `extension` · `refutation`. Not on assumption claims (§3.8) |
@@ -447,6 +488,8 @@ A definition explains in full only a term the paper introduces or uses in its ow
 #### 3.3.2 Scope
 
 Scope describes the conditions under which this claim holds, not the section or study it came from. Two claims from the same section often have different scopes: a result about series where every period is observed does not carry the scope "series with unobserved periods". Omit scope fields that do not apply rather than copying them from neighbouring claims.
+
+When `about.conditions` names a defined population, data set or setting (§3.3.5), scope does not restate it; scope then records only what narrows the claim further (a horizon, a subgroup, an exclusion).
 
 #### 3.3.3 Hypotheses, planning and negative results
 
@@ -512,6 +555,39 @@ Prior work that the paper cites as an example or an illustration ("used, e.g., i
 
 **Secondary claims in converted papers.** The paper's side results are kept as `secondary` claims only when something rests on them or they qualify what the paper establishes. A secondary descriptive claim resting on evidence (a result; a conclusion the paper draws from results is not one, *One claim, several places* above) is written when a claim depends on it, a warrant names it as a premise or an open question concerns it; or when it states a loss, a limit or a null result of the paper's own method ("M has higher MSIS than N on short series", "M does not improve on N on the yearly data"). Any other result the paper reports, including a pattern its results section reads off a table, is not a claim: it stays in the result table of its evidence, which records it whole (§3.4, *Tables and claims*). Side remarks, illustrations and explanations that the paper neither tests nor uses for a contribution are left out.
 
+#### 3.3.5 What a claim is about
+
+`about` records the claim's atom (§8 rule 1) as fields, so that claims can be found and compared by what they are about rather than by their wording. It is the same atom a writer forms before writing the statement; the statement says it in words, and `about` names its parts.
+
+```json
+"about": {"subject": "D2", "relation": "has lower error than", "object": ["D8", "D9"], "comparator": "D3", "conditions": ["D5"]}
+```
+
+| Field | Value | Notes |
+|---|---|---|
+| `subject` | a slot value | What the claim is about: the method, intervention, population, phenomenon or object of which something is asserted. One subject; a named group ("the univariate methods") is one subject, defined as such |
+| `relation` | text | What is asserted of the subject, as a short verb phrase in the paper's own terms: `has lower error than`, `increases`, `is associated with higher`, `is experienced as`, `is stationary when`, `does not reduce`. A negation belongs here. Never an ID. No controlled list: the claim's `type` gives the class of the relation |
+| `object` | a slot value, a list of `measure` definition IDs, or `null` | What the relation links the subject to: an outcome, a property, a measure, a theme. `null` when the relation needs none (`exists`, `is identifiable`). A list only for atoms grouped by measure (§8 rule 2): one subject against one comparator under one set of conditions, on several measures |
+| `comparator` | a slot value or `null` | What the subject is compared with; at most one |
+| `conditions` | list of slot values | The cases, setting and other conditions under which the claim holds: the data set, the population, the period, the horizon, the parameter region. Empty when the claim holds without conditions |
+
+**Slot values.** A slot holds the ID of a definition (`D5`) or, for a thing the paper does not define, a short noun phrase (`"the seasonal naive method"`). A term that a setup of the claim's evidence names, or that the paper defines, is given by its ID, not as text. Every definition ID in `about` is marked in the statement (`[[D5:M3 monthly]]`), so the two cannot drift apart. Text slots are resolved by the platform like printed references (§11); they make a claim findable, IDs make it exact.
+
+**By type of claim.**
+
+| Claim | subject | relation | object | comparator | conditions |
+|---|---|---|---|---|---|
+| descriptive, a comparison of methods | the method (`method`) | `has lower error than` | the measures (`measure`) | the other method | the data set, the horizon |
+| causal, a trial | the intervention | `reduces` | the outcome (`measure`) | the control condition | the population, the setting |
+| associational, a survey | the exposure or property | `is associated with higher` | the outcome | `null` | the population, the period |
+| interpretive, a qualitative study | the phenomenon or the participants' experience (`concept` or `population`) | `is experienced as` | the theme (`concept`) | `null` | the sample, the setting |
+| formal | the model or object of the theorem | `is identifiable when` | the property (`concept`) or `null` | `null` | the theorem's conditions, as text or assumption-claim terms |
+| methodological | the method or implementation | `computes` | what it computes | `null` | the inputs for which it does |
+
+**Conclusions over atoms.** A conclusion the paper draws over several atoms (§8 rule 2) has an `about` of its own: its subject is what the conclusion is about ("the paper's method", or a defined group), its conditions those shared by the atoms it rests on.
+
+**Interpretation is not flattened.** An interpretive claim keeps its reasoning in its warrant; `about` only names what the claim is about. A finding that is not one relation between two things (a typology, a process with stages, a model of how a phenomenon unfolds) is defined as a `concept` holding that finding, the claim's `object` names it and its `relation` is `is characterised by`. `about` never forces a finding into a shape it does not have, and never changes what the statement says.
+
 ### 3.4 Evidence
 
 Common fields: `id`, `profile`, `description`, `artefacts` (list of artefact IDs), `data_origin` (`primary` · `secondary`), `preregistered` (boolean), `availability` (§3.10), `models` (list, below), `results` (list, below), `execution` (object, below), `lab_runs` (list of lab-record run IDs, e.g. `RN4` or `AC2.RN4`, that produced this evidence), `tables` (list, below), `source_spans` (locations of the evidence in the source text, for converted papers).
@@ -545,17 +621,32 @@ Intervals, ranks and test statistics are columns of their own (e.g. `"mean MASE,
            {"id": "r3", "label": ["ARIMA"], "values": [0.902, null]}]}]
 ```
 
-**Setup** (`setup`, optional, any profile): the parts of the evaluation, each recorded once as a definition (§3.2) and named here by role, so that claims, evidence objects, reviews and other papers can refer to each part on its own. `{compared, data, design, measures}`, each a list of definition IDs:
-- `compared`: what is compared: methods, models, treatments, conditions (in forecasting: the competing methods, each with the settings that define it).
-- `data`: what it is compared on: data sets, populations, samples (the series collections, with their frequency and size, or a simulation's data-generating process).
-- `design`: how the comparison is made: the evaluation scheme (fixed or rolling origin, the number of origins, horizons, refits, holdout), the trial or study design.
-- `measures`: what is measured: error measures, scores, outcomes, with how they are aggregated.
+**Setup** (`setup`; recommended for evidence of every profile except `formal`): the frame of the study, its parts each recorded once as a definition (§3.2) and named here by role, so that claims, evidence objects, reviews and other papers can refer to each part on its own. `{studied, cases, procedure, lens, context}`, each a list of definition IDs; roles that do not apply are left out:
+- `studied`: what the study is about or compares: methods and models, interventions and exposures, the phenomenon of interest (in forecasting: the competing methods, each with the settings that define it; in a qualitative study: the experience or phenomenon explored).
+- `cases`: what or whom it is studied on: data sets, populations, samples, participants, sites, documents (the series collections with their frequency and size; a simulation's data-generating process; the interviewees with how many there were).
+- `procedure`: how the cases are obtained and analysed: the evaluation scheme (fixed or rolling origin, origins, horizons, refits), the trial or survey design, the sampling and data collection, the analytic approach (thematic analysis, grounded theory, a regression model used as the analysis).
+- `lens`: what is recorded about each case and through what it is read: error measures and outcomes with their aggregation, instruments and scales, the coding frame, a theory used to read the data.
+- `context`: where and when, when it bounds the study: the setting, institutions, period.
 
-Definitions of borrowed parts name their `source` (a data set, a published method, a standard measure); the definition says what this paper specifies (the subset, the settings, the horizon). Evidence objects that share a part point to the same definition, and a claim's statement marks the parts it names (`[[D7:rolling origin]]`). `setup` adds no content of its own: the description still says, in a sentence, what was done.
+The roles are those of the frames used to specify studies across fields, under names that fit any design:
+
+| Role | Forecasting benchmark | Trial (PICO) | Qualitative study (SPIDER) | Simulation |
+|---|---|---|---|---|
+| `studied` | the competing methods | intervention, comparator | phenomenon of interest | the methods or models run |
+| `cases` | the series collections | population | sample | the data-generating process |
+| `procedure` | the evaluation scheme | trial design | design, research type | the experimental design (replications, parameter grid) |
+| `lens` | error measures | outcomes | evaluation (what was explored, and how it was read) | the measures computed |
+| `context` | rarely needed | setting | setting | not applicable |
+
+A part's role is the role it plays in this study; its `kind` (§3.2) is what it is. They usually agree (a `measure` in `lens`, a `population` in `cases`) but need not: a method can be `studied` in one paper and part of the `procedure` in another (a regression used as the analysis), and a theory can be `studied` or be the `lens`. The boundary most often in doubt is between `procedure` and `lens`: `procedure` is what was done to obtain and analyse the cases; `lens` is what was recorded about them and the terms in which they were read.
+
+Definitions of borrowed parts name their `source` (a data set, a published method, a standard measure or instrument, an analytic approach); the definition says what this paper specifies (the subset, the settings, the horizon, how the approach was applied). Evidence objects that share a part point to the same definition, and a claim's statement marks the parts it names (`[[D7:rolling origin]]`). `setup` adds no content of its own: the description still says, in a sentence, what was done. The closed lists of the `qual` profile (`data_sources`, `analytic_approach`) are kept: they classify, and the setup's definitions say what exactly was done.
 
 ```json
-"setup": {"compared": ["D1", "D2", "D3"], "data": ["D5", "D6"], "design": ["D7"], "measures": ["D8", "D9"]}
+"setup": {"studied": ["D1", "D2", "D3"], "cases": ["D5", "D6"], "procedure": ["D7"], "lens": ["D8", "D9"]}
 ```
+
+The keys of v0.23 to v0.29 map to these: `compared` → `studied`, `data` → `cases`, `design` → `procedure`, `measures` → `lens`.
 
 **Execution** (`execution`, optional): what was actually run, when it differs from or adds to the artefact versions. `{code_version, software, hardware, notes}`; `code_version` is the commit or version that produced the results.
 
@@ -846,7 +937,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 ## 8. Statement text rules
 
-1. One assertion per statement. A claim is one **atom**: one *subject* (the method, model, group of methods, population or object the claim is about), one *relation* (what is asserted of it: is lower than, is stationary when, improves, is equivalent to), at most one *comparator* (what it is compared with; a named group, such as "the univariate methods", is one comparator), and one set of *conditions* (the data, setting, sample size, horizon or parameter region under which it holds). A statement with two subjects, two comparators or two sets of conditions is two or more claims, whatever its wording. Write the atom first and the statement from it. A statement also holds more than one claim when one part could be true and another false. Signs of it: a semicolon; contrast (`but`, `while`, `whereas`, `although`, `however`); addition (`as well as`, `also`, `in addition`, `moreover`, `furthermore`, `not only`); explanation (`because`, `since`, `due to`, `thus`, `therefore`, `hence`, `which explains`), which usually joins a result to its explanation, two claims of different types; an assertion in a side clause (`, which …`) or in parentheses; a recommendation added to a finding (`should`, `recommend`); a claim citing results of more than one evidence object; and `and` joining two verbs. The grouping of rule 2 (one subject against one comparator under one set of conditions, better on some measures and worse on others) stays one claim.
+1. One assertion per statement. A claim is one **atom**: one *subject* (the method, model, group of methods, population or object the claim is about), one *relation* (what is asserted of it: is lower than, is stationary when, improves, is equivalent to), at most one *comparator* (what it is compared with; a named group, such as "the univariate methods", is one comparator), and one set of *conditions* (the data, setting, sample size, horizon or parameter region under which it holds). A statement with two subjects, two comparators or two sets of conditions is two or more claims, whatever its wording. Write the atom first and the statement from it; the atom is recorded in the claim's `about` (§3.3.5). A statement also holds more than one claim when one part could be true and another false. Signs of it: a semicolon; contrast (`but`, `while`, `whereas`, `although`, `however`); addition (`as well as`, `also`, `in addition`, `moreover`, `furthermore`, `not only`); explanation (`because`, `since`, `due to`, `thus`, `therefore`, `hence`, `which explains`), which usually joins a result to its explanation, two claims of different types; an assertion in a side clause (`, which …`) or in parentheses; a recommendation added to a finding (`should`, `recommend`); a claim citing results of more than one evidence object; and `and` joining two verbs. The grouping of rule 2 (one subject against one comparator under one set of conditions, better on some measures and worse on others) stays one claim.
 2. **Granularity rule:** split a statement into separate claims when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one interpretive claim with a warrant; sub-themes become separate supporting claims only if they have their own evidence. Atoms are grouped into one claim only when they share subject, comparator and conditions and differ in the measure or summary: "M has a lower mean and median MASE than N, but a higher MSIS" is one claim, supported by the table holding the numbers, whose values it does not repeat (§3.4, *Tables and claims*). The same comparison on two data sets, against two comparators or for two methods is two claims. A conclusion the paper draws over several atoms ("M is the most robust of the variants") is a claim of its own, whose `depends_on` lists the atoms it rests on; it is not written by merging them. Results on which a method is worse are stated in the claim, never left out.
 3. Self-contained: no anaphora or cross-references ("this", "the above", "as shown").
 4. Scope-bearing qualifiers belong in `scope`, not hedged prose.
@@ -978,11 +1069,16 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 ### 10.18 Rules added in v0.23 (errors: file rejected)
 
-61. An evidence object's `setup`, if present, has only the keys `compared`, `data`, `design` and `measures`, each a non-empty list of IDs of definitions.
+61. (Revised in v0.30.) An evidence object's `setup`, if present, has only the keys `studied`, `cases`, `procedure`, `lens` and `context`, each a non-empty list of IDs of definitions; formal evidence has no `setup`.
 
 ### 10.19 Rules added in v0.24 (errors: file rejected)
 
 62. Each open question has an `id` `O<n>`, a non-empty `question` that follows the text rules, and only the fields of §3.14; its `claims`, if present, resolve to claims.
+
+### 10.20 Rules added in v0.30 (errors: file rejected)
+
+63. A definition's `kind`, if present, is one of the values of §3.2. Every definition named in an evidence `setup` or in a claim's `about` has a `kind`.
+64. `about`: every principal claim has one; no assumption claim has one. It has `subject` and `relation`, each a non-empty string, and `conditions`, a list (possibly empty); `object` and `comparator` are present, each `null` or a slot value; `object` may instead be a non-empty list of IDs of definitions of kind `measure`. A slot value is a non-empty string: when it has the form of a definition ID (`D` followed by digits) it resolves to a definition, and that definition is marked in the claim's statement (`[[Dn:…]]`). `relation` is text, never an ID.
 
 ### 10.4 Warnings (file accepted, warning recorded)
 
@@ -1011,6 +1107,9 @@ The platform mints a DOI for every published claimset. The file records identifi
 23. A claim that is not principal, has no warrant and is not formal, whose only support is `argument`, `consensus`, `expert_judgement` or `unstated`, and on which no claim rests (by `depends_on` or `assumptions`): the paper neither shows nor uses it (§8 rule 9). Support it and link it, record it as an open question, or leave it out; in a converted paper, check that the source's argument uses it. The message names rhetorical wording when the statement has some: importance framing ("crucial", "paramount"), promise ("promising", "paves the way"), sweeping generalisation ("always", "it is well known"), speculation ("may", "could"). The wording alone never raises the warning.
 24. The statement of a claim with `empirical_quant` or `simulation` support repeats three or more values of the result tables it cites (§3.4, *Tables and claims*): state the pattern the paper concludes and cite the table or rows, repeating a value only when the conclusion turns on it; or, if the claim only retells the table, remove it and cite the table from the claims that use it. Numbers are found as for warning 17.
 25. A `secondary` `descriptive` claim with `empirical_quant` or `simulation` support (a result, not a conclusion drawn from results) on which nothing rests: no claim depends on it or lists it in `assumptions`, no warrant names it as a premise, no open question concerns it. Keep it only if it states a loss, limit or null result of the paper's own method; otherwise the result table of its evidence holds it (§3.3, *Secondary claims in converted papers*).
+26. A definition without `source` (a term of the paper's own) is named in the statement of a `formal` claim and contains no mathematics (`$…$`): if it is the paper's own method or model, give its defining equations (§3.2, *The paper's own method or model*).
+27. A supporting or secondary claim that is not an assumption has no `about` (§3.3.5). Also: a slot of `about` holds text that equals, ignoring case, the `term` of a definition in the file: give the definition's ID instead.
+28. An evidence object whose profile is not `formal` has no `setup`, or a definition is named in a claim's `about` and in no setup of the evidence that claim's support cites, although its kind is `method`, `intervention`, `population`, `data`, `design` or `measure` (a part of the study that the setup leaves out).
 
 ## 11. Platform dependencies
 
@@ -1027,10 +1126,12 @@ Platform functionality is specified in the platform requirements document. The f
 - **Relation resolution:** resolving relation targets to claimsets where they exist, and showing incoming relations (e.g. "contradicted by") on the targets.
 - **Artefact archiving:** at publication, archiving each public artefact whose `uri` names a commit on a git host (in Software Heritage or a comparable archive) and recording its `archive_uri`, unless the file gives one.
 - **Reference resolution:** resolving printed references (`id_type: reference`) to identifiers where one exists, stored as derived data.
+- **Entity resolution:** resolving definitions (by kind, term and `source`) and the text slots of `about` to shared entities across claimsets, so that the M3 monthly data, the MASE or role ambiguity is one entity whichever paper names it; linking entities to external identifiers (data set and software DOIs, Wikidata, subject thesauri) where they exist. Stored as derived data, never written into the file. Search over papers and claims by the entities in their setups and in the slots of `about` depends on it.
 
 ## 12. Alignment with existing standards
 
-- **Primary:** nanopublications. Each claim maps to a nanopublication (assertion = claim; provenance = support, evidence and assumptions; publication info = paper and contributors). Content-hash identifiers suit immutable versions.
+- **Primary:** nanopublications. Each claim maps to a nanopublication (assertion = claim; provenance = support, evidence and assumptions; publication info = paper and contributors). Content-hash identifiers suit immutable versions. A claim's `about` gives the assertion its triple, subject, relation and object, with the comparator and conditions as qualifiers, in the statement model also used by Wikidata.
+- **Study frames:** the roles of a setup (§3.4) correspond to PICO (population, intervention, comparator, outcome), used to specify trials and clinical questions, and to SPIDER (sample, phenomenon of interest, design, evaluation, research type), its counterpart for qualitative evidence synthesis.
 - **Borrowed:** argument structure from micropublications.
 - **Contributor roles:** CRediT.
 - **Identity:** ORCID for people, ROR for organisations; DOIs for claimsets.
@@ -1049,6 +1150,7 @@ Platform functionality is specified in the platform requirements document. The f
 7. **JSON-LD context:** which existing vocabularies to map onto.
 8. **Guarantor obligations:** what research and conversion guarantors commit to, and how unresponsive guarantors are handled.
 9. **Non-commercial and no-derivatives sources:** whether `CC-BY-NC` sources can be converted, and on what terms.
+10. **The study frame and the atom across fields** (v0.30): whether the roles of a setup, the kinds of definitions and the slots of `about` can be assigned consistently across paper types (forecasting and other benchmarks, trials, surveys, qualitative studies, simulation studies, theory papers). To be settled by independent coders on papers of each type; roles, kinds or slots on which coders disagree are merged, redefined or dropped in a later version.
 
 ## Appendix A: native paper — submission
 
@@ -1081,7 +1183,11 @@ What the agent submits. No identifier, version, date, status, classification IDs
     {"id": "M1", "provider": "Example provider", "name": "Example model", "version": "1.0", "identifier": "example-model-1-0", "weights": "api_only", "accessed": "2026-10-01"}
   ],
   "definitions": [
-    {"id": "D1", "term": "forecast skill", "definition": "Relative reduction in mean absolute scaled error against a seasonal naive benchmark."}
+    {"id": "D1", "term": "forecast skill", "kind": "measure", "definition": "Relative reduction in mean absolute scaled error against a seasonal naive benchmark, averaged over series and horizons."},
+    {"id": "D2", "term": "method M", "kind": "method", "definition": "The forecasting method studied in this paper, as implemented in version 1.0 of the code."},
+    {"id": "D3", "term": "seasonal naive method", "kind": "method", "definition": "Forecasts each month by the value of the same month one year earlier."},
+    {"id": "D4", "term": "UK monthly retail sales", "kind": "data", "definition": "1,200 monthly sales series of one UK retailer's store network, 2010-2024, each with at least 36 observations."},
+    {"id": "D5", "term": "rolling-origin evaluation", "kind": "design", "definition": "Rolling origin with forecasts for horizons 1 to 12 months from each origin."}
   ],
   "claims": [
     {
@@ -1100,9 +1206,10 @@ What the agent submits. No identifier, version, date, status, classification IDs
     },
     {
       "id": "C2",
-      "statement": "Method M improves [[D1:forecast skill]] over the seasonal naive benchmark on monthly retail sales series.",
+      "statement": "[[D2:Method M]] improves [[D1:forecast skill]] over the [[D3:seasonal naive method]] on the [[D4:UK monthly retail sales]].",
+      "about": {"subject": "D2", "relation": "improves", "object": "D1", "comparator": "D3", "conditions": ["D4"]},
       "type": "descriptive", "role": "principal", "novelty": "no_prior_found",
-      "scope": {"population": "monthly retail sales series", "geography": "United Kingdom", "language": "not applicable", "period": "2010-2024", "data_type": "aggregate sales counts", "conditions": ["horizon of 1 to 12 months"], "excludes": ["series shorter than 36 observations"]},
+      "scope": {"conditions": ["horizons of 1 to 12 months"]},
       "support": [{"kind": "empirical_quant", "evidence": "E1", "artefacts": ["A2"]}],
       "assumptions": ["C1", "C3"],
       "limitations": ["L1"],
@@ -1111,7 +1218,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
     }
   ],
   "evidence": [
-    {"id": "E1", "profile": "quant", "description": "Benchmark of method M against the seasonal naive method on 1,200 monthly retail sales series, rolling origin, horizons 1 to 12.", "design": "benchmark", "estimand": "mean relative MASE reduction", "estimate": 0.08, "interval": {"level": 0.95, "lower": 0.05, "upper": 0.11}, "n": 1200, "data_origin": "secondary", "preregistered": false, "artefacts": ["A1"], "availability": {"level": "public"}}
+    {"id": "E1", "profile": "quant", "description": "Benchmark of method M against the seasonal naive method on 1,200 monthly retail sales series, rolling origin, horizons 1 to 12.", "setup": {"studied": ["D2", "D3"], "cases": ["D4"], "procedure": ["D5"], "lens": ["D1"]}, "design": "benchmark", "estimand": "mean relative MASE reduction", "estimate": 0.08, "interval": {"level": 0.95, "lower": 0.05, "upper": 0.11}, "n": 1200, "data_origin": "secondary", "preregistered": false, "artefacts": ["A1"], "availability": {"level": "public"}}
   ],
   "warrants": [],
   "limitations": [
@@ -1199,12 +1306,16 @@ CLAIMSET Method M against the seasonal naive benchmark on UK monthly retail sale
 licence CC-BY-4.0; contributions C2
 
 DEFINITIONS
-D1 forecast skill: Relative reduction in mean absolute scaled error against a seasonal naive benchmark.
+D1 [measure] forecast skill: Relative reduction in mean absolute scaled error against a seasonal naive benchmark, averaged over series and horizons.
+D2 [method] method M: The forecasting method studied in this paper, as implemented in version 1.0 of the code.
+D3 [method] seasonal naive method: Forecasts each month by the value of the same month one year earlier.
+D4 [data] UK monthly retail sales: 1,200 monthly sales series of one UK retailer's store network, 2010-2024, each with at least 36 observations.
+D5 [design] rolling-origin evaluation: Rolling origin with forecasts for horizons 1 to 12 months from each origin.
 
 CLAIMS
 C2 [descriptive; principal; support: empirical_quant E1 artefacts A2; assumes C1, C3; limitations L1; strength moderate (author)]
-  Method M improves [[D1:forecast skill]] over the seasonal naive benchmark on monthly retail sales series.
-  scope: population: monthly retail sales series | geography: United Kingdom | language: not applicable | period: 2010-2024 | data_type: aggregate sales counts | conditions: horizon of 1 to 12 months | excludes: series shorter than 36 observations
+  [[D2:Method M]] improves [[D1:forecast skill]] over the [[D3:seasonal naive method]] on the [[D4:UK monthly retail sales]].
+  scope: conditions: horizons of 1 to 12 months
 C1 [descriptive; supporting; assumption (data, unchecked)]
   Monthly retail sales series exhibit annual seasonality.
 C3 [descriptive; supporting; assumption (statistical, unchecked)]
@@ -1212,6 +1323,7 @@ C3 [descriptive; supporting; assumption (statistical, unchecked)]
 
 EVIDENCE
 E1 [quant; design benchmark; data_origin secondary; n 1200] Benchmark of method M against the seasonal naive method on 1,200 monthly retail sales series, rolling origin, horizons 1 to 12.
+  setup: studied D2, D3; cases D4; procedure D5; lens D1
   estimate: mean relative MASE reduction = 0.08 (95% interval 0.05 to 0.11)
 
 LIMITATIONS
@@ -1220,3 +1332,58 @@ L1 [sampling; affects C2; reduces_transferability; mitigation none] All 1,200 se
 ARTEFACTS
 A2 [table] Mean relative MASE reduction of method M by forecast horizon, 1 to 12 months.
 ```
+
+## Appendix E: a qualitative paper (definitions, claims, evidence and warrant of a submission)
+
+An invented interview study, to show the frame of §3.4 and `about` (§3.3.5) outside quantitative work. The paper, contributor, model and reference sections are omitted.
+
+```json
+{
+  "definitions": [
+    {"id": "D1", "term": "transition to rural practice", "kind": "concept", "definition": "The first two years of work of a registered nurse who moves from an urban hospital to a rural one."},
+    {"id": "D2", "term": "rural transition nurses", "kind": "population", "definition": "18 registered nurses in their first two years at one of two rural district hospitals, after at least three years in urban hospitals; 15 women, 3 men."},
+    {"id": "D3", "term": "two Welsh rural hospitals", "kind": "setting", "definition": "Two district general hospitals in rural Wales, interviews held in 2025."},
+    {"id": "D4", "term": "purposive sampling with semi-structured interviews", "kind": "design", "definition": "Nurses chosen for variety of specialty and length of urban experience; one interview each, 45 to 70 minutes, by a guide of eight open questions; recruitment stopped when two interviews in a row added no new codes."},
+    {"id": "D5", "term": "reflexive thematic analysis", "kind": "design", "definition": "Thematic analysis in the six phases of Braun and Clarke, by two researchers who coded independently and agreed themes in discussion.", "source": "B1"},
+    {"id": "D6", "term": "role theory", "kind": "theory", "definition": "The view that people act according to expectations attached to positions; here used to read accounts of changed expectations.", "source": "B2"},
+    {"id": "D7", "term": "loss of clinical identity", "kind": "concept", "definition": "A theme: nurses describe no longer being recognised, by themselves or colleagues, as specialists in the field they practised in before."},
+    {"id": "D8", "term": "generalist expectation", "kind": "concept", "definition": "A theme: nurses describe being expected to cover any ward or task, regardless of specialty."}
+  ],
+  "claims": [
+    {
+      "id": "C1",
+      "statement": "[[D2:Rural transition nurses]] at the [[D3:two Welsh rural hospitals]] describe the [[D1:transition to rural practice]] as a [[D7:loss of clinical identity]].",
+      "about": {"subject": "D1", "relation": "is described as", "object": "D7", "comparator": null, "conditions": ["D2", "D3"]},
+      "type": "interpretive", "role": "principal", "novelty": "no_prior_found",
+      "support": [{"kind": "empirical_qual", "evidence": "E1"}],
+      "warrant": "W1", "depends_on": ["C2"],
+      "provenance": "author_stated"
+    },
+    {
+      "id": "C2",
+      "statement": "[[D2:Rural transition nurses]] report a [[D8:generalist expectation]] at the [[D3:two Welsh rural hospitals]].",
+      "about": {"subject": "D2", "relation": "report", "object": "D8", "comparator": null, "conditions": ["D3"]},
+      "type": "interpretive", "role": "supporting", "novelty": "no_prior_found",
+      "support": [{"kind": "empirical_qual", "evidence": "E1"}],
+      "warrant": "W2",
+      "provenance": "author_stated"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "E1", "profile": "qual",
+      "description": "Semi-structured interviews with 18 nurses in their first two years at two rural hospitals, analysed thematically.",
+      "setup": {"studied": ["D1"], "cases": ["D2"], "procedure": ["D4", "D5"], "lens": ["D6"], "context": ["D3"]},
+      "data_sources": ["interview"], "n_participants_or_cases": 18, "sampling": "purposive", "analytic_approach": "thematic",
+      "data_origin": "primary", "preregistered": false,
+      "availability": {"level": "unavailable", "reason": "personal_data"}
+    }
+  ],
+  "warrants": [
+    {"id": "W1", "reasoning": "interpretive", "premises": ["C2"], "text": "Read through role theory, the generalist expectation removes the position from which nurses' specialist expectations of themselves were met; 14 of 18 participants link the two when describing who they now are at work."},
+    {"id": "W2", "reasoning": "interpretive", "premises": [], "text": "The theme draws on accounts from 16 of 18 participants across both hospitals and all specialties sampled, including accounts that contradict it, which concern night shifts only."}
+  ]
+}
+```
+
+The phenomenon is `studied`, the participants are the `cases`, sampling, interviewing and the analysis are the `procedure`, and the theory through which the accounts were read is the `lens`. The themes are `concept` definitions, so a reader looking for work on loss of clinical identity among nurses finds C1 by its `object`, and a reader looking for studies using role theory finds E1 by its `lens`, without either matching the wording of a statement.

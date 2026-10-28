@@ -9,6 +9,7 @@ from . import LAB_SPEC_VERSION, SPEC_VERSION, __version__
 from . import bundle as _bundle
 from . import render as _render
 from . import renumber as _renumber
+from . import migrate as _migrate
 from . import revision as _revision
 from . import validate as _validate
 from .lab import cli as _lab_cli
@@ -159,6 +160,30 @@ def _cmd_renumber(args):
     return 0
 
 
+def _cmd_migrate(args):
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"ERROR: cannot read {args.file}: {exc}", file=sys.stderr)
+        return 1
+    if _renumber.published(doc):
+        print(f"ERROR: {args.file} is a published claimset: published versions never change. Migrate a copy "
+              f"without the platform's fields and submit it as a revision (revision spec §5).", file=sys.stderr)
+        return 1
+    out, done, todo = _migrate.migrate(doc)
+    with open(args.output or args.file, "w", encoding="utf-8") as fh:
+        json.dump(out, fh, indent=1, ensure_ascii=False)
+        fh.write("\n")
+    for line in done:
+        print(f"changed: {line}")
+    for line in todo:
+        print(f"to do:   {line}")
+    if not done and not todo:
+        print("nothing to migrate")
+    return 0
+
+
 def build_parser():
     p = argparse.ArgumentParser(
         prog="claimset",
@@ -191,6 +216,12 @@ def build_parser():
     rn.add_argument("file", help="path to the claimset JSON file (rewritten in place unless -o is given)")
     rn.add_argument("-o", "--output", help="write the renumbered claimset to this file")
     rn.set_defaults(func=_cmd_renumber)
+
+    mg = sub.add_parser("migrate", help="bring a claimset to the current specification: rename what is "
+                                        "mechanical, list what needs judgement")
+    mg.add_argument("file", help="path to the claimset JSON file (rewritten in place unless -o is given)")
+    mg.add_argument("-o", "--output", help="write the migrated claimset to this file")
+    mg.set_defaults(func=_cmd_migrate)
 
     su = sub.add_parser("setup", help="create, attach or adopt study branches (claimset/<study>), checked out "
                                       "at claimset/<study>/")

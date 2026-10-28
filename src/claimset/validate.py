@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.29"
+SCHEMA_VERSION = "0.30"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -86,6 +86,8 @@ ENUM = {
     "by": {"author", "reviewer"},
     "reviewer_type": {"ai", "human"},
     "strength": {"high", "moderate", "low", "very_low"},
+    "definition_kind": {"method", "intervention", "population", "data", "setting", "design", "measure", "concept",
+                        "theory", "other"},
 }
 
 PREFIX = {"definitions": "D", "claims": "C", "evidence": "E", "warrants": "W",
@@ -577,6 +579,8 @@ def validate(doc, published=False, local_root=None, revision=False):
                     r.err("50", f"definitions:{d.get('id')}.source",
                           "must be a non-empty string or {target, id_type} with id_type from the list for cited support")
 
+    check_frame(r, coll, claims, by_id)
+
     # ---------- Artefacts ----------
     for a in coll["artefacts"]:
         if not isinstance(a, dict):
@@ -645,16 +649,26 @@ def validate(doc, published=False, local_root=None, revision=False):
         if "setup" in e:
             setup = e["setup"]
             if not isinstance(setup, dict) or not setup:
-                r.err("61", f"{w}.setup", "an object {compared, data, design, measures} of lists of definition IDs")
+                r.err("61", f"{w}.setup", "an object {studied, cases, procedure, lens, context} of lists of "
+                                          "definition IDs")
+            elif e.get("profile") == "formal":
+                r.err("61", f"{w}.setup", "formal evidence has no setup: its foundation and assumptions say what "
+                                          "the derivation rests on")
             else:
                 for role, ids_ in setup.items():
-                    if role not in SETUP_ROLES:
+                    if role in OLD_SETUP_ROLES:
+                        r.err("61", f"{w}.setup.{role}", f"renamed in v0.30: {role} is now "
+                                                         f"{OLD_SETUP_ROLES[role]} (`claimset migrate` renames it)")
+                    elif role not in SETUP_ROLES:
                         r.err("61", f"{w}.setup.{role}", f"the roles are {', '.join(SETUP_ROLES)}")
                     elif not isinstance(ids_, list) or not ids_:
                         r.err("61", f"{w}.setup.{role}", "a non-empty list of definition IDs")
                     else:
                         for d in ids_:
                             ref("61", f"{w}.setup.{role}", d, "definitions")
+        elif e.get("profile") in ENUM["profile"] - {"formal"}:
+            r.warn("W28", w, "no setup: name the parts of the study (what is studied, on what cases, by what "
+                             "procedure, through what lens) as definitions in setup (§3.4)")
         if "availability" not in e:
             r.warn("W-avail", w, "availability not stated; verifiability cannot be confirmed")
         check_availability(r, w, e.get("availability"))
@@ -946,7 +960,122 @@ def statement_checks(r, where, text):
                              f"where a method is better and where it is not stays one claim")
 
 
-SETUP_ROLES = ("compared", "data", "design", "measures")
+SETUP_ROLES = ("studied", "cases", "procedure", "lens", "context")
+OLD_SETUP_ROLES = {"compared": "studied", "data": "cases", "design": "procedure", "measures": "lens"}
+ABOUT_SLOTS = ("subject", "relation", "object", "comparator", "conditions")
+DEF_ID_RE = re.compile(r"^D\d+$")
+# Kinds of the parts a setup should name (warning 28): a defined term of these kinds in a claim's `about` is a part
+# of the study the claim's evidence should list.
+SETUP_PART_KINDS = {"method", "intervention", "population", "data", "design", "measure"}
+
+
+def check_frame(r, coll, claims, by_id):
+    """Rules 63 and 64, warnings 27 and 28: definition kinds, a claim's `about` and its fit with the setups of its
+    evidence (spec §3.2, §3.3.5, §3.4)."""
+    framed = set()                                   # definitions named in a setup or an `about`
+    in_setup = {}                                    # evidence ID -> definition IDs its setup names
+    for e in coll["evidence"]:
+        e = as_dict(e)
+        names = set()
+        for ids_ in as_dict(e.get("setup")).values():
+            names |= {d for d in as_list(ids_) if isinstance(d, str)}
+        in_setup[e.get("id")] = names
+        framed |= names
+    terms = {}
+    for d in coll["definitions"]:
+        d = as_dict(d)
+        if isinstance(d.get("term"), str):
+            terms[d["term"].strip().lower()] = d.get("id")
+        if "kind" in d and d["kind"] not in ENUM["definition_kind"]:
+            r.err("63", f"definitions:{d.get('id')}.kind",
+                  f"'{d['kind']}' is not a kind: {', '.join(sorted(ENUM['definition_kind']))}")
+
+    for cid, c in claims.items():
+        w = f"claims:{cid}"
+        about = c.get("about")
+        if is_assumption(c):
+            if about is not None:
+                r.err("64", f"{w}.about", "an assumption claim has no about: it is taken as given, not found")
+            continue
+        if about is None:
+            if c.get("role") == "principal":
+                r.err("64", w, "a principal claim needs about: its atom as subject, relation, object, comparator "
+                               "and conditions (§3.3.5)")
+            elif c.get("role") in ("supporting", "secondary"):
+                r.warn("W27", w, "no about: record the claim's atom (subject, relation, object, comparator, "
+                                 "conditions) so the claim can be found by what it is about")
+            continue
+        if not isinstance(about, dict):
+            r.err("64", f"{w}.about", "an object {subject, relation, object, comparator, conditions}")
+            continue
+        extra = set(about) - set(ABOUT_SLOTS)
+        if extra:
+            r.err("64", f"{w}.about", f"the slots are {', '.join(ABOUT_SLOTS)}, not {sorted(extra)}")
+        slots = []                                   # (path, value) of every slot value
+        for f in ("subject", "relation"):
+            v = about.get(f)
+            if not isinstance(v, str) or not v.strip():
+                r.err("64", f"{w}.about.{f}", "a non-empty string")
+            elif f == "subject":
+                slots.append((f, v))
+        rel = about.get("relation")
+        if isinstance(rel, str) and DEF_ID_RE.match(rel.strip()):
+            r.err("64", f"{w}.about.relation", "the relation is text, what is asserted of the subject; never an ID")
+        for f in ("object", "comparator"):
+            if f not in about:
+                r.err("64", f"{w}.about", f"missing {f} (null when there is none)")
+                continue
+            v = about[f]
+            if v is None:
+                continue
+            if f == "object" and isinstance(v, list):
+                if not v:
+                    r.err("64", f"{w}.about.object", "a list of measures is not empty")
+                for i, x in enumerate(v):
+                    d = by_id(x, "definitions") if isinstance(x, str) and DEF_ID_RE.match(x) else None
+                    if d is None or d.get("kind") != "measure":
+                        r.err("64", f"{w}.about.object[{i}]", "a list in object holds only IDs of definitions of "
+                                                              "kind measure (atoms grouped by measure, §8 rule 2)")
+                    slots.append((f"object[{i}]", x))
+            elif isinstance(v, str) and v.strip():
+                slots.append((f, v))
+            else:
+                r.err("64", f"{w}.about.{f}", "null, a definition ID or a short text" +
+                      (", or a list of measure definition IDs" if f == "object" else ""))
+        conds = about.get("conditions")
+        if not isinstance(conds, list):
+            r.err("64", f"{w}.about.conditions", "a list (empty when the claim holds without conditions)")
+        else:
+            for i, v in enumerate(conds):
+                if isinstance(v, str) and v.strip():
+                    slots.append((f"conditions[{i}]", v))
+                else:
+                    r.err("64", f"{w}.about.conditions[{i}]", "a definition ID or a short text")
+        marked = set(TERM_RE.findall(c.get("statement") or "")) if isinstance(c.get("statement"), str) else set()
+        cited = {as_dict(s).get("evidence") for s in as_list(c.get("support"))} - {None}
+        for path, v in slots:
+            v = v.strip()
+            if DEF_ID_RE.match(v):
+                d = by_id(v, "definitions")
+                if d is None:
+                    r.err("64", f"{w}.about.{path}", f"'{v}' does not resolve to a definition")
+                    continue
+                framed.add(v)
+                if v not in marked:
+                    r.err("64", f"{w}.about.{path}", f"{v} is not marked in the statement: write [[{v}:{d.get('term')}]] "
+                                                     f"where the statement names it")
+                if (cited and d.get("kind") in SETUP_PART_KINDS
+                        and not any(v in in_setup.get(eid, set()) for eid in cited)):
+                    r.warn("W28", f"{w}.about.{path}", f"{v} ({d.get('kind')}) is part of the study the claim rests on "
+                                                       f"but no setup of its evidence ({', '.join(sorted(cited))}) "
+                                                       f"names it")
+            elif v.lower() in terms:
+                r.warn("W27", f"{w}.about.{path}", f"'{v}' is the term of {terms[v.lower()]}: give the ID instead")
+
+    for d in coll["definitions"]:
+        d = as_dict(d)
+        if d.get("id") in framed and "kind" not in d:
+            r.err("63", f"definitions:{d.get('id')}", "named in a setup or a claim's about, so it needs a kind")
 
 # Wording typical of rhetoric (spec §8 rule 9); reported only with warning W23, never alone
 RHETORIC_CUES = [

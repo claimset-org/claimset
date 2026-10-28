@@ -140,7 +140,7 @@ def _evidence(e):
         head.append("preregistered")
     lines = [f"{e.get('id')} [{_join(head)}] {e.get('description', '')}"]
     setup = e.get("setup") if isinstance(e.get("setup"), dict) else {}
-    parts = [f"{role} {', '.join(str(d) for d in setup[role])}" for role in ("compared", "data", "design", "measures")
+    parts = [f"{role} {', '.join(str(d) for d in setup[role])}" for role in ("studied", "cases", "procedure", "lens", "context")
              if isinstance(setup.get(role), list) and setup[role]]
     if parts:
         lines.append(f"  setup: {'; '.join(parts)}")
@@ -197,7 +197,7 @@ def render(doc):
                   key=lambda c: order.get(c.get("role"), 3))           # stable: file order within a role
     sections = [
         ("DEFINITIONS", doc.get("definitions"),
-         lambda d: [f"{d.get('id')} {d.get('term')}: {d.get('definition')}"
+         lambda d: [f"{d.get('id')} " + (f"[{d['kind']}] " if d.get("kind") else "") + f"{d.get('term')}: {d.get('definition')}"
                     + (f" [source {_s(d['source']) if not isinstance(d['source'], dict) else d['source'].get('target')}]"
                        if d.get("source") else "")]),
         ("CLAIMS", main, _claim),

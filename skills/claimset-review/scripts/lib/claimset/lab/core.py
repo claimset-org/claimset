@@ -25,14 +25,14 @@ PREFIX = {
     "actor": "AC", "question": "Q", "hypothesis": "H", "status": "ST", "assumption": "AS",
     "plan": "PL", "approval": "AP", "run": "RN", "result": "RS", "decision": "DC",
     "deviation": "DV", "check": "CK", "artefact": "AR", "note": "NT", "merge": "MG",
-    "paper": "PA", "relocation": "MV",
+    "paper": "PA", "relocation": "MV", "term": "TM",
 }
 INIT_ID = "INIT"
 
 #: Event types whose bodies this version of the tool can write and fully check.
 IMPLEMENTED = {"init", "actor", "question", "hypothesis", "status", "assumption",
                "decision", "check", "artefact", "note", "plan", "approval", "run", "result",
-               "deviation", "merge", "paper", "relocation"}
+               "deviation", "merge", "paper", "relocation", "term"}
 
 #: Event types that are written only to the main log, never to an agent log (§3.5).
 MAIN_ONLY = {"init", "actor", "merge", "paper", "relocation"}
@@ -55,7 +55,16 @@ ENUM = {
     "run_label": {"confirmatory", "exploratory"},
     "exit_status": {"success", "failed", "crashed", "cancelled"},
     "status_rule": {"supported", "not_supported", "neither"},
+    # Kinds of definitions and roles of a study's setup, as in the claimset specification (§3.2, §3.4)
+    "term_kind": {"method", "intervention", "population", "data", "setting", "design", "measure", "concept",
+                  "theory", "other"},
 }
+SETUP_ROLES = ("studied", "cases", "procedure", "lens", "context")
+ABOUT_SLOTS = ("subject", "relation", "object", "comparator", "conditions")
+#: Kinds of the parts a plan's setup should name when a hypothesis it tests is about them (§5.7.6).
+SETUP_PART_KINDS = {"method", "intervention", "population", "data", "design", "measure"}
+TERM_ID_RE = re.compile(r"^(?:AC\d+\.)?TM\d+$")
+TERM_MARK_RE = re.compile(r"\[\[((?:AC\d+\.)?TM\d+):[^\]]+\]\]")
 
 #: The first version of this specification with decision rules (L15-L17).
 STRICT_VERSION = (0, 5)
@@ -485,8 +494,75 @@ def check_question(state, body, by, eid):
     _req(body, "text", "question")
 
 
+def check_term(state, body, by, eid):
+    _req(body, "term", "term")
+    _req(body, "definition", "term")
+    _enum(body, "kind", "term_kind", "term")
+    src = body.get("source")
+    if src is not None and (not isinstance(src, str) or not src.strip()):
+        raise LabError("schema", "term: source must be non-empty text (a reference, identifier or citation)")
+
+
+def _term_marks(state, text, etype):
+    """The term IDs marked in a text ([[TM3:…]]); each must name a term event (L21)."""
+    marks = TERM_MARK_RE.findall(text) if isinstance(text, str) else []
+    for m in marks:
+        e = state.get(m)
+        if e is None or e["type"] != "term":
+            raise LabError("L21", f"{etype}: [[{m}:…]] does not name a term recorded earlier")
+    return set(marks)
+
+
+def check_about(state, about, statement, etype="hypothesis"):
+    """A hypothesis's `about` (L21; claimset §3.3.5): slots of term IDs or text, every term ID marked."""
+    if not isinstance(about, dict):
+        raise LabError("schema", f"{etype}: about must be an object {{subject, relation, object, comparator, "
+                                 f"conditions}}")
+    extra = set(about) - set(ABOUT_SLOTS)
+    if extra:
+        raise LabError("schema", f"{etype}: about has only {', '.join(ABOUT_SLOTS)}, not {sorted(extra)}")
+    for f in ("subject", "relation"):
+        if not isinstance(about.get(f), str) or not about[f].strip():
+            raise LabError("schema", f"{etype}: about.{f} must be non-empty text or a term ID")
+    if TERM_ID_RE.match(about["relation"].strip()):
+        raise LabError("schema", f"{etype}: about.relation is text, what is asserted of the subject; never an ID")
+    values = [about["subject"]]
+    for f in ("object", "comparator"):
+        v = about.get(f)
+        if v is None:
+            continue
+        if f == "object" and isinstance(v, list) and v and all(isinstance(x, str) and x.strip() for x in v):
+            values += v
+        elif isinstance(v, str) and v.strip():
+            values.append(v)
+        else:
+            raise LabError("schema", f"{etype}: about.{f} must be null, a term ID or text"
+                                     + (", or a list of measure term IDs" if f == "object" else ""))
+    conds = about.get("conditions", [])
+    if not isinstance(conds, list) or not all(isinstance(x, str) and x.strip() for x in conds):
+        raise LabError("schema", f"{etype}: about.conditions must be a list of term IDs or texts")
+    values += conds
+    marked = _term_marks(state, statement, etype)
+    if isinstance(about.get("object"), list):
+        for x in about["object"]:
+            e = state.latest(x) if TERM_ID_RE.match(x) else None
+            if e is None or e["type"] != "term" or (not is_withheld(e) and e["body"].get("kind") != "measure"):
+                raise LabError("L21", f"{etype}: a list in about.object holds only terms of kind measure")
+    for v in values:
+        v = v.strip()
+        if TERM_ID_RE.match(v):
+            _ref(state, v, etype, "about", {"term"})
+            if v not in marked:
+                raise LabError("L21", f"{etype}: {v} is named in about but not marked in the statement "
+                                      f"([[{v}:term]])")
+
+
 def check_hypothesis(state, body, by, eid):
     _req(body, "statement", "hypothesis")
+    if body.get("about") is not None:
+        check_about(state, body["about"], body["statement"])
+    else:
+        _term_marks(state, body["statement"], "hypothesis")
     _ref(state, _req(body, "question", "hypothesis"), "hypothesis", "question", {"question"})
     origin = _enum(body, "origin", "origin", "hypothesis")
     prompted = body.get("prompted_by") or []
@@ -643,6 +719,22 @@ def plan_warnings(state, body):
         out.append(f"{', '.join(explored)} came from exploration{via}; say with --new-data what "
                    f"this test uses that those runs did not (new data, a new seed that changes the sample, "
                    f"new models), or the confirmatory run may only repeat them")
+    if body.get("kind") == "confirmatory" and not body.get("setup"):
+        out.append("no setup: name the parts of the test as terms by role (--studied, --cases, --procedure, --lens, "
+                   "--context), so that the claim's evidence carries them and a later change of measure or "
+                   "comparator shows")
+    elif body.get("setup"):
+        planned = setup_terms(state, body["setup"])
+        for h in hyps:
+            hv = state.latest(h)
+            if hv is None or is_withheld(hv):
+                continue
+            missing = [t for t, k in about_terms(state, hv["body"].get("about")).items()
+                       if k in SETUP_PART_KINDS and t not in planned]
+            if missing:
+                out.append(f"{h} is about {', '.join(missing)}, which the plan's setup does not name: the test would "
+                           f"decide a hypothesis about something it does not study or measure (add them to the "
+                           f"setup, or revise the hypothesis)")
     rule = body.get("decision") if isinstance(body.get("decision"), dict) else {}
     params = rule.get("parameters") if isinstance(rule.get("parameters"), dict) else {}
     if not body.get("exclusions"):
@@ -799,8 +891,45 @@ def check_note(state, body, by, eid):
     _refs(state, body.get("refers_to"), "note", "refers_to")
 
 
+def check_setup(state, setup, etype="plan"):
+    """A plan's `setup` (L21; claimset §3.4): roles naming term events."""
+    if not isinstance(setup, dict) or not setup:
+        raise LabError("schema", f"{etype}: setup must be an object of roles ({', '.join(SETUP_ROLES)}) naming terms")
+    for role, ids in setup.items():
+        if role not in SETUP_ROLES:
+            raise LabError("schema", f"{etype}: setup roles are {', '.join(SETUP_ROLES)}, not '{role}'")
+        if not isinstance(ids, list) or not ids:
+            raise LabError("schema", f"{etype}: setup.{role} must be a non-empty list of term IDs")
+        _refs(state, ids, etype, f"setup.{role}", {"term"})
+
+
+def setup_terms(state, setup):
+    """The term roots a setup names."""
+    out = set()
+    for ids in (setup or {}).values() if isinstance(setup, dict) else []:
+        out |= {state.root(i) for i in ids if isinstance(i, str) and state.get(i) is not None}
+    return out
+
+
+def about_terms(state, about):
+    """The term roots an `about` names, with their kinds."""
+    if not isinstance(about, dict):
+        return {}
+    vals = [about.get("subject"), about.get("comparator")] + list(about.get("conditions") or [])
+    obj = about.get("object")
+    vals += obj if isinstance(obj, list) else [obj]
+    out = {}
+    for v in vals:
+        if isinstance(v, str) and TERM_ID_RE.match(v.strip()) and state.get(v.strip()) is not None:
+            e = state.latest(v.strip())
+            out[state.root(v.strip())] = None if is_withheld(e) else e["body"].get("kind")
+    return out
+
+
 def check_plan(state, body, by, eid):
     kind = _enum(body, "kind", "plan_kind", "plan")
+    if body.get("setup") is not None:
+        check_setup(state, body["setup"])
     _req(body, "design", "plan")
     _req(body, "analysis", "plan")
     hyps = body.get("hypotheses") or []
@@ -934,6 +1063,7 @@ BODY_CHECKS = {
     "decision": check_decision, "check": check_check, "artefact": check_artefact, "note": check_note,
     "plan": check_plan, "approval": check_approval, "run": check_run, "result": check_result,
     "deviation": check_deviation, "merge": check_merge, "paper": check_paper, "relocation": check_relocation,
+    "term": check_term,
 }
 
 

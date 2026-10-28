@@ -92,8 +92,8 @@ def revision_v2(v1):
     d = rv._content(v1)
     d["paper"]["id"] = DOI
     claims = {c["id"]: c for c in d["claims"]}
-    claims["C2"]["statement"] = ("Method M improves [[D1:forecast skill]] over the seasonal naive benchmark on UK "
-                                 "monthly retail sales series.")
+    claims["C2"]["statement"] = ("[[D2:Method M]] improves [[D1:forecast skill]] over the [[D3:seasonal naive "
+                                 "method]] on every store network series of the [[D4:UK monthly retail sales]].")
     claims["C2"]["limitations"] = ["L1", "L2"]
     claims["C3"]["check"] = "tested"
     claims["C3"]["check_evidence"] = "E2"
@@ -102,6 +102,7 @@ def revision_v2(v1):
                              "calendar.", "affects": ["C2"], "impact": "reduces_transferability", "mitigation": "none"})
     d["evidence"].append({"id": "E2", "profile": "quant", "description": "Pairwise correlation of method M's "
                           "forecast errors across the 1,200 series of E1.", "design": "other",
+                          "setup": {"studied": ["D2"], "cases": ["D4"]},
                           "results": [{"id": "R1", "quantity": "largest absolute cross-series correlation of "
                                                                "forecast errors", "value": 0.12}],
                           "artefacts": ["A1"], "availability": {"level": "public"}})

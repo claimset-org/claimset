@@ -32,6 +32,26 @@ def fixture_claimset():
             c.pop("novelty", None)
         elif c.get("novelty") == "new":
             c["novelty"] = "no_prior_found"
+    # Kinds and atoms, added in v0.30 (spec §3.2, §3.3.5)
+    kinds = {"D1": "method", "D2": "concept", "D3": "concept", "D4": "method", "D5": "method",
+             "D6": "method", "D7": "method", "D8": "method", "D9": "method"}
+    for dfn in d["definitions"]:
+        dfn["kind"] = kinds[dfn["id"]]
+    about = {
+        "C1": {"subject": "D4", "relation": "accepts models without", "object": "D3", "comparator": None,
+               "conditions": ["D9", "D8"]},
+        "C3": {"subject": "D6", "relation": "gives the same admissibility decision as", "object": None,
+               "comparator": "D5", "conditions": ["D8", "random additive ETS models"]},
+        "C4": {"subject": "D7", "relation": "gives the same admissibility decision as", "object": None,
+               "comparator": "the roots of the cancelled MA polynomial", "conditions": ["D8", "random additive ETS models"]},
+        "C16": {"subject": "the check in smooth", "relation": "gives the same decision as", "object": None,
+                "comparator": "the numpy prototype", "conditions": ["D8", "random additive ETS models"]},
+        "C22": {"subject": "the stability condition of the ADAM monograph", "relation": "holds for a model whose",
+                "object": "weights grow", "comparator": None, "conditions": ["ETS(A,N,A) with m = 12"]},
+    }
+    for c in d["claims"]:
+        if c["id"] in about:
+            c["about"] = about[c["id"]]
     return d
 
 
@@ -350,7 +370,10 @@ class TestCliWarnings(TestCli):
         self.assertEqual((code, out), (0, "PL1"))
         self.assertIn("--new-data", err)
         self.assertIn("edge_band", err)
-        code, out, err = self.plan("--new-data", "seeds 100-199", "--exclusion", "edge=within 1e-8 of 1")
+        self.assertIn("no setup", err)
+        self.run_cli("lab", "term", "X", "--kind", "method", "--definition", "Method X as run.", "--by", "AC2")
+        code, out, err = self.plan("--new-data", "seeds 100-199", "--exclusion", "edge=within 1e-8 of 1",
+                                   "--studied", "TM1")
         self.assertEqual((code, out, err), (0, "PL2", ""))
         body = Lab(Path(self.tmp.name) / "lab").state().get("PL2")["body"]
         self.assertEqual(body["new_data"], "seeds 100-199")
@@ -358,6 +381,37 @@ class TestCliWarnings(TestCli):
         code, _, err = self.plan("--exclusion", "no rule")
         self.assertEqual(code, 1)
         self.assertIn("--exclusion", err)
+
+    def test_hypothesis_about_and_plan_setup(self):
+        """Lab record v0.12: terms, a hypothesis's about, a plan's setup, and the warning when the plan does not
+        study what the hypothesis is about (§5.7.6)."""
+        self.setup_lab()
+        for term, kind in (("X", "method"), ("Y", "method"), ("MASE", "measure"), ("MSIS", "measure"),
+                           ("M3 monthly", "data")):
+            self.run_cli("lab", "term", term, "--kind", kind, "--definition", f"{term} as used here.", "--by", "AC2")
+        code, out, err = self.run_cli("lab", "hypothesis", "[[TM1:X]] has lower [[TM3:MASE]] than [[TM2:Y]] on "
+                                      "[[TM5:M3 monthly]].", "--question", "Q1", "--subject", "TM1", "--relation",
+                                      "has lower error than", "--object", "TM3", "--comparator", "TM2",
+                                      "--condition", "TM5", "--by", "AC2")
+        self.assertEqual((code, out), (0, "H2"))
+        about = Lab(Path(self.tmp.name) / "lab").state().get("H2")["body"]["about"]
+        self.assertEqual(about, {"subject": "TM1", "relation": "has lower error than", "object": "TM3",
+                                 "comparator": "TM2", "conditions": ["TM5"]})
+        base = ("lab", "plan", "--kind", "confirmatory", "--hypotheses", "H2", "--design", "d", "--analysis", "a",
+                "--framework", "deterministic", "--quantity", "d=mean difference", "--supported", "d > 0",
+                "--not-supported", "d < 0", "--by", "AC2")
+        code, _, err = self.run_cli(*base, "--studied", "TM1", "TM2", "--cases", "TM5", "--lens", "TM4")
+        self.assertEqual(code, 0)
+        self.assertIn("TM3", err)                       # the hypothesis is about MASE; the plan measures MSIS
+        code, _, err = self.run_cli(*base, "--studied", "TM1", "TM2", "--cases", "TM5", "--lens", "TM3")
+        self.assertEqual((code, err), (0, ""))
+        # L21: a term named in about must be marked in the statement; setup names only terms
+        code, _, err = self.run_cli("lab", "hypothesis", "X beats Y.", "--question", "Q1", "--subject", "TM1",
+                                    "--relation", "beats", "--by", "AC2")
+        self.assertEqual(code, 1)
+        self.assertIn("L21", err)
+        code, _, err = self.run_cli(*base, "--studied", "H2")
+        self.assertEqual(code, 1)
 
 
 if __name__ == "__main__":
