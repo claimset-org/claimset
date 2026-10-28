@@ -1,8 +1,15 @@
-# Claimset Lab Record — Specification v0.12 (draft)
+# Claimset Lab Record — Specification v0.13 (draft)
 
-Status: working draft · Date: 2026-10-28 · Supersedes v0.11 · Companion to the claimset specification (`spec/claimset-v0.31.md`) and the revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-28 · Supersedes v0.12 · Companion to the claimset specification (`spec/claimset-v0.32.md`) and the revision specification (`spec/claimset-revision-v0.2.md`)
 
-## Changes since v0.11
+## Changes since v0.12
+
+Claimset v0.32 records results as observations of variables in any field.
+
+- The term kind `measure` is `variable` (§5.19, L21), as in claimset §3.2. Terms recorded with `measure` are read as `variable`.
+- Export writes each result as an observation (claimset §3.4): the result's `quantity` becomes the observation's `variable`, the term it names when one matches, and its `conditions` keep their keys and values, with term IDs replaced by definition IDs (§9).
+
+## Changes in v0.12 (since v0.11)
 
 A pre-registration says what will be studied, on what, how and measured how, before the data are seen; the frames that specify studies across fields (PICO for trials, SPIDER for qualitative work) are that list. Claimset v0.30 records the same frame in a claimset: the parts of a study as definitions with a kind, named by role in each evidence object's `setup`, and each claim's atom in `about`. The lab record is where that frame is fixed in advance, so it now records it, and the claimset is exported from it instead of being written afterwards.
 
@@ -283,7 +290,7 @@ Registers a person or agent who will write events. Mirrors claimset contributors
 - `question`: the `Q` it addresses.
 - `origin`: `a_priori` (proposed before looking at results) or `from_exploration` (suggested by results).
 - `prompted_by`: required for `from_exploration`: the result, run or note IDs that suggested it.
-- `about`: optional, recommended: the atom of the statement, as in claimset §3.3.5: `{subject, relation, object, comparator, conditions}`. Each slot except `relation` names a term (`TM3`) or gives short text; `object` may be a list of terms of kind `measure`; `object` and `comparator` may be `null`; `conditions` is a list. Every term `about` names is marked in the statement (`[[TM3:MASE]]`), and every mark names a term (L21). Recording the atom when the hypothesis is written fixes what it is about before any test: the measure, the comparator, the cases.
+- `about`: optional, recommended: the atom of the statement, as in claimset §3.3.5: `{subject, relation, object, comparator, conditions}`. Each slot except `relation` names a term (`TM3`) or gives short text; `object` may be a list of terms of kind `variable`; `object` and `comparator` may be `null`; `conditions` is a list. Every term `about` names is marked in the statement (`[[TM3:MASE]]`), and every mark names a term (L21). Recording the atom when the hypothesis is written fixes what it is about before any test: the measure, the comparator, the cases.
 
 A revised hypothesis is a new `H` event; the old one gets a `status` event with `to: revised` and `revised_to` naming the new one.
 
@@ -395,7 +402,7 @@ The tool warns, and records nothing, when:
 - a decided plan declares an exclusion and no result of its deciding runs has a `quantity` containing `excluded` or the exclusion's name (at `verdict`);
 - a confirmatory run has the same `command`, `code_version`, `seeds` and `parameters` as a successful confirmatory run of another plan (at `run`, and as a note of `verify`): one computation recorded twice; one plan naming both hypotheses would have needed one run;
 - a confirmatory plan has no `setup` (at `plan`);
-- a plan's `setup` does not name a term that the `about` of a hypothesis it tests names, when the term's kind is `method`, `intervention`, `population`, `data`, `design` or `measure` (at `plan`): the test would decide a hypothesis about something it does not study or measure. A hypothesis about MASE tested by a plan that measures MSIS is a switched outcome; one about a comparison with N tested by a plan that runs only M and P is a switched comparator. Revise the hypothesis, or add the part to the setup.
+- a plan's `setup` does not name a term that the `about` of a hypothesis it tests names, when the term's kind is `method`, `intervention`, `population`, `data`, `design` or `variable` (at `plan`): the test would decide a hypothesis about something it does not study or measure. A hypothesis about MASE tested by a plan that measures MSIS is a switched outcome; one about a comparison with N tested by a plan that runs only M and P is a switched comparator. Revise the hypothesis, or add the part to the setup.
 
 #### 5.7.7 Plans that answer a review
 
@@ -495,7 +502,7 @@ Papers split a study's results between them; the split must not decide what is r
 
 `{term, kind, definition, source}`: a term the study names: what it studies or compares, the cases, the procedure, what it measures, the concepts and theories it uses or finds (claimset §3.2).
 - `term`: the term as the study writes it. Required.
-- `kind`: `method` · `intervention` · `population` · `data` · `setting` · `design` · `measure` · `concept` · `theory` · `other`, as in claimset §3.2. Required.
+- `kind`: `method` · `intervention` · `population` · `data` · `setting` · `design` · `variable` · `concept` · `theory` · `other`, as in claimset §3.2 (`measure` in records written under v0.12 is read as `variable`). Required.
 - `definition`: what the term means in this study, with what the study specifies (settings, subset, horizon, aggregation). For the study's own method or model, every equation that defines it, as the code implements it (claimset §3.2). Required.
 - `source`: optional: where a borrowed term is defined (a DOI, an arXiv ID, a citation).
 
@@ -523,7 +530,7 @@ L17. A status that names a plan, or that cites a decided plan's deciding runs or
 L18. A paper has a valid name, unique among the record's papers, and names at least one question; no question is named by two papers (each correction chain counted once, its latest version in force).
 L19. A lab inside `claimset/<name>/lab` belongs to the study `<name>`: its study (from `init` or the latest relocation that names one) is `<name>`, and records begun under v0.6 or later name a study.
 L20. A record with a study branch is written only in the checkout of that branch; a lab in `claimset/<study>/lab` inside a git repository is written only on its study branch (adopted, §3.4).
-L21. A hypothesis's `about` and a plan's `setup` name only `term` events; every term mark in a hypothesis's statement (`[[TM3:…]]`) names a term; every term `about` names is marked in the statement; a list in `about.object` names only terms of kind `measure`.
+L21. A hypothesis's `about` and a plan's `setup` name only `term` events; every term mark in a hypothesis's statement (`[[TM3:…]]`) names a term; every term `about` names is marked in the statement; a list in `about.object` names only terms of kind `variable`.
 
 The tool enforces L1–L5 and L8–L21 mechanically, and refuses L6 and L7 violations. L15–L17 apply to records begun under v0.5 or later, and to records whose `init` is withheld. Where a check depends on withheld content (a withheld run, result or plan), `verify` does not report it as a violation; withholding lowers verifiability instead (§8).
 
@@ -594,7 +601,7 @@ Hypotheses without a final status are counted as open; they are not forced close
 | `term` | a definition (`D1`, `D2`, … in record order, each correction chain once, its latest version) with `term`, `kind`, `definition` and `source` (as text: the completion list asks for it to become an entry of `references`). Term marks and term IDs in statements, `about` and `setup` are replaced by the definition IDs |
 | `hypothesis` named by no decided plan, with final status `supported`, `not_supported` or `inconclusive` | an exploratory claim, the same way, from the latest version of the hypothesis and its final status |
 | `hypothesis` otherwise | not a claim; counted in `paper.exploration` |
-| the runs behind a verdict or final status | one evidence object per claim, from the runs the status names as evidence, directly or through their results: `lab_runs`, `results` (one per `result` event: `quantity`, `value`, `unit`, `interval`, `conditions`), `execution` (`code_version` when the runs share one), `setup` (the setups of the plans the runs name, merged by role), default `profile: quant`, `design: other`, `availability: public`. The claim's support is `empirical_quant` pointing to the evidence and its results |
+| the runs behind a verdict or final status | one evidence object per claim, from the runs the status names as evidence, directly or through their results: `lab_runs`, `results` (one per `result` event, as observations: its `quantity` as `variable` (the term's definition ID when a term of kind `variable` has that name), `value`, `unit`, `interval`, `conditions`), `execution` (`code_version` when the runs share one), `setup` (the setups of the plans the runs name, merged by role), default `profile: quant`, `design: other`, `availability: public`. The claim's support is `empirical_quant` pointing to the evidence and its results |
 | `plan` | `planning`, `planned_at`, `planned_at_anchor` and `test` on the claims of its verdicts (below). `test` is the plan's decision rule as written before the run: `framework`, `parameters`, `quantities`, `supported`, `not_supported`, `verdict` (`computed` when the rule has quantities, otherwise `judged`), `runs`, `lab_plan` (the plan's ID), `flags` (§5.7.5) and `addresses` (§5.7.7) |
 | `deviation` | `planning: confirmatory_with_deviations`, and a limitation on the affected claim: `category: analytic_flexibility`, `impact: could_bias_magnitude`, `mitigation: none`, statement naming the run, the plan, what differed and why |
 | `assumption` | assumption claim (without novelty) with `assumption_category` and `check`; `check_evidence` when it names a run or result used in an evidence object |

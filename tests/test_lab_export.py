@@ -206,7 +206,7 @@ class TestTerms(ExportCase):
     def test_definitions_about_and_setup(self):
         draft = self.out["draft"]
         self.assertEqual([(d["id"], d["term"], d["kind"]) for d in draft["definitions"]],
-                         [("D1", "X", "method"), ("D2", "naive", "method"), ("D3", "Y error", "measure"),
+                         [("D1", "X", "method"), ("D2", "naive", "method"), ("D3", "Y error", "variable"),
                           ("D4", "monthly series", "data")])
         c = self.claim(self.out, self.hx)
         self.assertEqual(c["statement"], "[[D1:X]] has lower [[D3:Y error]] than [[D2:naive]] on "
@@ -226,6 +226,18 @@ class TestTerms(ExportCase):
         rep = validate(draft)
         self.assertEqual([e for e in rep.errors if e["rule"] in ("61", "63", "64")], [])
         self.assertNotIn(f"claims.{c['id']}.about", self.todo(self.out))
+
+    def test_results_name_their_variable_term(self):
+        """Lab record v0.13: a result whose quantity is the name of a term of kind variable is exported with that
+        definition as its variable; kind measure (v0.12) is exported as variable."""
+        self.add("term", {"term": "mean relative MASE reduction", "kind": "measure", "definition": "As run."})
+        out = export(self.lab)
+        d = next(x for x in out["draft"]["definitions"] if x["term"] == "mean relative MASE reduction")
+        self.assertEqual(d["kind"], "variable")
+        c = self.claim(out, self.hx)
+        ev = next(e for e in out["draft"]["evidence"] if e["id"] == c["support"][0]["evidence"])
+        self.assertEqual(ev["results"][0]["variable"], d["id"])
+        self.assertNotIn("quantity", ev["results"][0])
 
     def test_term_needs_kind_and_definition(self):
         for body in ({"term": "Z", "definition": "z"}, {"term": "Z", "kind": "algorithm", "definition": "z"},

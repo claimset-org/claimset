@@ -56,13 +56,16 @@ ENUM = {
     "exit_status": {"success", "failed", "crashed", "cancelled"},
     "status_rule": {"supported", "not_supported", "neither"},
     # Kinds of definitions and roles of a study's setup, as in the claimset specification (§3.2, §3.4)
-    "term_kind": {"method", "intervention", "population", "data", "setting", "design", "measure", "concept",
+    # `measure` (lab record v0.12) is read as `variable` (v0.13)
+    "term_kind": {"method", "intervention", "population", "data", "setting", "design", "variable", "measure", "concept",
                   "theory", "other"},
 }
 SETUP_ROLES = ("studied", "cases", "procedure", "lens", "context")
 ABOUT_SLOTS = ("subject", "relation", "object", "comparator", "conditions")
 #: Kinds of the parts a plan's setup should name when a hypothesis it tests is about them (§5.7.6).
-SETUP_PART_KINDS = {"method", "intervention", "population", "data", "design", "measure"}
+SETUP_PART_KINDS = {"method", "intervention", "population", "data", "design", "variable", "measure"}
+#: Term kinds of lab record v0.12 and their names since v0.13.
+RENAMED_KINDS = {"measure": "variable"}
 TERM_ID_RE = re.compile(r"^(?:AC\d+\.)?TM\d+$")
 TERM_MARK_RE = re.compile(r"\[\[((?:AC\d+\.)?TM\d+):[^\]]+\]\]")
 
@@ -537,7 +540,7 @@ def check_about(state, about, statement, etype="hypothesis"):
             values.append(v)
         else:
             raise LabError("schema", f"{etype}: about.{f} must be null, a term ID or text"
-                                     + (", or a list of measure term IDs" if f == "object" else ""))
+                                     + (", or a list of variable term IDs" if f == "object" else ""))
     conds = about.get("conditions", [])
     if not isinstance(conds, list) or not all(isinstance(x, str) and x.strip() for x in conds):
         raise LabError("schema", f"{etype}: about.conditions must be a list of term IDs or texts")
@@ -546,8 +549,8 @@ def check_about(state, about, statement, etype="hypothesis"):
     if isinstance(about.get("object"), list):
         for x in about["object"]:
             e = state.latest(x) if TERM_ID_RE.match(x) else None
-            if e is None or e["type"] != "term" or (not is_withheld(e) and e["body"].get("kind") != "measure"):
-                raise LabError("L21", f"{etype}: a list in about.object holds only terms of kind measure")
+            if e is None or e["type"] != "term" or (not is_withheld(e) and RENAMED_KINDS.get(e["body"].get("kind"), e["body"].get("kind")) != "variable"):
+                raise LabError("L21", f"{etype}: a list in about.object holds only terms of kind variable")
     for v in values:
         v = v.strip()
         if TERM_ID_RE.match(v):

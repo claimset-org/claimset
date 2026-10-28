@@ -103,7 +103,7 @@ def revision_v2(v1):
     d["evidence"].append({"id": "E2", "profile": "quant", "description": "Pairwise correlation of method M's "
                           "forecast errors across the 1,200 series of E1.", "design": "other",
                           "setup": {"studied": ["D2"], "cases": ["D4"]},
-                          "results": [{"id": "R1", "quantity": "largest absolute cross-series correlation of "
+                          "results": [{"id": "R1", "variable": "largest absolute cross-series correlation of "
                                                                "forecast errors", "value": 0.12}],
                           "artefacts": ["A1"], "availability": {"level": "public"}})
     return d

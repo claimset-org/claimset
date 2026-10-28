@@ -549,7 +549,9 @@ class TestRulesV014(Base):
             {"rows": []},
             {"rows": [{"id": "r1", "label": ["M"], "values": [0.8]}]},
             {"rows": [{"id": "r1", "label": [], "values": [0.8, 1.0]}]},
-            {"rows": [{"id": "r1", "label": ["M"], "values": ["0.8", 1.0]}]},
+            {"rows": [{"id": "r1", "label": ["M"], "values": [[0.8], 1.0]}]},
+            {"rows": [{"id": "r1", "label": ["M"], "values": [{"text": "no locator"}, 1.0]}]},
+            {"columns": [{"variable": "a", "unit": "ms"}, "b"]},
             {"rows": [{"id": "r1", "label": ["M"], "values": [None, None]}]},
             {"rows": [{"id": "r1", "label": ["M"], "values": [1, 2]}, {"id": "r1", "label": ["N"], "values": [1, 2]}]},
             {"artefact": "A99"},
@@ -562,10 +564,17 @@ class TestRulesV014(Base):
             claim(d, "C2")["support"][0]["results"] = ["E1.T1"]
             self.assertRule(d, "48")
 
-    def test_48_tables_only_in_quant_and_simulation(self):
+    def test_48_tables_in_any_profile_but_formal(self):
+        """v0.32: tables are observations, in any evidence but formal, with values of any type."""
         self.d["evidence"].append({"id": "E2", "profile": "qual", "description": "Interviews.",
-                                   "tables": [{"id": "T1", "description": "x", "row_labels": [],
-                                               "columns": ["a"], "rows": [{"id": "r1", "label": [], "values": [1]}]}]})
+                                   "tables": [{"id": "T1", "description": "Theme present, by participant",
+                                               "row_labels": ["participant"], "columns": ["theme present"],
+                                               "rows": [{"id": "r1", "label": ["P1"], "values": [True]},
+                                                        {"id": "r2", "label": ["P2"], "values": ["partly"]}]}]})
+        errors, _ = self.rules(self.d)
+        self.assertNotIn("48", errors)
+        self.d["evidence"][-1]["profile"] = "formal"
+        self.d["evidence"][-1]["foundation"] = "ZFC"
         self.assertRule(self.d, "48")
 
     def test_38_unresolved_table_references(self):
@@ -745,7 +754,7 @@ class TestReadingView(Base):
         self.assertLess(len(self.render(d)), len(json.dumps(d, separators=(",", ":"))))
 
     def test_appendix_d_matches_the_renderer(self):
-        spec = (ROOT / "spec" / "claimset-v0.31.md").read_text(encoding="utf-8")
+        spec = (ROOT / "spec" / f"claimset-v{__import__('claimset').SPEC_VERSION}.md").read_text(encoding="utf-8")
         self.assertIn(self.render(load("submission-native.json")), spec)
 
     def test_render_command_refuses_invalid_file(self):
@@ -1137,8 +1146,8 @@ class TestRulesV030(Base):
         self.c2["about"].update(object=None, comparator=None, conditions=[])
         self.assertValid(self.d)
 
-    def test_64_object_list_of_measures(self):
-        self.d["definitions"].append({"id": "D6", "term": "MSIS", "kind": "measure",
+    def test_64_object_list_of_variables(self):
+        self.d["definitions"].append({"id": "D6", "term": "MSIS", "kind": "variable",
                                       "definition": "Mean scaled interval score of the 95% interval."})
         self.c2["statement"] = self.c2["statement"].replace("improves", "improves [[D6:MSIS]] and")
         self.c2["about"]["object"] = ["D1", "D6"]
@@ -1200,6 +1209,317 @@ class TestRulesV030(Base):
         self.no_warning("W28")
 
 
+def framed_table(d):
+    """The native example with a group of methods, a variable and a table of observations over them (v0.32)."""
+    d["definitions"] += [
+        {"id": "D6", "term": "ETS", "kind": "method", "definition": "ETS with AICc selection."},
+        {"id": "D7", "term": "the compared methods", "kind": "method", "definition": "Method M, the seasonal naive "
+         "method and ETS.", "members": ["D2", "D3", "D6"]},
+        {"id": "D8", "term": "MSIS", "kind": "variable", "definition": "Mean scaled interval score of the 95% interval."}]
+    t = {"id": "T1", "description": "Forecast skill and MSIS of three methods on the UK monthly retail sales",
+         "conditions": {"D4": "all series"}, "row_labels": ["D7"], "columns": ["D1", {"variable": "D8", "conditions": {"horizon": 12}}],
+         "units": ["1", "1"],
+         "rows": [{"id": "r1", "label": ["D2"], "values": [0.08, 6.95]},
+                  {"id": "r2", "label": ["D3"], "values": [0, 6.71]},
+                  {"id": "r3", "label": ["D6"], "values": [0.05, None]}]}
+    d["evidence"][0]["tables"] = [t]
+    return t
+
+
+class TestRulesV032(Base):
+    """Rules 66-74 and warnings 29, 30; rules 38 and 48 as revised in v0.32 (spec §3.2, §3.4, §3.6, §3.7, §2.5)."""
+
+    def setUp(self):
+        self.d = load("submission-native.json")
+        self.e1 = self.d["evidence"][0]
+        self.c2 = claim(self.d, "C2")
+
+    def errors(self, doc=None, published=False):
+        return self.rules(doc or self.d, published)[0]
+
+    def warnings(self, doc=None):
+        return self.rules(doc or self.d)[1]
+
+    # ----- rule 66: observations -----
+    def test_66_results_of_any_value_type(self):
+        self.e1["results"] = [
+            {"id": "R1", "variable": "D1", "value": 0.08, "unit": "1", "n": 1200,
+             "conditions": {"D4": "all series", "horizon": 12}},
+            {"id": "R2", "variable": "series where method M wins", "value": "majority"},
+            {"id": "R3", "variable": "D1", "value": True},
+            {"id": "R4", "variable": "D1", "value": {"text": "M wins", "locator": "log line 4", "language": "en"}}]
+        self.assertValid(self.d)
+
+    def test_66_results_in_qualitative_evidence(self):
+        self.d["evidence"].append({"id": "E2", "profile": "qual", "description": "Interviews.",
+                                   "results": [{"id": "R1", "variable": "theme present",
+                                                "value": {"text": "I am just a nurse here.", "locator": "P07, l. 112"}}]})
+        self.assertNotIn("66", self.errors())
+
+    def test_66_broken_results(self):
+        for bad in ({"id": "R1", "quantity": "q", "value": 1},                       # renamed
+                    {"id": "R1", "value": 1},                                        # no variable
+                    {"id": "R1", "variable": "q", "value": [1]},
+                    {"id": "R1", "variable": "q", "value": {"text": "no locator"}},
+                    {"id": "R1", "variable": "q", "value": 1, "n": -1},
+                    {"id": "R1", "variable": "q", "value": 1, "conditions": {"k": [1]}},
+                    {"id": "R1", "variable": "D99", "value": 1},                     # unresolved
+                    {"id": "R1", "variable": "D2", "value": 1},                      # a method is not a variable
+                    {"id": "R1", "variable": "q", "value": 1, "read_from": {"artefact": "A1", "precision": 0.1}},
+                    {"id": "R1", "variable": "q", "value": 1, "read_from": {"artefact": "A2"}}):
+            d = copy.deepcopy(self.d)
+            d["evidence"][0]["results"] = [bad]
+            self.assertIn("66", self.errors(d), bad)
+
+    def test_66_group_dimension_takes_members(self):
+        framed_table(self.d)
+        self.assertNotIn("66", self.errors())
+        self.d["evidence"][0]["tables"][0]["rows"][0]["label"] = ["D4"]     # data, not one of the methods
+        self.assertIn("66", self.errors())
+
+    def test_66_exemplars_removed(self):
+        self.d["evidence"].append({"id": "E2", "profile": "qual", "description": "Interviews.", "exemplars": ["p1"]})
+        self.assertIn("66", self.errors())
+
+    def test_66_no_results_in_formal_evidence(self):
+        self.d["evidence"].append({"id": "E2", "profile": "formal", "description": "Proof.", "foundation": "ZFC",
+                                   "steps": [{"id": "S1", "statement": "x", "by": [], "rule": "r"}],
+                                   "results": [{"id": "R1", "variable": "q", "value": 1}]})
+        self.assertIn("66", self.errors())
+
+    # ----- rule 38: rows of bulk data -----
+    def test_38_bulk_data_rows(self):
+        self.d["artefacts"].append({"id": "A3", "kind": "data", "uri": "files/per-series.csv",
+                                    "version": "sha256:" + "0" * 64, "licence": "CC-BY-4.0",
+                                    "columns": [{"name": "series", "dimension": "D4"},
+                                                {"name": "skill", "variable": "D1", "unit": "1"}]})
+        self.e1["artefacts"] = ["A1", "A3"]
+        self.c2["support"][0]["results"] = ["A3#row=12", "A3#row=12-40"]
+        self.assertValid(self.d)
+        for bad in ("A3#row=40-12", "A1#row=3", "A9#row=1"):
+            self.c2["support"][0]["results"] = [bad]
+            self.assertIn("38", self.errors(), bad)
+
+    # ----- rule 67: figures, artefacts -----
+    def test_67_figures(self):
+        framed_table(self.d)
+        fig = {"id": "A3", "kind": "figure", "function": "data_plot", "description": "Forecast skill by method.",
+               "shows": ["E1.T1"], "encoding": {"x": "D7", "y": "D1"}, "licence": "CC-BY-4.0"}
+        self.d["artefacts"].append(fig)
+        self.c2["support"][0]["artefacts"] = ["A2", "A3"]
+        self.assertValid(self.d)
+        for change in ({"function": None}, {"function": "chart"}, {"shows": ["E1.T9"]}, {"encoding": {"depth": "D1"}},
+                       {"function": "specimen"}):
+            d = copy.deepcopy(self.d)
+            a = next(x for x in d["artefacts"] if x["id"] == "A3")
+            a.update(change)
+            if a.get("function") is None:
+                a.pop("function")
+            self.assertIn("67", self.errors(d), change)
+
+    def test_67_diagram_is_never_evidence(self):
+        self.d["artefacts"].append({"id": "A3", "kind": "figure", "function": "diagram",
+                                    "description": "The structure of method M.", "licence": "CC-BY-4.0"})
+        self.c2["support"][0]["artefacts"] = ["A3"]
+        self.assertIn("67", self.errors())
+
+    def test_67_columns_of_bulk_data(self):
+        self.d["artefacts"].append({"id": "A3", "kind": "data", "uri": "https://example.org/d.csv", "licence": "CC0-1.0",
+                                    "columns": [{"name": "x", "variable": "D1", "dimension": "D4"}]})
+        self.assertIn("67", self.errors())
+
+    def test_67_new_artefact_kinds(self):
+        for kind in ("instrument", "stimulus", "codebook", "recording"):
+            d = copy.deepcopy(self.d)
+            d["artefacts"].append({"id": "A3", "kind": kind, "uri": "https://example.org/x", "licence": "CC-BY-4.0"})
+            self.assertValid(d)
+
+    # ----- rule 68: definitions -----
+    def test_68_measure_renamed(self):
+        definition(self.d, "D1")["kind"] = "measure"
+        self.assertIn("68", self.errors())
+
+    def test_68_parts_narrower_terms_identifiers(self):
+        self.d["definitions"] += [
+            {"id": "D6", "term": "smoothing parameter of M", "kind": "variable", "definition": "The parameter.",
+             "part_of": ["D2"]},
+            {"id": "D7", "term": "seasonal M", "kind": "method", "definition": "[[D2:Method M]] with seasonality.",
+             "broader": ["D2"], "identifiers": ["wikidata:Q42"]}]
+        self.assertValid(self.d)
+        for change in ({"D6": {"part_of": ["D6"]}}, {"D6": {"part_of": ["D99"]}}, {"D7": {"broader": ["D4"]}},
+                       {"D7": {"identifiers": ["not a curie"]}}, {"D7": {"definition": "[[D99:x]] variant."}}):
+            d = copy.deepcopy(self.d)
+            for did, upd in change.items():
+                definition(d, did).update(upd)
+            errs = self.errors(d)
+            self.assertTrue({"68", "1"} & errs, change)
+
+    def test_68_link_cycle(self):
+        self.d["definitions"] += [
+            {"id": "D6", "term": "a", "kind": "concept", "definition": "a", "part_of": ["D7"]},
+            {"id": "D7", "term": "b", "kind": "concept", "definition": "b", "part_of": ["D6"]}]
+        self.assertIn("68", self.errors())
+
+    def test_68_curie_citations(self):
+        self.c2["relations"] = [{"type": "supports", "target": "ecli:EU:C:2014:317", "id_type": "curie",
+                                 "note": "The court held that search engines process personal data."}]
+        self.assertValid(self.d)
+        self.c2["relations"][0]["target"] = "no prefix"
+        self.assertIn("68", self.errors())
+
+    def test_w26_pseudocode_counts_as_definition(self):
+        self.d["definitions"].append({"id": "D9", "term": "method Q", "kind": "method",
+                                      "definition": "```\nfor t in 1..n: s = a*y[t] + (1-a)*s\n```"})
+        self.d["claims"].append({"id": "C9", "statement": "[[D9:method Q]] is unbiased.", "type": "formal",
+                                 "role": "secondary", "novelty": "no_prior_found",
+                                 "support": [{"kind": "argument", "warrant": "W9"}], "warrant": "W9",
+                                 "verification": "unchecked"})
+        self.d.setdefault("warrants", []).append({"id": "W9", "reasoning": "deductive", "premises": [], "text": "t"})
+        self.assertNotIn("W26", self.warnings())
+
+    # ----- rule 69 and warning 29: declarations -----
+    def test_69_declarations(self):
+        self.d["paper"]["declarations"] = {
+            "funding": [{"funder": "UKRI", "funder_id": "ror:001aqnf71", "award": "EP/X000000/1"}],
+            "competing_interests": "None declared.",
+            "ethics": [{"body": "Lancaster University FASS REC", "reference": "FL23-001", "decision": "approved"}],
+            "consent": "Written consent, including publication of anonymised excerpts."}
+        self.assertValid(self.d)
+        for bad in ({"funding": [{"award": "x"}]}, {"ethics": [{"body": "x", "decision": "maybe"}]},
+                    {"competing_interests": ""}, {"conflicts": "none"}):
+            d = copy.deepcopy(self.d)
+            d["paper"]["declarations"].update(bad)
+            self.assertIn("69", self.errors(d), bad)
+
+    def test_w29_native_without_declarations(self):
+        self.assertNotIn("W29", self.warnings())
+        self.d["paper"].pop("declarations")
+        self.assertIn("W29", self.warnings())
+        self.assertNotIn("W29", self.warnings(converted_base()) if "declarations" not in converted_base()["paper"]
+                         else set())
+
+    # ----- rule 70: packages -----
+    def test_70_published_file_has_no_relative_uri(self):
+        d = load("published-native.json")
+        d["artefacts"][0]["uri"] = "files/code.zip"
+        self.assertIn("70", self.errors(d, published=True))
+
+    def test_70_package(self):
+        import hashlib
+        import tempfile
+        from claimset.validate import validate_path
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "bag"
+            (root / "data" / "files").mkdir(parents=True)
+            fig = root / "data" / "files" / "fig1.png"
+            fig.write_bytes(b"not really a png")
+            digest = hashlib.sha256(fig.read_bytes()).hexdigest()
+            d = copy.deepcopy(self.d)
+            d["artefacts"].append({"id": "A3", "kind": "figure", "function": "diagram", "description": "Design.",
+                                   "uri": "files/fig1.png", "version": f"sha256:{digest}", "licence": "CC-BY-4.0"})
+            (root / "data" / "paper.claimset.json").write_text(json.dumps(d), encoding="utf-8")
+            (root / "bagit.txt").write_text("BagIt-Version: 1.0\nTag-File-Character-Encoding: UTF-8\n")
+            claimset_digest = hashlib.sha256((root / "data" / "paper.claimset.json").read_bytes()).hexdigest()
+            manifest = root / "manifest-sha256.txt"
+            manifest.write_text(f"{digest}  data/files/fig1.png\n{claimset_digest}  data/paper.claimset.json\n")
+            rep = validate_path(str(root))
+            self.assertEqual([e for e in rep.errors if e["rule"] == "70"], [])
+            fig.write_bytes(b"changed")
+            rep = validate_path(str(root))
+            self.assertTrue(any(e["rule"] == "70" for e in rep.errors))
+
+    # ----- rule 71: relations within the paper -----
+    def test_71_relations_within_the_paper(self):
+        self.d["claims"].append({"id": "C4", "statement": "[[D2:Method M]] estimates its initial states jointly.",
+                                 "type": "methodological", "role": "secondary", "novelty": "no_prior_found",
+                                 "about": {"subject": "D2", "relation": "estimates jointly", "object": "initial states",
+                                           "comparator": None, "conditions": []},
+                                 "support": [{"kind": "argument", "warrant": "W1"}], "warrant": "W1",
+                                 "relations": [{"type": "explains", "target": "C2", "id_type": "local"}],
+                                 "provenance": "author_stated"})
+        self.d.setdefault("warrants", []).append({"id": "W1", "reasoning": "deductive", "premises": [], "text": "t"})
+        self.assertNotIn("71", self.errors())
+        c4 = claim(self.d, "C4")
+        for change in ({"target": "C4"}, {"target": "C99"}, {"type": "replicates"}):
+            d = copy.deepcopy(self.d)
+            claim(d, "C4")["relations"][0].update(change)
+            self.assertIn("71", self.errors(d), change)
+        c4["depends_on"] = ["C2"]
+        self.assertIn("71", self.errors())
+        c4.pop("depends_on")
+        self.c2["relations"] = [{"type": "explains", "target": "C4", "id_type": "local"}]
+        self.assertIn("71", self.errors())                                     # a cycle of explains
+
+    # ----- rule 72: derived evidence -----
+    def test_72_derived_from(self):
+        e2 = dict(copy.deepcopy(self.e1), id="E2", derived_from=[{"evidence": "E1", "how": "subset"}])
+        self.d["evidence"].append(e2)
+        self.assertNotIn("72", self.errors())
+        for bad in ([{"evidence": "E1", "how": "copy"}], [{"evidence": "E2", "how": "subset"}],
+                    [{"evidence": "E9", "how": "subset"}], []):
+            d = copy.deepcopy(self.d)
+            d["evidence"][1]["derived_from"] = bad
+            self.assertIn("72", self.errors(d), bad)
+        self.e1["derived_from"] = [{"evidence": "E2", "how": "pooled"}]
+        self.assertIn("72", self.errors())                                     # a cycle
+
+    # ----- rule 73 and W15: assumptions of a term -----
+    def test_73_assumptions_of_a_term(self):
+        definition(self.d, "D2")["assumptions"] = ["C3"]
+        self.c2["assumptions"] = ["C1"]
+        _, warnings = self.rules(self.d)
+        self.assertNotIn("W15", warnings)                     # C3 is reached through D2, named in E1's setup
+        self.assertValid(self.d)
+        definition(self.d, "D2")["assumptions"] = ["C2"]      # not an assumption claim
+        self.assertIn("73", self.errors())
+
+    # ----- rule 74: contrasts -----
+    def test_74_contrasts(self):
+        framed_table(self.d)
+        self.e1["results"] = [{"id": "R1", "variable": "difference in forecast skill", "value": 0.03,
+                               "conditions": {"D7": "D2", "comparator": "D6"}}]
+        self.assertValid(self.d)
+        self.e1["results"][0]["conditions"]["comparator"] = "D4"             # not one of the compared methods
+        self.assertIn("74", self.errors())
+
+    # ----- warning 30 and the figure flag -----
+    def test_w30(self):
+        self.d["artefacts"].append({"id": "A3", "kind": "figure", "function": "data_plot",
+                                    "description": "Skill by horizon.", "licence": "CC-BY-4.0"})
+        self.c2["support"][0]["artefacts"] = ["A3"]
+        rep = validate(self.d)
+        self.assertIn("W30", {w["rule"] for w in rep.warnings})
+        self.assertIn("figure_without_data", rep.computed["C2"]["verifiability_flags"])
+        self.e1["results"] = [{"id": "R1", "variable": "forecast skill", "value": 0.08}]
+        self.assertIn("W30", self.warnings())                                 # text equal to D1's term
+
+    def test_specimen_read_into_observations(self):
+        self.d["artefacts"].append({"id": "A3", "kind": "figure", "function": "specimen",
+                                    "description": "Gel of the samples.", "licence": "CC-BY-4.0"})
+        self.c2["support"][0]["artefacts"] = ["A3"]
+        self.e1["results"] = [{"id": "R1", "variable": "band present", "value": True,
+                               "read_from": {"artefact": "A3", "precision": "visual"}}]
+        rep = validate(self.d)
+        self.assertNotIn("figure_without_data", rep.computed["C2"]["verifiability_flags"])
+        self.assertNotIn("W30", {w["rule"] for w in rep.warnings})
+
+    # ----- the reading view -----
+    def test_reading_view_of_v032_objects(self):
+        from claimset.render import render
+        framed_table(self.d)
+        definition(self.d, "D2")["assumptions"] = ["C3"]
+        self.c2["assumptions"] = ["C1"]
+        self.e1["results"] = [{"id": "R1", "variable": "theme", "value": {"text": "yes", "locator": "P1, l. 2"},
+                               "read_from": {"artefact": "A2", "precision": "exact"}}]
+        self.e1["derived_from"] = []
+        view = render(self.d)
+        self.assertIn("declarations funding: none", view)
+        self.assertIn("[members D2, D3, D6]", view)
+        self.assertIn("D8 {horizon: 12}", view)
+        self.assertIn('"yes" (P1, l. 2)', view)
+        self.assertIn("inherits C3", view)
+
+
 class TestMigrate(Base):
     """`claimset migrate`: setup roles renamed to those of v0.30, the version set to the current one; what needs
     judgement listed."""
@@ -1221,6 +1541,22 @@ class TestMigrate(Base):
         self.assertTrue(any(t.startswith("D2") for t in todo))
         self.assertTrue(any(t.startswith("C2") and "rule 64" in t for t in todo))
         self.assertEqual(d["schema_version"], "0.29")          # the input is not changed
+
+    def test_v032_renames_and_lists(self):
+        from claimset.migrate import migrate
+        d = load("submission-from-lab.json")
+        d["schema_version"] = "0.31"
+        definition(d, "D1")["kind"] = "measure"
+        ev = d["evidence"][0]
+        ev["results"][0] = {("quantity" if k == "variable" else k): v for k, v in ev["results"][0].items()}
+        d["artefacts"].append({"id": "A9", "kind": "figure", "description": "A plot."})
+        d["paper"].pop("declarations")
+        out, done, todo = migrate(d)
+        self.assertEqual(definition(out, "D1")["kind"], "variable")
+        self.assertIn("variable", out["evidence"][0]["results"][0])
+        self.assertNotIn("quantity", out["evidence"][0]["results"][0])
+        self.assertTrue(any(t.startswith("A9") for t in todo))
+        self.assertTrue(any(t.startswith("paper.declarations") for t in todo))
 
     def test_cli_refuses_published_file(self):
         import tempfile

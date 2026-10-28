@@ -52,6 +52,9 @@ def fixture_claimset():
     for c in d["claims"]:
         if c["id"] in about:
             c["about"] = about[c["id"]]
+    from claimset.migrate import migrate              # quantity -> variable (v0.32)
+    d, _, _ = migrate(d)
+    d["paper"]["declarations"] = {"funding": [], "competing_interests": "None declared."}
     return d
 
 
@@ -133,7 +136,7 @@ class TestValidatorChecks(unittest.TestCase):
         self.assertIn("C4", warned(rep, "W17"))
         c4 = self.claim(d, "C4")
         ev = next(e for e in d["evidence"] if e["id"] == c4["support"][0]["evidence"])
-        ev.setdefault("results", []).append({"id": "R99", "quantity": "models in the grid", "value": 536})
+        ev.setdefault("results", []).append({"id": "R99", "variable": "models in the grid", "value": 536})
         self.assertNotIn("536", " ".join(warned(validate(d), "W17").get("C4", [])))
 
     def test_w17_ignores_model_notation_and_markers(self):
@@ -386,7 +389,7 @@ class TestCliWarnings(TestCli):
         """Lab record v0.12: terms, a hypothesis's about, a plan's setup, and the warning when the plan does not
         study what the hypothesis is about (§5.7.6)."""
         self.setup_lab()
-        for term, kind in (("X", "method"), ("Y", "method"), ("MASE", "measure"), ("MSIS", "measure"),
+        for term, kind in (("X", "method"), ("Y", "method"), ("MASE", "variable"), ("MSIS", "variable"),
                            ("M3 monthly", "data")):
             self.run_cli("lab", "term", term, "--kind", kind, "--definition", f"{term} as used here.", "--by", "AC2")
         code, out, err = self.run_cli("lab", "hypothesis", "[[TM1:X]] has lower [[TM3:MASE]] than [[TM2:Y]] on "
