@@ -1587,6 +1587,16 @@ class TestRulesV033(Base):
         self.assertTrue(any(t.startswith("C2: no longer inherits C3") for t in todo))
 
 
+class TestTermMarkers(Base):
+    """§8 rule 5: a defined-term marker holds plain text, never another marker (rule 1)."""
+
+    def test_nested_marker_is_an_error(self):
+        d = load("submission-native.json")
+        self.assertValid(d)
+        definition(d, "D3")["definition"] = "Compared with [[D2:method [[D1:forecast skill]] M]]."
+        self.assertRule(d, "1")
+
+
 class TestMigrate(Base):
     """`claimset migrate`: setup roles renamed to those of v0.30, the version set to the current one; what needs
     judgement listed."""

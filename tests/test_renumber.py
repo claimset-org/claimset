@@ -46,6 +46,25 @@ class TestRenumber(unittest.TestCase):
         after = validate(out)
         self.assertEqual(len(after.errors), len(before.errors))
 
+    def test_observations_and_local_relations_are_rewritten(self):
+        d = json.loads(json.dumps(self.scrambled()).replace('"D5"', '"D9"').replace("[[D5:", "[[D9:"))
+        e1 = d["evidence"][0]
+        e1["tables"] = [{"id": "T1", "description": "Forecast skill by design.", "row_labels": ["D2"],
+                         "columns": [{"variable": "D1", "conditions": {"D9": "origin 1"}}],
+                         "rows": [{"id": "r1", "label": ["D2"], "values": [0.08]}]}]
+        e1["results"] = [{"id": "R1", "variable": "D1", "value": "D9", "conditions": {"D9": "D9"}}]
+        principal = next(c for c in d["claims"] if c["role"] == "principal")
+        other = next(c for c in d["claims"] if c is not principal)
+        principal["relations"] = [{"type": "refines", "target": other["id"], "id_type": "local"}]
+        out, mapping = renumber(d)
+        self.assertEqual(validate(out).errors, [])
+        e1 = out["evidence"][0]
+        self.assertEqual(e1["tables"][0]["columns"][0]["conditions"], {"D5": "origin 1"})
+        self.assertEqual(e1["results"][0]["conditions"], {"D5": "D5"})
+        self.assertEqual(e1["results"][0]["value"], "D5")
+        rel = next(c for c in out["claims"] if c["role"] == "principal")["relations"][0]
+        self.assertEqual(rel["target"], mapping[other["id"]])
+
     def test_lab_event_ids_are_left_alone(self):
         d = load("submission-from-lab.json")
         events = [c.get("hypothesis", {}).get("lab_event") for c in d["claims"]]

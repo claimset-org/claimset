@@ -102,6 +102,7 @@ PREFIX = {"definitions": "D", "claims": "C", "evidence": "E", "warrants": "W",
 ORCID_RE = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TERM_RE = re.compile(r"\[\[(D\d+):[^\]]+\]\]")
+NESTED_MARK_RE = re.compile(r"\[\[D\d+:[^\]]*\[\[")
 
 # Rule 31: source licences that permit conversion → the licences the claimset may carry (spec §3.1).
 _BY = {"CC0-1.0", "CC-BY-4.0", "CC-BY-SA-4.0"}
@@ -962,6 +963,8 @@ def text_checks(r, where, text, ids):
     for m in TERM_RE.finditer(text):
         if ids.get(m.group(1), (None,))[0] != "definitions":
             r.err("1", where, f"defined-term marker refers to unknown definition {m.group(1)}")
+    for m in NESTED_MARK_RE.finditer(text):
+        r.err("1", where, f"a defined-term marker holds plain text, not another marker: '{m.group(0)}…' (§8 rule 5)")
     if INSTRUCTION_RE.search(text):
         r.err("safe-ingest", where, "text looks like an instruction addressed to a reader or model; remove it")
 
