@@ -745,7 +745,7 @@ class TestReadingView(Base):
         self.assertLess(len(self.render(d)), len(json.dumps(d, separators=(",", ":"))))
 
     def test_appendix_d_matches_the_renderer(self):
-        spec = (ROOT / "spec" / "claimset-v0.30.md").read_text(encoding="utf-8")
+        spec = (ROOT / "spec" / "claimset-v0.31.md").read_text(encoding="utf-8")
         self.assertIn(self.render(load("submission-native.json")), spec)
 
     def test_render_command_refuses_invalid_file(self):
@@ -1201,7 +1201,8 @@ class TestRulesV030(Base):
 
 
 class TestMigrate(Base):
-    """`claimset migrate`: setup roles renamed to those of v0.30; what needs judgement listed."""
+    """`claimset migrate`: setup roles renamed to those of v0.30, the version set to the current one; what needs
+    judgement listed."""
 
     def test_renames_roles_and_lists_what_is_left(self):
         from claimset.migrate import migrate
@@ -1214,7 +1215,8 @@ class TestMigrate(Base):
         out, done, todo = migrate(d)
         self.assertEqual(next(e for e in out["evidence"] if e["id"] == "E1")["setup"],
                          {"studied": ["D2", "D3"], "cases": ["D4"], "procedure": ["D5"], "lens": ["D1"]})
-        self.assertEqual(out["schema_version"], "0.30")
+        from claimset.validate import SCHEMA_VERSION
+        self.assertEqual(out["schema_version"], SCHEMA_VERSION)
         self.assertEqual(len(done), 5)
         self.assertTrue(any(t.startswith("D2") for t in todo))
         self.assertTrue(any(t.startswith("C2") and "rule 64" in t for t in todo))
@@ -1230,6 +1232,45 @@ class TestMigrate(Base):
             with redirect_stderr(io.StringIO()):
                 self.assertEqual(cli.main(["migrate", fh.name]), 1)
         Path(fh.name).unlink()
+
+
+class TestRulesV031(Base):
+    """Rule 65: a group's members are other definitions of its kind; no group contains itself."""
+
+    def setUp(self):
+        self.d = load("submission-native.json")
+        methods = [x["id"] for x in self.d["definitions"] if x.get("kind") == "method"]
+        self.methods = methods
+        self.d["definitions"].append({"id": "D90", "term": "the compared methods", "kind": "method",
+                                      "definition": "The methods of the benchmark, as run.", "members": methods[:2]})
+
+    def test_rule65_group_of_defined_members_passes(self):
+        self.assertGreaterEqual(len(self.methods), 2)
+        errors, warnings = self.rules(self.d)
+        self.assertNotIn("65", errors)
+
+    def test_rule65_member_of_another_kind(self):
+        other = next(x["id"] for x in self.d["definitions"] if x.get("kind") not in (None, "method"))
+        definition(self.d, "D90")["members"] = [self.methods[0], other]
+        self.assertRule(self.d, "65")
+
+    def test_rule65_unknown_member_and_empty_list(self):
+        definition(self.d, "D90")["members"] = ["D999"]
+        self.assertRule(self.d, "65")
+        definition(self.d, "D90")["members"] = []
+        self.assertRule(self.d, "65")
+
+    def test_rule65_group_contains_itself(self):
+        definition(self.d, "D90")["members"] = ["D90"]
+        self.assertRule(self.d, "65")
+        self.d["definitions"].append({"id": "D91", "term": "all methods", "kind": "method", "definition": "…",
+                                      "members": ["D90"]})
+        definition(self.d, "D90")["members"] = ["D91"]
+        self.assertRule(self.d, "65")
+
+    def test_rule65_group_without_kind(self):
+        definition(self.d, "D90").pop("kind")
+        self.assertRule(self.d, "65")
 
 
 if __name__ == "__main__":

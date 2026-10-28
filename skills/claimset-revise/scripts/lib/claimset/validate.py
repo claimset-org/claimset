@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.30"
+SCHEMA_VERSION = "0.31"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -1076,6 +1076,35 @@ def check_frame(r, coll, claims, by_id):
         d = as_dict(d)
         if d.get("id") in framed and "kind" not in d:
             r.err("63", f"definitions:{d.get('id')}", "named in a setup or a claim's about, so it needs a kind")
+
+    # Groups (rule 65): members are other definitions of the group's kind; no group contains itself
+    defs = {as_dict(d).get("id"): as_dict(d) for d in coll["definitions"]}
+    for d in defs.values():
+        if "members" not in d:
+            continue
+        did, members = d.get("id"), d.get("members")
+        if not isinstance(members, list) or not members or not all(isinstance(m, str) for m in members):
+            r.err("65", f"definitions:{did}.members", "a non-empty list of definition IDs")
+            continue
+        if not d.get("kind"):
+            r.err("65", f"definitions:{did}.kind", "a group needs a kind, the kind of its members")
+        for m in members:
+            if m == did:
+                r.err("65", f"definitions:{did}.members", "a group is not a member of itself")
+            elif m not in defs:
+                r.err("65", f"definitions:{did}.members", f"{m} does not resolve to a definition")
+            elif d.get("kind") and defs[m].get("kind") != d.get("kind"):
+                r.err("65", f"definitions:{did}.members", f"{m} is of kind {defs[m].get('kind')}, the group of kind "
+                                                          f"{d.get('kind')}: members have the group's kind")
+    def contains(group, target, seen):
+        for m in as_list(defs.get(group, {}).get("members")):
+            if m == target or (m not in seen and contains(m, target, seen | {m})):
+                return True
+        return False
+    for did, d in defs.items():
+        if isinstance(d.get("members"), list) and any(m != did and contains(m, did, {m}) for m in d["members"]
+                                                      if isinstance(m, str)):
+            r.err("65", f"definitions:{did}.members", "a group is a member of itself through other groups")
 
 # Wording typical of rhetoric (spec §8 rule 9); reported only with warning W23, never alone
 RHETORIC_CUES = [

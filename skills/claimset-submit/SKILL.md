@@ -95,6 +95,8 @@ Write each claim as an **atom** before writing its statement: *subject* (the met
 - formal result: subject the model, relation "is identifiable when", object the property or `null`, conditions the theorem's conditions.
 A finding that is not one relation (a typology, a process with stages) is a `concept` definition, named as the `object` with relation "is characterised by". `about` never changes what the statement says.
 
+**Groups.** When claims compare against a group whose members you also define (the benchmark methods, the variants of your model), define the group once with `members` listing their definitions, all of one `kind` (spec §3.2, rule 65), and name the group in `about` when the claim is about the group as a whole, a member when it is about that member. A claim about a group is not a claim about each member: if it holds for each, the statement says so ("lower error than each of the benchmark methods").
+
 Not every pattern in a table is a claim. Write a side result as a `secondary` claim only when another claim, a warrant or an open question rests on it, or when it states a loss, a limit or a null result of your method; the result table records the rest (W25).
 
 **Write each statement** as one self-contained sentence:

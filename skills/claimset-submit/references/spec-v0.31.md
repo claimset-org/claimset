@@ -1,10 +1,16 @@
-# Claimset — Specification v0.30 (draft)
+# Claimset — Specification v0.31 (draft)
 
-Status: working draft · Date: 2026-10-28 · Supersedes v0.29 (`spec/claimset-v0.29.md`) · Companions: lab record specification (`spec/lab-record-v0.12.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-28 · Supersedes v0.30 (`spec/claimset-v0.30.md`) · Companions: lab record specification (`spec/lab-record-v0.12.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.29
+## Changes since v0.30
+
+A claim about a group of methods ("CES has the lowest error of ETS, ARIMA and the Theta method") and a claim about one of them ("CES has a lower MASE than ETS") were not connected: the group was one definition whose text listed its members, so a reader looking for what is known about ETS did not find the first claim.
+
+- §3.2, *Groups*: a definition can name its `members`, the definitions of the things it groups. A claim about a group is not a claim about each member unless its statement says so. New rule 65.
+
+## Changes in v0.30 (since v0.29)
 
 A reader looking for papers asks what they studied, on what, how, and what they found about it: "which papers compare ETS with ARIMA on the M4 data by MASE", "what is known about role ambiguity among rural nurses". Until v0.29 the answer was spread over three partial records of the same thing (free-text `scope`, the forecasting-shaped `setup` of evidence, the closed lists of the qualitative profile), and the atom that §8 asks a writer to form first was never written down. This version records one frame of a study, in terms that fit any empirical design, and records each claim's atom over that frame, so that papers and claims can be found by the things they are about, whatever their field or method.
 
@@ -419,6 +425,7 @@ Retracted papers are never deleted. All their claims inherit the retraction stat
 | `term` | string | |
 | `definition` | string | One term, one meaning, used rigidly throughout |
 | `kind` | enum | What sort of thing the term names (below). Required when the definition is named in an evidence `setup` (§3.4) or a claim's `about` (§3.3.5); recommended otherwise |
+| `members` | list | For a term that names a group: the IDs of the definitions of its members, each of the same `kind` as the group (below) |
 | `source` | object or string | Where a borrowed term is defined: a reference ID (`B3`, §3.13), `{target, id_type}` as for cited support (§4), or a global claim or definition ID of another claimset |
 
 **Kinds.** The kind says what a term names, whatever role it plays in a study; the role is given by the setup (§3.4) and the claim's `about` (§3.3.5). One term has one kind.
@@ -437,6 +444,8 @@ Retracted papers are never deleted. All their claims inherit the retraction stat
 | `other` | anything else; a term often given this kind is a sign that the list needs a value | |
 
 A term the paper introduces as a finding (a theme, a typology, a newly named phenomenon) is a `concept`. The paper's own method or model is a `method`, defined in full as below.
+
+**Groups.** A term that names a group of things the paper also names one by one (the benchmark methods, the variants of a model, the data sets of an evaluation) is defined once as the group, with `members` listing the definitions of its members, and has the same kind as its members: `{"id": "D26", "term": "the benchmark methods", "kind": "method", "definition": "ETS, ARIMA and the Theta method, as the paper runs them", "members": ["D8", "D9", "D10"]}`. A claim's `about` names the group when the claim is about the group as a whole and a member when it is about that member; a claim may name a group as its subject and one of its members as its comparator. Membership lets a reader find the claims about a group when looking for one of its members; it does not make a claim about the group a claim about each member. "The PIC(*,S,N) variants are the most robust" says nothing of each variant alone, while "CES has the lowest error of the benchmark methods" says CES beats each: the statement says which. A group is not a member of itself, directly or through other groups.
 
 A definition explains in full only a term the paper introduces or uses in its own sense. A term the paper takes from elsewhere (it cites where the term comes from) is a **borrowed term**: its `definition` names the standard meaning in one line and states only what this paper specifies (e.g. `"Mean scaled interval score; here of the 95% prediction interval"`), and `source` says where the term is defined. A term the paper uses without defining or citing it, in its usual sense, needs no definition.
 
@@ -1079,6 +1088,10 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 63. A definition's `kind`, if present, is one of the values of §3.2. Every definition named in an evidence `setup` or in a claim's `about` has a `kind`.
 64. `about`: every principal claim has one; no assumption claim has one. It has `subject` and `relation`, each a non-empty string, and `conditions`, a list (possibly empty); `object` and `comparator` are present, each `null` or a slot value; `object` may instead be a non-empty list of IDs of definitions of kind `measure`. A slot value is a non-empty string: when it has the form of a definition ID (`D` followed by digits) it resolves to a definition, and that definition is marked in the claim's statement (`[[Dn:…]]`). `relation` is text, never an ID.
+
+### 10.21 Rules added in v0.31 (errors: file rejected)
+
+65. A definition's `members`, if present, is a non-empty list of IDs of other definitions, each of the same `kind` as the definition, which has one; no definition is a member of itself, directly or through other definitions' members.
 
 ### 10.4 Warnings (file accepted, warning recorded)
 

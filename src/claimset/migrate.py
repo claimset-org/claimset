@@ -1,7 +1,7 @@
-"""Bringing a claimset written under v0.23 to v0.29 to v0.30 (spec, Changes since v0.29).
+"""Bringing a claimset written under v0.23 to v0.30 to the current version (spec, Changes since v0.29).
 
 Only what is mechanical is changed: the roles of each evidence `setup` are renamed (compared -> studied,
-data -> cases, design -> procedure, measures -> lens) and `schema_version` is set to 0.30. What needs judgement
+data -> cases, design -> procedure, measures -> lens) and `schema_version` is set to the current version. What needs judgement
 is listed, not guessed: definitions named in a setup that need a `kind` (rule 63), and claims that need an
 `about` (rule 64 for principal claims, warning 27 for the others).
 """
