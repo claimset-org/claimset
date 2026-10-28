@@ -5,12 +5,15 @@ Only what is mechanical is changed:
   measures -> lens);
 - v0.32: the kind `measure` is renamed `variable`; a result's `quantity` is renamed `variable`;
 - `schema_version` is set to the current version.
+From v0.33 a claim inherits the assumptions of the methods studied only for its own subject (§3.2): the
+assumptions a claim inherited under v0.32 and no longer does are listed, to be added to its own `assumptions`
+where it does rest on them.
 What needs judgement is listed, not guessed: definitions that need a `kind` (rule 63), claims that need an `about`
 (rule 64 for principal claims, warning 27 for the others), figures that need a `function` (rule 67), the
 `exemplars` of qualitative evidence, which become excerpt results (rule 66), and declarations (warning 29).
 """
 
-from .validate import OLD_SETUP_ROLES, SCHEMA_VERSION
+from .validate import OLD_SETUP_ROLES, SCHEMA_VERSION, as_dict, as_list, inherited_assumptions
 
 
 def _is_assumption(claim):
@@ -58,6 +61,18 @@ def migrate(doc):
             done.append(f"{d.get('id')}: kind measure -> variable")
         if d.get("id") in framed and "kind" not in d:
             todo.append(f"{d['id']} ({d.get('term')}): named in a setup; give it a kind (rule 63)")
+    if str(doc.get("schema_version")) in ("0.32",):
+        defs = {d.get("id"): d for d in out.get("definitions") or [] if isinstance(d, dict)}
+        evid = {e.get("id"): e for e in out.get("evidence") or [] if isinstance(e, dict)}
+        for c in out.get("claims") or []:
+            if not isinstance(c, dict):
+                continue
+            before = inherited_assumptions({k: v for k, v in c.items() if k != "about"}, defs, evid)
+            now = set(inherited_assumptions(c, defs, evid)) | set(as_list(c.get("assumptions")))
+            lost = [a for a in before if a not in now]
+            if lost:
+                todo.append(f"{c.get('id')}: no longer inherits {', '.join(lost)}, the assumptions of a method it is "
+                            f"not about (§3.2); list in its assumptions those it rests on")
     for c in out.get("claims") or []:
         if not isinstance(c, dict) or "about" in c or _is_assumption(c):
             continue

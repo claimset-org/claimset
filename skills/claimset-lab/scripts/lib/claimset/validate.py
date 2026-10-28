@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.32"
+SCHEMA_VERSION = "0.33"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -485,6 +485,9 @@ def validate(doc, published=False, local_root=None, revision=False):
                 r.err("51", f"references:{b['id']}", "listed but never cited: list only works that are cited")
 
     # ---------- Roles and what the contributions rest on (warnings 15 and 16) ----------
+    defs_by_id = {d.get("id"): d for d in coll["definitions"] if isinstance(d, dict)}
+    evidence_by_id = {e.get("id"): e for e in coll["evidence"] if isinstance(e, dict)}
+
     def rests_on(c):
         """Claims this claim rests on: depends_on, assumptions, and the assumptions of the evidence it cites."""
         out = list(as_list(c.get("depends_on"))) + list(as_list(c.get("assumptions")))
@@ -492,7 +495,7 @@ def validate(doc, published=False, local_root=None, revision=False):
             e = by_id(as_dict(s).get("evidence"), "evidence")
             if e is not None:
                 out += list(as_list(e.get("assumptions")))
-                out += inherited_assumptions(e, by_id)
+        out += inherited_assumptions(c, defs_by_id, evidence_by_id)
         return [x for x in out if isinstance(x, str)]
 
     reached, stack = set(), [cid for cid, c in claims.items() if c.get("role") == "principal"]
@@ -1524,20 +1527,40 @@ def observations(e):
     return out
 
 
-def inherited_assumptions(e, by_id):
-    """The assumptions evidence inherits from the definitions its setup names, and their broader terms (§3.2)."""
-    out, seen = [], set()
-    stack = [d for ids_ in as_dict(e.get("setup")).values() for d in as_list(ids_) if isinstance(d, str)]
+def inherited_assumptions(c, defs, evid):
+    """The assumptions a claim inherits from the terms it rests on (§3.2, Assumptions of a term): those its
+    evidence's setup names in the roles cases, procedure, lens and context, and, of the terms studied, only its own
+    subject (each member when the subject is a group) when the setup names it; a claim without about inherits
+    from every term its setup names. A narrower term passes on the assumptions of its broader terms. `defs` and
+    `evid` map IDs to definitions and evidence objects."""
+    def members(g, seen=()):
+        out = []
+        for m in as_list(as_dict(defs.get(g)).get("members")):
+            if isinstance(m, str) and m not in seen:
+                out += [m] + members(m, seen + (g,))
+        return out
+
+    about = c.get("about") if isinstance(c.get("about"), dict) else None
+    subject = about.get("subject") if about else None
+    subjects = [subject.strip()] + members(subject.strip()) if isinstance(subject, str) else []
+    start = []
+    for s in as_list(c.get("support")):
+        e = evid.get(as_dict(s).get("evidence"))
+        for role, ids in as_dict(as_dict(e).get("setup")).items():
+            ids = [i for i in as_list(ids) if isinstance(i, str)]
+            if about is None or role != "studied":
+                start += ids
+                continue
+            named = set(ids) | {m for g in ids for m in members(g)}
+            start += [x for x in subjects if x in named or (members(x) and set(members(x)) <= named)]
+    out, seen, stack = [], set(), list(start)
     while stack:
-        did = stack.pop()
-        if did in seen:
+        did = stack.pop(0)
+        if did in seen or did not in defs:
             continue
         seen.add(did)
-        d = by_id(did, "definitions")
-        if d is None:
-            continue
-        out += [a for a in as_list(d.get("assumptions")) if isinstance(a, str)]
-        stack += [b for b in as_list(d.get("broader")) if isinstance(b, str)]
+        out += [a for a in as_list(defs[did].get("assumptions")) if isinstance(a, str) and a not in out]
+        stack += [b for b in as_list(defs[did].get("broader")) if isinstance(b, str)]
     return out
 
 

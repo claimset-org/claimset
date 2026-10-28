@@ -1,10 +1,17 @@
-# Claimset — Specification v0.32 (draft)
+# Claimset — Specification v0.33 (draft)
 
-Status: working draft · Date: 2026-10-28 · Supersedes v0.31 (`spec/claimset-v0.31.md`) · Companions: lab record specification (`spec/lab-record-v0.13.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-28 · Supersedes v0.32 (`spec/claimset-v0.32.md`) · Companions: lab record specification (`spec/lab-record-v0.13.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.31
+## Changes since v0.32
+
+Assumptions listed on a term's definition were inherited through the evidence: every claim resting on an evidence object took the assumptions of every term its setup names. A comparison of five methods then gave each claim the assumptions of all five, so that "VETS F has the highest pinball values of the five models" was shown as resting on the error assumption of VETS D, and a claim about ETS on the error assumptions of CES, against which it was only compared.
+
+- §3.2, *Assumptions of a term*: a claim inherits the assumptions of the data, design, variables and setting its evidence's setup names (roles `cases`, `procedure`, `lens`, `context`), and, of the things studied (role `studied`), only those of its own subject: the term its `about.subject` names, or each member when the subject is a group. The comparator's assumptions are not the claim's. A claim without `about` inherits from every term its setup names, as before.
+- Warning 15 and the reading view (§2.3) count and show the assumptions inherited this way.
+
+## Changes in v0.32 (since v0.31)
 
 Every field reports its findings as values of something observed on something under some conditions: a reaction time per participant and condition, the expression of a gene per cell line and treatment, the yield of a reaction per catalyst and temperature, whether a construction is attested per language and period, the outcome of an appeal per court and year, the accuracy of a model per benchmark, whether a theme appears per participant. Until v0.31 results were numbers labelled with free text, tables held numbers only, figures were opaque, the materials, registries and declarations of most fields had no place, and files could not travel with a submission. This version records results as observations over the terms of the study, the model of the W3C RDF Data Cube, SDMX and the observation models of the sciences, so that results can be found and compared across papers in any field.
 
@@ -303,7 +310,7 @@ Top-level layout:
 
 ```json
 {
-  "schema_version": "0.32",
+  "schema_version": "0.33",
   "@context": "optional",
   "paper": {},
   "contributors": [],
@@ -323,7 +330,7 @@ Top-level layout:
 
 A claimset is stored and exchanged as JSON: the canonical file, which tools validate, the platform publishes and corrections patch. A model that reads the paper is given its **reading view**: a plain-text rendering of the same claimset. JSON field names, quotation marks and the fields that serve tools, audit and publication take a large share of a file and carry nothing a reader needs; the reading view leaves them out.
 
-- **Kept:** the title, licence, source of a converted paper, declarations, contributions and exploration counts; definitions with their kind, members, the wholes they are part of, their broader terms, assumptions and identifiers; claims with their type, role, novelty (when not `no_prior_found`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes (relations within the paper as well), assumptions inherited from the definitions their evidence's setup names, and test; evidence with its description, design fields, setup, what it is derived from, estimate, observations (results and tables, with their values, units, conditions and where a value was read from) and proof steps; warrants; limitations; open questions; artefact descriptions, figure functions and the observations a figure shows; references.
+- **Kept:** the title, licence, source of a converted paper, declarations, contributions and exploration counts; definitions with their kind, members, the wholes they are part of, their broader terms, assumptions and identifiers; claims with their type, role, novelty (when not `no_prior_found`), support with its pointers and locators, assumptions, `depends_on`, limitations, warrant, strength, verification, verifiability, planning, outcome, scope, relations with their notes (relations within the paper as well), assumptions inherited from the terms they rest on (§3.2, *Assumptions of a term*), and test; evidence with its description, design fields, setup, what it is derived from, estimate, observations (results and tables, with their values, units, conditions and where a value was read from) and proof steps; warrants; limitations; open questions; artefact descriptions, figure functions and the observations a figure shows; references.
 - **Left out:** `about` (the statement says the same in words; `about` serves search), `provenance`, `field_provenance`, `source_spans`, `corrections`, availability, artefact locations, versions and licences, contributors, models, execution records, lab-record identifiers, `schema_version` and the platform's publication fields.
 
 - **Order:** claims are grouped by role: principal claims, then supporting claims, then secondary claims, each group in file order. Claims that are not principal and whose support is only `argument` or `unstated` follow, under CLAIMS WITHOUT EVIDENCE, so a reader sees at once what the paper asserts or argues without evidence. Principal claims stay with the principal claims whatever their support.
@@ -508,7 +515,11 @@ A term the paper introduces as a finding (a theme, a typology, a newly named phe
 - `broader`: the term is a kind of each listed term. A variant of a method (seasonal CES of CES), a subtype of a disease, a narrower legal category. A narrower term has the kind of the broader one.
 A group's members, a whole's parts and a term's narrower terms are three different links: ETS is one of the benchmark methods, not a part or a kind of them; the smoothing parameter is part of CES, not a kind of it; seasonal CES is a kind of CES, not a part of it. Like membership, the links let a reader looking for a term find what is said about its parts and narrower terms, and say nothing more: a claim about a parameter of CES is not a claim about CES as a whole, and a claim about seasonal CES is not a claim about every variant of CES.
 
-**Assumptions of a term.** An assumption that holds wherever the paper uses a method, design or data set ("the errors of ETS are Gaussian", "allocation was concealed", "the sample is representative of UK retailers") is listed once, on the term's definition, not again on every claim. Evidence whose `setup` names the term inherits its assumptions, and so does every claim resting on that evidence; a narrower term inherits the assumptions of its broader terms. A claim still lists in its own `assumptions` those that hold for it alone. The reading view shows inherited assumptions with the claim, marked as inherited.
+**Assumptions of a term.** An assumption that holds wherever the paper uses a method, design or data set ("the errors of ETS are Gaussian", "allocation was concealed", "the sample is representative of UK retailers") is listed once, on the term's definition, not again on every claim. A claim resting on evidence with a `setup` inherits the assumptions of the terms that setup names, as follows:
+- the terms in the roles `cases`, `procedure`, `lens` and `context` (the data, the design, the variables, the setting): every claim resting on the evidence inherits their assumptions, since every result of the study rests on them;
+- the terms in the role `studied` (the methods, models or interventions compared): a claim inherits the assumptions only of its own subject, the definition its `about.subject` names, when the setup names it (directly, as a member of a group the setup names, or as a group whose members it names all, §3.2 *Groups*); when the subject is a group, the claim inherits the assumptions of each of its members. The assumptions of the comparator and of the other methods studied are not the claim's: "VETS D has the lowest error of the five models" rests on the error assumptions of VETS D, not on those of ETS, with which it is compared;
+- a claim without `about` inherits the assumptions of every term its evidence's setup names.
+A narrower term inherits the assumptions of its broader terms. A claim still lists in its own `assumptions` those that hold for it alone, including the assumptions of a comparator when the claim does rest on them. The reading view shows inherited assumptions with the claim, marked as inherited. (Revised in v0.33.)
 
 Parameters, components and variants get definitions of their own only when something in the claimset names them apart from the whole: a claim, an `about` slot, an observation's variable or condition, a setup. Otherwise they are the named symbols of the whole's definition (below).
 
@@ -1222,7 +1233,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 12. A number in a claim's statement cannot be matched to the results the claim cites, at the precision stated (heuristic; percentages are compared as fractions). Applies to cited result entries; cited tables and rows are not checked.
 13. `planning: exploratory` on a principal claim: exploratory findings can be principal, but readers should be told so in the claim's assessment rationale.
 14. `id_type: reference` in a native paper: give the cited work's identifier.
-15. A `supporting` claim that no principal claim rests on, directly or through other claims (by `depends_on` or `assumptions`, including the assumptions of the evidence a principal claim cites and the assumptions inherited from the definitions its setup names, §3.2): link it to the claim that rests on it, or make it `secondary`. (Revised in v0.32.)
+15. A `supporting` claim that no principal claim rests on, directly or through other claims (by `depends_on` or `assumptions`, including the assumptions of the evidence a principal claim cites and the assumptions it inherits from the terms it rests on, §3.2 *Assumptions of a term*): link it to the claim that rests on it, or make it `secondary`. (Revised in v0.32 and v0.33.)
 16. A principal or supporting claim rests on a `secondary` claim (by `depends_on` or `assumptions`): a claim that a contribution rests on is `supporting`.
 17. A number in the statement of a claim with `empirical_quant` or `simulation` support matches, at the precision stated, no value in: the results (value, interval, conditions) and tables (conditions, cells, row labels) of the evidence the claim cites; that evidence's `estimate`, `interval` and `n`; the claim's `test.parameters` and `scope`; the definitions its statement references. Evidence descriptions do not count. Numbers inside LaTeX, `[[D…]]` markers and model notation (`ETS(A,N,A)`, `AR(1)`), and numbers of sections, tables, figures, equations and theorems, are ignored. The reverse of warning 12: a number a statement reports is a recorded result, or a setting in the scope.
 18. Two evidence objects have the same `execution.code_version` and the same results (quantity, value and conditions): one computation recorded twice. Record it once and cite it from every claim it supports.
@@ -1293,7 +1304,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.32",
+  "schema_version": "0.33",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
