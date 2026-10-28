@@ -1273,5 +1273,32 @@ class TestRulesV031(Base):
         self.assertRule(self.d, "65")
 
 
+    def _w28_claim(self, about_subject, support):
+        self.d["claims"].append({"id": "C9", "statement": f"[[{about_subject}:the methods]] beat the naive method.",
+                                 "type": "descriptive", "role": "secondary", "novelty": "no_prior_found",
+                                 "support": support,
+                                 "about": {"subject": about_subject, "relation": "beat", "object": None,
+                                           "comparator": "the naive method", "conditions": []}})
+
+    def test_w28_group_and_members_of_a_named_group_pass(self):
+        e = next(x for x in self.d["evidence"] if x.get("setup"))
+        role = next(iter(e["setup"]))
+        members = definition(self.d, "D90")["members"]
+        e["setup"][role] = list(dict.fromkeys(list(e["setup"][role]) + members))
+        self._w28_claim("D90", [{"kind": "empirical_quant", "evidence": e["id"]}])
+        _, warnings = self.rules(self.d)
+        self.assertNotIn("W28", warnings)                       # every member is in the setup
+        e["setup"][role] = [x for x in e["setup"][role] if x not in members] + ["D90"]
+        self.d["claims"][-1]["about"]["subject"] = members[0]
+        self.d["claims"][-1]["statement"] = f"[[{members[0]}:the method]] beats the naive method."
+        _, warnings = self.rules(self.d)
+        self.assertNotIn("W28", warnings)                       # a member of a group the setup names
+
+    def test_w28_formal_evidence_is_not_asked_for_a_setup_part(self):
+        self.d["evidence"].append({"id": "E9", "profile": "formal", "description": "A proof.", "foundation": "algebra"})
+        self._w28_claim("D90", [{"kind": "formal_proof", "evidence": "E9"}])
+        warnings = [w for w in validate(self.d).warnings if w["rule"] == "W28" and "C9" in w["where"]]
+        self.assertEqual(warnings, [])
+
 if __name__ == "__main__":
     unittest.main()

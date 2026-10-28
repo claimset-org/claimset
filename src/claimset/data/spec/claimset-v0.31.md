@@ -9,6 +9,7 @@ Claimset is the name of both the open format and the platform.
 A claim about a group of methods ("CES has the lowest error of ETS, ARIMA and the Theta method") and a claim about one of them ("CES has a lower MASE than ETS") were not connected: the group was one definition whose text listed its members, so a reader looking for what is known about ETS did not find the first claim.
 
 - §3.2, *Groups*: a definition can name its `members`, the definitions of the things it groups. A claim about a group is not a claim about each member unless its statement says so. New rule 65.
+- Warning 28 counts a group or its members as named in a setup that names the other, and asks nothing of claims resting on formal evidence, which has no setup.
 
 ## Changes in v0.30 (since v0.29)
 
@@ -1122,7 +1123,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 25. A `secondary` `descriptive` claim with `empirical_quant` or `simulation` support (a result, not a conclusion drawn from results) on which nothing rests: no claim depends on it or lists it in `assumptions`, no warrant names it as a premise, no open question concerns it. Keep it only if it states a loss, limit or null result of the paper's own method; otherwise the result table of its evidence holds it (§3.3, *Secondary claims in converted papers*).
 26. A definition without `source` (a term of the paper's own) is named in the statement of a `formal` claim and contains no mathematics (`$…$`): if it is the paper's own method or model, give its defining equations (§3.2, *The paper's own method or model*).
 27. A supporting or secondary claim that is not an assumption has no `about` (§3.3.5). Also: a slot of `about` holds text that equals, ignoring case, the `term` of a definition in the file: give the definition's ID instead.
-28. An evidence object whose profile is not `formal` has no `setup`, or a definition is named in a claim's `about` and in no setup of the evidence that claim's support cites, although its kind is `method`, `intervention`, `population`, `data`, `design` or `measure` (a part of the study that the setup leaves out).
+28. An evidence object whose profile is not `formal` has no `setup`, or a definition is named in a claim's `about` and in no setup of the non-formal evidence that claim's support cites, although its kind is `method`, `intervention`, `population`, `data`, `design` or `measure` (a part of the study that the setup leaves out). A definition counts as named when the setup names it, names a group it is a member of, or names every member of it (§3.2, *Groups*). (Revised in v0.31.)
 
 ## 11. Platform dependencies
 

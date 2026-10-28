@@ -1053,6 +1053,25 @@ def check_frame(r, coll, claims, by_id):
                     r.err("64", f"{w}.about.conditions[{i}]", "a definition ID or a short text")
         marked = set(TERM_RE.findall(c.get("statement") or "")) if isinstance(c.get("statement"), str) else set()
         cited = {as_dict(s).get("evidence") for s in as_list(c.get("support"))} - {None}
+        # only evidence that can have a setup counts: formal evidence has none (rule 61)
+        cited = {eid for eid in cited if as_dict(by_id(eid, "evidence")).get("profile") not in ("formal", None)}
+
+        def members_of(g, seen=()):
+            out = set()
+            for m in as_list(as_dict(by_id(g, "definitions")).get("members")):
+                if isinstance(m, str) and m not in seen:
+                    out |= {m} | members_of(m, seen + (g,))
+            return out
+
+        def named_in(v, eid, seen=()):
+            """A part is named in a setup directly, as a member of a group named there, or as a group whose members
+            are all named there (§3.2, Groups)."""
+            names = in_setup.get(eid, set())
+            if v in names or any(v in members_of(g) for g in names):
+                return True
+            members = as_list(as_dict(by_id(v, "definitions")).get("members"))
+            return bool(members) and all(isinstance(m, str) and m not in seen and named_in(m, eid, seen + (v,))
+                                         for m in members)
         for path, v in slots:
             v = v.strip()
             if DEF_ID_RE.match(v):
@@ -1065,7 +1084,7 @@ def check_frame(r, coll, claims, by_id):
                     r.err("64", f"{w}.about.{path}", f"{v} is not marked in the statement: write [[{v}:{d.get('term')}]] "
                                                      f"where the statement names it")
                 if (cited and d.get("kind") in SETUP_PART_KINDS
-                        and not any(v in in_setup.get(eid, set()) for eid in cited)):
+                        and not any(named_in(v, eid) for eid in cited)):
                     r.warn("W28", f"{w}.about.{path}", f"{v} ({d.get('kind')}) is part of the study the claim rests on "
                                                        f"but no setup of its evidence ({', '.join(sorted(cited))}) "
                                                        f"names it")
