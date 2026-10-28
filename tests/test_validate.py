@@ -1597,6 +1597,24 @@ class TestTermMarkers(Base):
         self.assertRule(d, "1")
 
 
+class TestArtefactLicence(Base):
+    """Warning 9 (revised in v0.33): a licence for the paper's own artefacts and packaged files, not for another
+    work the paper cites."""
+
+    def test_w9(self):
+        d = load("submission-native.json")
+        d["references"] = d.get("references") or []
+        d["references"].append({"id": "B9", "id_type": "doi", "target": "10.1016/j.ijforecast.2019.04.014"})
+        d["artefacts"].append({"id": "A9", "kind": "data", "description": "M4 competition data", "reference": "B9"})
+        claim(d, "C2")["support"][0].setdefault("artefacts", []).append("A9")
+        self.assertNotIn("W9", self.rules(d)[1])                       # cited, not packaged
+        d["artefacts"][-1]["uri"] = "files/m4.csv"
+        self.assertIn("W9", self.rules(d)[1])                          # packaged: the file needs its licence
+        d["artefacts"][-1].pop("uri")
+        d["artefacts"][-1].pop("reference")
+        self.assertIn("W9", self.rules(d)[1])                          # the paper's own
+
+
 class TestMigrate(Base):
     """`claimset migrate`: setup roles renamed to those of v0.30, the version set to the current one; what needs
     judgement listed."""

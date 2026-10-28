@@ -609,7 +609,8 @@ def validate(doc, published=False, local_root=None, revision=False):
         if "archive_uri" in a and not (isinstance(a["archive_uri"], str) and a["archive_uri"].strip()):
             r.err("1", f"{w}.archive_uri", "must be a persistent identifier or archive URI (a SWHID, DOI or archived URL)")
         check_availability(r, w, a.get("availability"))
-        if not a.get("licence"):
+        cited = a.get("reference") and not is_relative_uri(a.get("uri"))     # another work's, described there
+        if not a.get("licence") and not cited:
             r.warn("W9", f"{w}.licence", "recommended: state the artefact's licence (SPDX identifier)")
 
     # ---------- Models ----------

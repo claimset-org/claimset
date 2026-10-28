@@ -10,6 +10,8 @@ Assumptions listed on a term's definition were inherited through the evidence: e
 
 - §3.2, *Assumptions of a term*: a claim inherits the assumptions of the data, design, variables and setting its evidence's setup names (roles `cases`, `procedure`, `lens`, `context`), and, of the things studied (role `studied`), only those of its own subject: the term its `about.subject` names, or each member when the subject is a group. The comparator's assumptions are not the claim's. A claim without `about` inherits from every term its setup names, as before.
 - Warning 15 and the reading view (§2.3) count and show the assumptions inherited this way.
+- §3.6, warning 9: an artefact that is another work the paper uses and cites (it names its `reference`), and that is not a file of the submission package, needs no `licence`: the licence is the cited work's, recorded where that work is described. The paper's own artefacts and every packaged file still state theirs.
+- §8 rule 5: a term marker's text is plain; it holds no other marker. A nested marker is an error (rule 1).
 
 ## Changes in v0.32 (since v0.31)
 
@@ -803,7 +805,7 @@ Warrants are for informal argument. Mathematical proofs use proof steps (§3.4).
 | `withheld_events` | list | For `lab_record`: `{event, reason, comment}` for each lab event whose body is withheld (lab record §8) |
 | `uri` | string | |
 | `version` | string | Version or content hash |
-| `licence` | string | SPDX identifier; recommended |
+| `licence` | string | SPDX identifier. Recommended for the paper's own artefacts and for every file of the submission package (§2.5); an artefact taken from a cited work (`reference`) and not packaged carries none, since its licence is the cited work's, recorded where that work is described (warning 9) |
 | `availability` | object | §3.10 |
 | `description` | string | Required for `figure` and `table`: what it shows, self-contained |
 | `underlying_data` | artefact ID | For `figure`: the data plotted |
@@ -1227,7 +1229,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 6. Three or more claims share an identical `scope` object (often a sign of scope copied by section; check each claim).
 7. `novelty: extension` without an `extends` relation.
 8. Quant or simulation evidence with neither `estimate`, `results` nor `tables`.
-9. An artefact without `licence`.
+9. An artefact without `licence`, unless it names the cited work it is taken from (`reference`) and is not a file of the submission package (§2.5). (Revised in v0.33.)
 10. An agent contributor that is not an `author` has the AI task `writing`; agents that produced the paper's content are authors.
 11. A check was made by an agent that runs on the same model as an `author` agent.
 12. A number in a claim's statement cannot be matched to the results the claim cites, at the precision stated (heuristic; percentages are compared as fractions). Applies to cited result entries; cited tables and rows are not checked.
