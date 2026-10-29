@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.33"
+SCHEMA_VERSION = "0.34"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -40,7 +40,7 @@ ENUM = {
     "verifiability": {"open", "audit_only", "unverifiable", "not_applicable"},
     "flag": {"api_model_dependency", "figure_without_data", "unpublished_prompts",
              "unrecorded_model_settings", "unstated_support", "lab_record_withheld",
-             "lab_events_withheld", "unanchored_plan"},
+             "lab_events_withheld", "unanchored_plan", "availability_not_stated"},
     "outcome": {"supported", "not_supported", "inconclusive"},
     "planning": {"confirmatory", "confirmatory_with_deviations", "exploratory"},
     "anchor": {"platform", "rfc3161", "git_remote", "none"},
@@ -70,7 +70,7 @@ ENUM = {
                             "computational", "other"},
     "impact": {"could_reverse", "could_bias_magnitude", "reduces_precision", "reduces_transferability"},
     "mitigation": {"none", "partial", "addressed"},
-    "level": {"public", "platform", "audit", "author_only", "unavailable"},
+    "level": {"public", "platform", "audit", "author_only", "unavailable", "not_stated"},
     "reason": {"personal_data", "commercial", "legal", "ethics", "security", "other"},
     "contributor_type": {"agent", "human", "organisation"},
     "position": {"author", "supervisor", "guarantor", "conversion_guarantor", "contributor", "converter"},
@@ -614,6 +614,8 @@ def validate(doc, published=False, local_root=None, revision=False):
             ref("54", f"{w}.reference", a["reference"], "references")
         if "archive_uri" in a and not (isinstance(a["archive_uri"], str) and a["archive_uri"].strip()):
             r.err("1", f"{w}.archive_uri", "must be a persistent identifier or archive URI (a SWHID, DOI or archived URL)")
+        if "availability" not in a:
+            r.err("75", w, "every artefact has an availability; not_stated when the paper does not say")
         check_availability(r, w, a.get("availability"))
         cited = a.get("reference") and not is_relative_uri(a.get("uri"))     # another work's, described there
         if not a.get("licence") and not cited:
@@ -687,10 +689,10 @@ def validate(doc, published=False, local_root=None, revision=False):
                         for d in ids_:
                             ref("61", f"{w}.setup.{role}", d, "definitions")
         elif e.get("profile") in ENUM["profile"] - {"formal"}:
-            r.warn("W28", w, "no setup: name the parts of the study (what is studied, on what cases, by what "
-                             "procedure, through what lens) as definitions in setup (§3.4)")
+            r.err("61", w, "evidence other than formal has a setup: the parts of the study (what is studied, on what "
+                           "cases, by what procedure, through what lens) as definitions (§3.4)")
         if "availability" not in e:
-            r.warn("W-avail", w, "availability not stated; verifiability cannot be confirmed")
+            r.err("75", w, "every evidence object has an availability; not_stated when the paper does not say")
         check_availability(r, w, e.get("availability"))
         for i, dm in enumerate(as_list(e.get("models"))):
             dw = f"{w}.models[{i}]"
@@ -955,7 +957,7 @@ def check_availability(r, where, av):
     av = as_dict(av)
     check_enum(r, "12", f"{where}.availability.level", av.get("level"), "level", required=True)
     lvl = av.get("level")
-    if lvl and lvl != "public":
+    if lvl and lvl not in ("public", "not_stated"):
         if not av.get("reason"):
             r.err("12", f"{where}.availability", "reason required unless level is public")
         else:
@@ -983,7 +985,7 @@ def statement_checks(r, where, text):
     if ANAPHORA_RE.search(text):
         r.warn("S3", where, "possible cross-reference or anaphora; statements must be self-contained")
     if EVALUATIVE_RE.search(text):
-        r.warn("S7", where, "possible evaluative rhetoric (e.g. 'novel', 'significant'); state the finding plainly")
+        r.warn("S7", where, "possible evaluative rhetoric (e.g. 'novel', 'remarkable'; 'significant' only as 'statistically significant'); state the finding plainly")
     if len(re.findall(r"\.\s+[A-Z]", NUMBER_SKIP.sub(" ", text))) >= 1:
         r.warn("S1", where, "statement may contain more than one sentence or assertion")
     cues = compound_cues(text)
@@ -1136,8 +1138,9 @@ def check_frame(r, coll, claims, by_id):
 
     for d in coll["definitions"]:
         d = as_dict(d)
-        if d.get("id") in framed and "kind" not in d:
-            r.err("63", f"definitions:{d.get('id')}", "named in a setup or a claim's about, so it needs a kind")
+        if "kind" not in d:
+            r.err("63", f"definitions:{d.get('id')}", "every definition has a kind: what sort of thing the term names "
+                                                      "(§3.2)")
 
     # Groups (rule 65): members are other definitions of the group's kind; no group contains itself
     defs = {as_dict(d).get("id"): as_dict(d) for d in coll["definitions"]}
@@ -2274,6 +2277,8 @@ def compute_verifiability(c, by_id, read_from=frozenset()):
         return "audit_only", flags, notes
     if any(l is None for l in levels):
         notes.append("some supporting evidence or artefacts state no availability; treated as public")
+    if any(l == "not_stated" for l in levels):
+        flags.add("availability_not_stated")
     return "open", flags, notes
 
 

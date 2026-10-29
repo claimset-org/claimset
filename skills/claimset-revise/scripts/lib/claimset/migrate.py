@@ -8,8 +8,9 @@ Only what is mechanical is changed:
 From v0.33 a claim inherits the assumptions of the methods studied only for its own subject (§3.2): the
 assumptions a claim inherited under v0.32 and no longer does are listed, to be added to its own `assumptions`
 where it does rest on them.
-What needs judgement is listed, not guessed: definitions that need a `kind` (rule 63), claims that need an `about`
-(rule 64 for principal claims, warning 27 for the others), figures that need a `function` (rule 67), the
+What needs judgement is listed, not guessed: definitions without a `kind` (rule 63), claims that need an `about`
+(rule 64 for principal claims, warning 27 for the others), figures that need a `function` (rule 67), evidence without a setup (rule 61) and evidence or artefacts
+without an availability (rule 75), the
 `exemplars` of qualitative evidence, which become excerpt results (rule 66), and declarations (warning 29).
 """
 
@@ -28,7 +29,6 @@ def migrate(doc):
     if out.get("schema_version") != SCHEMA_VERSION:
         done.append(f"schema_version {out.get('schema_version')} -> {SCHEMA_VERSION}")
         out["schema_version"] = SCHEMA_VERSION
-    framed = set()
     for e in out.get("evidence") or []:
         if not isinstance(e, dict):
             continue
@@ -42,8 +42,6 @@ def migrate(doc):
                 renamed.setdefault(new, [])
                 renamed[new] += [i for i in (ids if isinstance(ids, list) else [ids]) if i not in renamed[new]]
             e["setup"] = renamed
-            for ids in renamed.values():
-                framed |= {i for i in ids if isinstance(i, str)}
         for rs in e.get("results") or []:
             if isinstance(rs, dict) and "quantity" in rs and "variable" not in rs:
                 rs_items = list(rs.items())
@@ -53,14 +51,20 @@ def migrate(doc):
         if "exemplars" in e:
             todo.append(f"{e.get('id')}: record each exemplar as a result whose value is the excerpt "
                         f"{{text, locator}}, then remove exemplars (rule 66)")
+    for coll in ("evidence", "artefacts"):
+        for x in out.get(coll) or []:
+            if isinstance(x, dict) and "availability" not in x:
+                todo.append(f"{x.get('id')}: give its availability; not_stated when the paper does not say (rule 75)")
+            if coll == "evidence" and isinstance(x, dict) and x.get("profile") != "formal" and not x.get("setup"):
+                todo.append(f"{x.get('id')}: give its setup, the parts of the study by role (rule 61)")
     for d in out.get("definitions") or []:
         if not isinstance(d, dict):
             continue
         if d.get("kind") == "measure":
             d["kind"] = "variable"
             done.append(f"{d.get('id')}: kind measure -> variable")
-        if d.get("id") in framed and "kind" not in d:
-            todo.append(f"{d['id']} ({d.get('term')}): named in a setup; give it a kind (rule 63)")
+        if "kind" not in d:
+            todo.append(f"{d['id']} ({d.get('term')}): give it a kind, what sort of thing the term names (rule 63)")
     if str(doc.get("schema_version")) in ("0.32",):
         defs = {d.get("id"): d for d in out.get("definitions") or [] if isinstance(d, dict)}
         evid = {e.get("id"): e for e in out.get("evidence") or [] if isinstance(e, dict)}

@@ -963,6 +963,8 @@ def check_plan(state, body, by, eid):
                 isinstance(a, str) and COMMENT_ID_RE.match(a) for a in addresses):
             raise LabError("schema", "plan: addresses must be a list of review comments' global IDs "
                                      "(<claimset>@v<n>/RV<k>.c<m>)")
+    if body.get("requires_approval") is not None and not isinstance(body["requires_approval"], bool):
+        raise LabError("schema", "plan: requires_approval must be true or false")
     if body.get("new_data") is not None and (not isinstance(body["new_data"], str) or not body["new_data"].strip()):
         raise LabError("schema", "plan: new_data must be non-empty text")
     exclusions = body.get("exclusions")
@@ -987,10 +989,47 @@ def check_plan(state, body, by, eid):
 
 
 def check_approval(state, body, by, eid):
+    """Rule L22: an approval is written by a human, or by an agent on a human's behalf with the human's words."""
     _ref(state, _req(body, "target", "approval"), "approval", "target")
     actor = state.latest(by)
-    if actor is None or is_withheld(actor) or actor["body"].get("kind") != "human":
-        raise LabError("schema", "approval: approvals are made by a human actor")
+    kind = None if actor is None or is_withheld(actor) else actor["body"].get("kind")
+    behalf = body.get("on_behalf_of")
+    if kind == "human":
+        if behalf is not None:
+            raise LabError("L22", "approval: a human approving writes as themselves; on_behalf_of is for an agent "
+                                  "recording a human's approval")
+        return
+    if kind != "agent":
+        raise LabError("L22", "approval: approvals are written by a human, or by an agent on a human's behalf")
+    if behalf is None:
+        raise LabError("L22", "approval: an agent never approves on its own judgement; record the supervisor's "
+                              "approval with --on-behalf-of (their actor ID) and --words (their reply, verbatim)")
+    _ref(state, behalf, "approval", "on_behalf_of", {"actor"})
+    h = state.latest(behalf)
+    if not is_withheld(h) and h["body"].get("kind") != "human":
+        raise LabError("L22", f"approval: {behalf} is not a human actor; approvals are given by people")
+    if not isinstance(body.get("words"), str) or not body["words"].strip():
+        raise LabError("L22", "approval: give the human's words, as they gave them (--words)")
+    for f in ("given_at", "channel"):
+        if body.get(f) is not None and (not isinstance(body[f], str) or not body[f].strip()):
+            raise LabError("schema", f"approval: {f} must be non-empty text")
+    if body.get("given_at") is not None and not re.match(r"^\d{4}-\d{2}-\d{2}(T[0-9:.]+Z?)?$", body["given_at"]):
+        raise LabError("schema", "approval: given_at is an ISO 8601 date or time (UTC), e.g. 2026-10-29T11:30:00Z")
+
+
+def plan_approved(state, plan_version_id):
+    """Whether an approval of a plan was written after the given version of it (rule L23). A withheld approval
+    is counted: its target cannot be checked (§8)."""
+    root, pos = state.root(plan_version_id), state.pos.get(plan_version_id, -1)
+    for e in state.events:
+        if e["type"] != "approval" or state.pos.get(e["id"], -1) <= pos:
+            continue
+        if is_withheld(e):
+            return True
+        t = e["body"].get("target")
+        if isinstance(t, str) and state.get(t) is not None and state.root(t) == root:
+            return True
+    return False
 
 
 def check_run(state, body, by, eid):
@@ -1023,6 +1062,10 @@ def check_run(state, body, by, eid):
             raise LabError("L5", f"run: {plan_id} is not a confirmatory plan, so the run is exploratory")
         if state.strict:
             _check_confirmatory_run(state, plan_id, plan)
+        if plan["body"].get("requires_approval") and not plan_approved(state, plan["id"]):
+            raise LabError("L23", f"run: plan {plan['id']} requires approval and has none since it was written: ask "
+                                  f"the supervisor, wait for their answer, and record it (`claimset lab approve "
+                                  f"{state.root(plan['id'])} --on-behalf-of … --words \"…\"`)")
 
 
 def check_result(state, body, by, eid):

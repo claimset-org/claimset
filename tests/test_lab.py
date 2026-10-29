@@ -423,10 +423,34 @@ class TestPlansAndApprovals(PlanRunCase):
     def test_exploratory_plan_needs_no_criterion(self):
         self.plan(kind="exploratory", hypotheses=[], criterion=None)
 
-    def test_approval_by_human_only(self):
+    def test_approval_by_human_or_on_their_behalf(self):
+        """Lab record v0.14, L22: a human approves, or an agent records the human's approval with their words."""
         pl = self.plan()
-        self.assertRefused("schema", "approval", {"target": pl})
+        self.assertRefused("L22", "approval", {"target": pl})                              # agent, own judgement
+        self.assertRefused("L22", "approval", {"target": pl, "on_behalf_of": self.human})  # no words
+        self.assertRefused("L22", "approval", {"target": pl, "on_behalf_of": self.agent,
+                                               "words": "yes"})                            # not a human
+        self.assertRefused("L22", "approval", {"target": pl, "on_behalf_of": self.human, "words": "x"},
+                           by=self.human)                                                  # humans write as themselves
+        self.assertRefused("schema", "approval", {"target": pl, "on_behalf_of": self.human, "words": "Yes.",
+                                                  "given_at": "yesterday"})
         self.add("approval", {"target": pl, "comment": "ok"}, by=self.human)
+        self.add("approval", {"target": pl, "on_behalf_of": self.human, "words": "Yes, go ahead with the plan.",
+                              "given_at": "2026-10-29T11:30:00Z", "channel": "conversation"})
+
+    def test_plan_requiring_approval_waits_for_it(self):
+        """L23: no confirmatory run under a plan with requires_approval until an approval follows its version."""
+        pl = self.plan(requires_approval=True)
+        self.assertRefused("L23", "run", run_body(plan=pl, label="confirmatory"))
+        self.add("run", run_body(plan=pl, label="exploratory"))                            # exploring is free
+        self.add("approval", {"target": pl, "on_behalf_of": self.human, "words": "Approved."})
+        pl2 = self.add("plan", {"kind": "confirmatory", "hypotheses": [self.h], "design": "changed", "analysis": "a",
+                                "decision": DECISION, "requires_approval": True}, supersedes=pl)
+        self.assertRefused("L23", "run", run_body(plan=pl, plan_version=pl2, label="confirmatory"))
+        self.add("approval", {"target": pl2, "on_behalf_of": self.human, "words": "The change is fine."})
+        self.add("run", run_body(plan=pl, plan_version=pl2, label="confirmatory"))
+        self.assertRefused("schema", "plan", {"kind": "exploratory", "design": "d", "analysis": "a",
+                                              "requires_approval": "yes"})
 
     def test_deviation_needs_reason(self):
         pl = self.plan()

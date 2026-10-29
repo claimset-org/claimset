@@ -10,7 +10,21 @@ from claimset.lab import anchor as anchor_mod
 from claimset.lab.core import LabError, canonical
 from claimset.lab.export import export
 from claimset.lab.run import run_command
-from claimset.validate import validate
+from claimset.validate import validate as _validate
+
+
+def validate(draft):
+    """Validate a draft after the completion that export leaves to the writer: a setup on evidence whose plans
+    had none (rule 61), named by a definition of what was run."""
+    import copy
+    d = copy.deepcopy(draft)
+    if any(not e.get("setup") and e.get("profile") != "formal" for e in d.get("evidence") or []):
+        d.setdefault("definitions", []).append({"id": "D99", "term": "the method run", "kind": "method",
+                                                "definition": "The method the runs executed."})
+        for e in d["evidence"]:
+            if not e.get("setup") and e.get("profile") != "formal":
+                e["setup"] = {"studied": ["D99"]}
+    return _validate(d)
 
 from test_lab import PlanRunCase, TestCli
 from test_lab_protect import HAVE_GIT, make_repo

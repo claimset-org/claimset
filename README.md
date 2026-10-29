@@ -25,7 +25,7 @@ Research is iterative, so the format has a companion: the **lab record**, an app
 pip install git+https://github.com/claimset-org/claimset
 ```
 
-The package has no dependencies beyond the Python standard library (Python 3.9 or later). It carries the specifications and the agent skills of its version:
+The package has no dependencies beyond the Python standard library (Python 3.10 or later). It carries the specifications and the agent skills of its version:
 
 ```
 claimset spec                  # the claimset specification this version validates against
@@ -60,6 +60,9 @@ claimset validate claimset.json --json        # machine-readable report
 claimset validate claimset.json --published   # check a published file
 claimset render claimset.json -o claimset.txt  # the reading view: plain text for reading models
 claimset renumber claimset.json                # before the first submission: IDs in reading order
+claimset migrate claimset.json                 # bring a file from an earlier version; lists what needs judgement
+claimset package claimset.json -o paper.zip    # the submission package: the claimset and its files (BagIt)
+claimset validate paper.zip                    # validate a package: files, checksums and the claimset
 ```
 
 The report lists errors (the file is rejected), warnings (accepted, recorded) and the verifiability the platform will compute for each claim.

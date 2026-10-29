@@ -1,8 +1,16 @@
-# Claimset Lab Record — Specification v0.13 (draft)
+# Claimset Lab Record — Specification v0.14 (draft)
 
-Status: working draft · Date: 2026-10-28 · Supersedes v0.12 · Companion to the claimset specification (`spec/claimset-v0.33.md`) and the revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-29 · Supersedes v0.13 · Companion to the claimset specification (`spec/claimset-v0.34.md`) and the revision specification (`spec/claimset-revision-v0.2.md`)
 
-## Changes since v0.12
+## Changes since v0.13
+
+The research is done by agents and decided by people (claimset principle 10). An approval was written only by the human, by running the tool themselves; that asked a supervisor to work the tool to give a decision they had already given in words. The decision stays the human's; the agent records it.
+
+- An approval may be written by an agent on behalf of a human actor (`on_behalf_of`), quoting the human's words (`words`) and when they were given (`given_at`). The agent asks, waits for the answer and records it; it never approves on its own judgement, and silence or a general instruction is not approval (§5.8, L22).
+- A plan may require approval (`requires_approval`): no confirmatory run is made under it until an approval of its current version is recorded (§5.7, L23). The agent waits for the supervisor's answer before running.
+- New rules L22 and L23 (§6).
+
+## Changes in v0.13 (since v0.12)
 
 Claimset v0.32 records results as observations of variables in any field.
 
@@ -189,7 +197,7 @@ When several agents work on one lab at the same time, each can write its own log
 2. **Chain.** An agent log has its own `seq` (from 1) and its own hash chain. Its first event's `prev` is the header hash of the latest main-log event when that first event was written. That main-log event is the log's **base**: it records which state of the lab the agent worked from.
 3. **IDs.** Event IDs in an agent log are prefixed by the actor ID: `AC2.H1`, `AC2.RN4`, numbered within the log. IDs therefore never collide between agents. Run output directories use the same IDs (`runs/AC2.RN4/`).
 4. **What an agent sees.** An agent's events may refer to main-log events up to its base and to earlier events in its own log, and to nothing else: not to later main-log events, and not to events in other agent logs.
-5. **What an agent may write.** Only its own actor writes an agent log. Its confirmatory runs are made under plans written in the same log, so that two logs never race to run the same planned test. `init`, `actor` and `merge` events are written only to the main log. A correction (`supersedes`) in an agent log corrects only an event of the same agent log; other events are corrected in the main log after merging. Human approvals are therefore given in the main log, after the log they approve is merged.
+5. **What an agent may write.** Only its own actor writes an agent log. Its confirmatory runs are made under plans written in the same log, so that two logs never race to run the same planned test. `init`, `actor` and `merge` events are written only to the main log. A correction (`supersedes`) in an agent log corrects only an event of the same agent log; other events are corrected in the main log after merging. Approvals written by the human are therefore given in the main log, after the log they approve is merged; an agent records an approval of a plan of its own log in that log, on the human's behalf (§5.8).
 6. **Once.** An agent log is merged once. After the merge, the actor's events go to the main log; for new concurrent work, an agent is registered as a new actor.
 7. **Merging.** `merge` appends to the main log a `merge` event (§5.16) followed immediately by the events of the agent logs it names, interleaved in order of `at`, each agent's own order kept, ties broken by actor ID, then `seq`. Each merged event keeps its ID, type, `at`, `by`, `supersedes`, `content_hash` and body, gets a new main-log `seq` and `prev`, and records in `origin` its position and header hash in the agent log: `{log: "agents/AC2.jsonl", seq, header_hash}`. The agent log is kept unchanged, so both chains remain verifiable.
 8. **Refusal.** Before writing anything, the tool verifies each agent log on its own and checks every event against the main log as it will be after the events before it. If any check fails (for example, a status change that is no longer valid because the main log has moved on), nothing is written and the problem is reported.
@@ -316,7 +324,7 @@ A revised hypothesis is a new `H` event; the old one gets a `status` event with 
 
 ### 5.7 `plan` (prefix `PL`)
 
-`{kind, hypotheses, design, analysis, new_data, exclusions, addresses, decision, runs, data, holdout, code_version, dirty}`
+`{kind, hypotheses, design, analysis, setup, new_data, exclusions, addresses, decision, runs, requires_approval, data, holdout, code_version, dirty}`
 
 - `kind`: `confirmatory` or `exploratory`. Required.
 - `hypotheses`: hypothesis IDs the plan tests. Required (at least one) for `confirmatory`. One plan can test several hypotheses: when one computation decides several, they are named in one plan, with a quantity and rules that decide each (a verdict is recorded for each, §5.7.4), and the computation is run once.
@@ -330,6 +338,7 @@ A revised hypothesis is a new `H` event; the old one gets a `status` event with 
 - `runs`: how many successful confirmatory runs decide the plan (§5.7.2). A positive integer; default 1.
 - `data`: optional list of `{description, hash}` for data that exists when the plan is written.
 - `holdout`: optional list of `{path, hash}`: data kept for this test only (§5.7.5).
+- `requires_approval`: optional, `true` when the plan is to be run only after a supervisor approves it (L23). Set it for every confirmatory plan when the study has a supervisor.
 - `code_version`, `dirty`: the commit of the repository when the plan was written, and whether it had uncommitted changes outside the lab directory; recorded by the tool, as for runs (§5.9).
 
 Plans are immutable. A changed plan is a new plan that supersedes the old one; runs already made under the old plan keep pointing at it. The decision rule that decides a plan is the one in the version its first deciding run names in `plan_version` (§5.9); corrections written after that do not change the verdict.
@@ -417,7 +426,13 @@ The claimset's next version comes with the record of the previous version follow
 
 ### 5.8 `approval` (prefix `AP`)
 
-`{target, comment}`: a human approves a plan (or another event) before it is acted on. The `by` of an approval is an actor of kind `human`. Optional; lets a supervisor sign off confirmatory plans.
+`{target, comment, on_behalf_of, words, given_at, channel}`: a human approves a plan (or another event) before it is acted on. Optional unless the plan requires it (`requires_approval`, L23).
+
+An approval is written in one of two ways:
+- **By the human** (`by` an actor of kind `human`), running the tool themselves.
+- **By an agent on the human's behalf** (`by` an agent actor, `on_behalf_of` the human actor). The agent asked the human, waited, and records the answer: `words` is the human's reply as they gave it, verbatim (`"Yes, go ahead with PL2."`); `given_at` is when they gave it (ISO 8601, UTC; the event's own time when absent); `channel` optionally says where (`conversation`, `email`, `meeting notes`). The human makes the decision; the agent only records it.
+
+An agent never approves on its own judgement. It does not treat silence, a general instruction ("do everything you need"), or an answer to a different question as approval; a standing approval counts only if the human gave it for the plans it is used for ("approve every confirmatory plan for Q2 as written"), and then `words` quotes it and `given_at` is when it was given. The tool cannot tell whether the words are genuine: like every event, a relayed approval is tamper-evident once written, and it is shown as relayed, so a reader sees that the supervisor's words were recorded by the agent. An approval of a plan applies to the version it follows: a plan corrected after its approval needs a new approval (L23).
 
 ### 5.9 `run` (prefix `RN`), written by the tool
 
@@ -531,8 +546,10 @@ L18. A paper has a valid name, unique among the record's papers, and names at le
 L19. A lab inside `claimset/<name>/lab` belongs to the study `<name>`: its study (from `init` or the latest relocation that names one) is `<name>`, and records begun under v0.6 or later name a study.
 L20. A record with a study branch is written only in the checkout of that branch; a lab in `claimset/<study>/lab` inside a git repository is written only on its study branch (adopted, §3.4).
 L21. A hypothesis's `about` and a plan's `setup` name only `term` events; every term mark in a hypothesis's statement (`[[TM3:…]]`) names a term; every term `about` names is marked in the statement; a list in `about.object` names only terms of kind `variable`.
+L22. An approval's `by` is a human actor, or an agent actor with `on_behalf_of` naming a human actor and non-empty `words`; an approval by a human has no `on_behalf_of`.
+L23. A confirmatory run is not made under a plan with `requires_approval` unless an approval of that plan was written after its current version (the version the run names in `plan_version`).
 
-The tool enforces L1–L5 and L8–L21 mechanically, and refuses L6 and L7 violations. L15–L17 apply to records begun under v0.5 or later, and to records whose `init` is withheld. Where a check depends on withheld content (a withheld run, result or plan), `verify` does not report it as a violation; withholding lowers verifiability instead (§8).
+The tool enforces L1–L5 and L8–L23 mechanically, and refuses L6 and L7 violations. L15–L17 apply to records begun under v0.5 or later, and to records whose `init` is withheld. Where a check depends on withheld content (a withheld run, result or plan), `verify` does not report it as a violation; withholding lowers verifiability instead (§8).
 
 ## 7. Timestamp anchoring
 
@@ -640,7 +657,8 @@ The reference tool is part of the `claimset` package. Indicative commands:
 | `claimset lab verdict PL2` | the verdict a decided plan's rule gives, with the value bound to each quantity (§5.7.3) |
 | `claimset lab plan --kind confirmatory --hypotheses H1 --design … --analysis … --framework frequentist --parameter alpha=0.05 … --quantity p="…" --supported "p < alpha" --not-supported "…" [--runs N] [--decision FILE] [--new-data "…"] [--exclusion name="rule"] [--studied TM1 TM2 --cases TM4 --procedure TM5 --lens TM3]` | writes a plan with its decision rule (§5.7.1) and anchors it; warns as in §5.7.6 |
 | `claimset lab plan --kind confirmatory --hypotheses H9 --comment doi:…@v1/RV1.c6 --review RV1.json --analysis "…"` | writes a plan that runs a review comment's resolution test: the decision rule is the comment's current test and `addresses` names the comment (§5.7.7); `--design` defaults to the test's procedure |
-| `claimset lab approve PL2` | human approval |
+| `claimset lab approve PL2 --by AC1` | approval by the human, who runs the command |
+| `claimset lab approve PL2 --by AC2 --on-behalf-of AC1 --words "Yes, go ahead with PL2." [--given-at …] [--channel conversation]` | approval recorded by an agent on the human's behalf, with their words (§5.8) |
 | `claimset lab run [--plan PL2] [--exploratory] [--param k=v] [--seed N] [--data FILE] -- <command>` | runs the command, records `run` and `result` events (§5.9.1) |
 | `claimset lab decide` / `deviate` / `check` / `artefact` | writes the corresponding event |
 | `claimset lab summary` | current state: open questions, hypotheses by status, pending plans, recent decisions; for an actor with an open agent log, what that agent sees |

@@ -7,7 +7,7 @@ description: Turn a piece of research (draft paper, analysis, code, results) int
 
 A claimset is a research paper written for LLM readers: a flat JSON file of atomic, self-contained claims plus the definitions, evidence, assumptions, limitations, warrants and artefacts that support, condition and limit them. You write every field. A human decides two things (guarantor and licence), and you ask them before you finish.
 
-The normative rules are in `references/spec-v0.33.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
+The normative rules are in `references/spec-v0.34.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
 
 **Versions.** This skill, its spec and its validator are one version. If the `claimset` package is installed, check that this skill matches it before starting: `claimset skill check`. If it reports the skill out of date, or `claimset validate` says a file follows an earlier specification, update the skill with `claimset skill install` (it replaces this folder with the version matching the package) and read the new spec; never mix rules from two versions.
 
@@ -69,8 +69,8 @@ Work in this order: principal claims → supporting claims → assumptions.
 - what your claim answers, extends or contradicts → a relation of that claim, `{"type": "addresses", "reference": "B4", "note": "Selection among ETS models often misidentifies the type of trend."}`;
 - a borrowed term (MASE, ETS) → a one-line definition with what this work specifies (e.g. the interval level) and `"source": "B5"`.
 - your own method or model → a definition with its defining equations as you write them, every one of them, in LaTeX; a variant (seasonal, multivariate) with its own equations in full, never "the same equations at lag $m$" (W26).
-- every definition gets a `kind` saying what the term names: `method` · `intervention` · `population` · `data` · `setting` · `design` · `variable` · `concept` · `theory` · `other` (spec §3.2). It is required for any term named in a setup or in a claim's `about` (rule 63). A theme or a newly named phenomenon you find is a `concept`; what you record about each case (a score, an outcome, an error measure, a judgement) is a `variable`.
-- link terms: a group lists its `members` (the compared methods); a parameter, component or data subset is `part_of` its whole (the smoothing parameter of M, M3 monthly of M3); a variant is a kind of its `broader` term (seasonal M of M). A term with a registry identifier gives it in `identifiers` (`chebi:15377`, `ncbitaxon:9606`, `rrid:…`, `ecli:…`, a data set's `doi:…`). Assumptions that hold wherever a method, design or data set is used go on its definition (`assumptions`), once. Every claim on evidence whose setup names a data set, design or variable inherits its assumptions; a method's assumptions pass only to claims whose `about.subject` is that method (or a group it belongs to), never to claims that only compare with it, so list a comparator's assumptions on the claim when it does rest on them. Definitions mark the other terms they use (`[[D4:…]]`); an algorithm is written as pseudocode in a fenced block.
+- every definition gets a `kind` saying what the term names: `method` · `intervention` · `population` · `data` · `setting` · `design` · `variable` · `concept` · `theory` · `other` (spec §3.2). It is required on every definition (rule 63). A theme or a newly named phenomenon you find is a `concept`; what you record about each case (a score, an outcome, an error measure, a judgement) is a `variable`.
+- link terms: a group lists its `members` (the compared methods); a parameter, component or data subset is `part_of` its whole (the smoothing parameter of M, M3 monthly of M3); a variant is a kind of its `broader` term (seasonal M of M). A term with a registry identifier gives it in `identifiers` (`chebi:15377`, `ncbitaxon:9606`, `rrid:…`, `ecli:…`, a data set's `doi:…`). Assumptions that hold wherever a method, design or data set is used go on its definition (`assumptions`), once; evidence whose setup names it inherits them. Definitions mark the other terms they use (`[[D4:…]]`); an algorithm is written as pseudocode in a fenced block.
 Leave out general knowledge that no claim rests on and justifications of routine choices (which accuracy measure, which software); put such choices in the evidence's `description` if they matter. Define in full only the terms the work introduces or uses in its own sense.
 
 **A claim is what the work shows or uses.** A statement that nothing in the work supports (no evidence, no citation, no warrant) and that no claim rests on is not a claim: framing ("accurate forecasts are crucial for business"), promise ("paves the way for"), sweeping generalisation ("it is well known"), speculation ("this could transform practice"). Leave it out. If it is a question the work leaves open (a conjecture it did not test, a case it could not settle, a direction for further work), record it under `open_questions`, as a question, with the claims it arises from: `{"id": "O1", "question": "Whether method M helps on weekly series is not established.", "claims": ["C2"]}`. The validator warns (W23) about a claim that nothing supports and nothing rests on.
@@ -103,8 +103,8 @@ Not every pattern in a table is a claim. Write a side result as a `secondary` cl
 
 **Write each statement** as one self-contained sentence:
 - No "this", "these", "the above", "as shown", "our method" without naming it. Name the method, population and outcome every time.
-- No "novel", "significant" (unless you mean statistical significance and say so), "remarkable", "important".
-- Put scope in `scope`, not in hedges. Not "may improve accuracy in some settings" but a plain statement plus `scope.conditions`.
+- No "novel", "remarkable", "important". "Significant" only as "statistically significant", when the claim reports a test.
+- Put what bounds the claim (population, setting, period, conditions) in `scope`, not in the statement. Keep epistemic qualifiers ("suggests", "may") and magnitude ("slightly") in the statement, as the work states them; confidence goes in the assessment.
 - Mark defined terms: `[[D1:forecast skill]]`. Mathematics in LaTeX between `$…$`.
 
 **Choose `type`:**
@@ -161,7 +161,7 @@ Each claim needs at least one support entry. Use these exact pointer fields:
 
 One evidence object per analysis, reused by every claim it supports; the validator warns (W18) about two evidence objects with the same code version and the same results. Write `description` so it stands alone (what was done, on what data, how).
 
-**Split the setup into its parts.** A study is made of parts that many claims share and that readers and reviewers need to name one at a time. Record each part once as a definition (with its `kind`) and list them in the evidence's `setup`, by role (spec §3.4; recommended for all evidence except formal, W28):
+**Split the setup into its parts.** A study is made of parts that many claims share and that readers and reviewers need to name one at a time. Record each part once as a definition (with its `kind`) and list them in the evidence's `setup`, by role (spec §3.4; required on all evidence except formal, rule 61):
 - `studied`: what the study is about or compares: methods with the settings that define them, interventions, exposures, the phenomenon explored (e.g. "ETS, automatic selection by AICc, smooth 4.6.0");
 - `cases`: what or whom it is studied on: data sets, populations, participants, sites, documents, with size and selection (e.g. "M3 monthly: 1,428 series, holdout of 18"; "18 nurses in their first two years at two rural hospitals");
 - `procedure`: how the cases are obtained and analysed: evaluation scheme (origins, horizons, refits), trial or survey design, sampling and data collection, analytic approach;
@@ -215,7 +215,7 @@ The table holds the numbers; a claim holds what you conclude from them. State th
 
 Copy values from the result tables, never retype them from prose. If the code that produced the results differs from the archived artefact version, record it in `execution`: `{"code_version": "<commit>", "notes": "…"}`.
 
-Set `availability` on every evidence object and artefact. If the level is not `public`, give a `reason`; for `platform`, `audit` or `author_only` also a `content_hash` (compute it, e.g. `sha256:<hex>` of the file; never invent one).
+Set `availability` on every evidence object and artefact (rule 75). If it is not stated anywhere, use `not_stated`; never guess. If the level is otherwise not `public`, give a `reason`; for `platform`, `audit` or `author_only` also a `content_hash` (compute it, e.g. `sha256:<hex>` of the file; never invent one).
 
 If models were part of the research design, record them in the evidence's `models` list with role, settings, record_source and a `prompts` artefact.
 
@@ -272,7 +272,7 @@ data/paper.claimset.json
 data/files/fig3.png
 ```
 
-Each packaged artefact has a `uri` relative to `data/` (`"files/fig3.png"`) and `version` `sha256:<hex>` of the file, which the manifest repeats. In a repository, keep the files in `claimset/<study>/files/`. Never put an image into the JSON.
+Each packaged artefact has a `uri` relative to `data/` (`"files/fig3.png"`) and `version` `sha256:<hex>` of the file, which the manifest repeats. In a repository, keep the files in `claimset/<study>/files/`. Never put an image into the JSON. Build the package with `claimset package claimset/<study>/<paper>.claimset.json -o <paper>.zip` (add `--update` to write the checksums into the claimset file too); it validates what it built.
 
 ### 10. Validate and fix
 

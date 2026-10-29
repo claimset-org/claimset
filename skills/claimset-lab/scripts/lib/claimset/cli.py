@@ -10,6 +10,7 @@ from . import bundle as _bundle
 from . import render as _render
 from . import renumber as _renumber
 from . import migrate as _migrate
+from . import package as _package
 from . import revision as _revision
 from . import validate as _validate
 from .lab import cli as _lab_cli
@@ -179,6 +180,22 @@ def _cmd_migrate(args):
     return 0
 
 
+def _cmd_package(args):
+    try:
+        changes, files = _package.build(args.file, args.output, update_source=args.update)
+    except _package.PackageError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    for line in changes:
+        print(f"version: {line}" + (" (also in the claimset file)" if args.update else ""))
+    print(f"packaged {len(files)} file(s) with {Path(args.file).name} into {args.output}")
+    rep = _validate.validate_path(args.output)
+    if rep is None:
+        return 1
+    _validate.print_report(rep)
+    return 1 if rep.errors else 0
+
+
 def build_parser():
     p = argparse.ArgumentParser(
         prog="claimset",
@@ -211,6 +228,14 @@ def build_parser():
     rn.add_argument("file", help="path to the claimset JSON file (rewritten in place unless -o is given)")
     rn.add_argument("-o", "--output", help="write the renumbered claimset to this file")
     rn.set_defaults(func=_cmd_renumber)
+
+    pk = sub.add_parser("package", help="build the submission package (BagIt): the claimset with the files its "
+                                        "artefacts name by relative path, with their checksums")
+    pk.add_argument("file", help="path to the claimset JSON file; packaged files are found beside it")
+    pk.add_argument("-o", "--output", required=True, help="the package to write: a folder, or a .zip file")
+    pk.add_argument("--update", action="store_true",
+                    help="also write the files' checksums into the artefacts' version in the claimset file")
+    pk.set_defaults(func=_cmd_package)
 
     mg = sub.add_parser("migrate", help="bring a claimset to the current specification: rename what is "
                                         "mechanical, list what needs judgement")
