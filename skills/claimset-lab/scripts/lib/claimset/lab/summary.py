@@ -1,6 +1,6 @@
 """Current state of a lab record, for whoever picks up the work (spec §2, principle 8)."""
 
-from .core import State, final_statuses, is_withheld
+from .core import State, final_statuses, is_withheld, plan_approved
 
 OPEN_STATUSES = ("proposed", "testing")
 
@@ -23,6 +23,9 @@ def _text(event):
     if event["type"] == "plan":
         return f"[{b.get('kind')}] {b.get('design', '')}"
     if event["type"] == "approval":
+        if b.get("on_behalf_of"):
+            return (f"{b.get('target')} approved by {b['on_behalf_of']} at {b.get('given_at') or event.get('at')}, "
+                    f"recorded by agent {event.get('by')}: \"{b.get('words', '')}\"")
         return f"approves {b.get('target')}"
     if event["type"] == "deviation":
         return f"{b.get('run')} vs {b.get('plan')}: {b.get('text', '')}"
@@ -93,6 +96,8 @@ def build(events):
         plans.append({"id": p["id"], "kind": cur["body"].get("kind"),
                       "hypotheses": cur["body"].get("hypotheses", []), "design": cur["body"].get("design"),
                       "approved": bool({p["id"], cur["id"]} & approvals),
+                      "requires_approval": bool(cur["body"].get("requires_approval")),
+                      "awaiting_approval": bool(cur["body"].get("requires_approval")) and not plan_approved(st, cur["id"]),
                       "runs": [r["id"] for r in under],
                       "done": any(r["body"].get("exit_status") == "success" for r in under)})
     results = [e for e in st.events if e["type"] == "result" and not is_withheld(e)]

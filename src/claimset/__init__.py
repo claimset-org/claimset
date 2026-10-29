@@ -6,7 +6,7 @@ __version__ = "0.34.0"
 SPEC_VERSION = "0.34"
 
 #: Version of the lab record specification this package implements.
-LAB_SPEC_VERSION = "0.13"
+LAB_SPEC_VERSION = "0.14"
 
 #: Version of the revision specification (reviews, responses, revised versions and scores) this package implements.
 REVISION_SPEC_VERSION = "0.2"

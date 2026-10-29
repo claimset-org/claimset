@@ -372,7 +372,7 @@ def cmd_plan(args):
     body = {"kind": args.kind, "hypotheses": args.hypotheses, "design": design, "analysis": args.analysis,
             "setup": setup or None,
             "new_data": args.new_data, "exclusions": exclusions or None, "addresses": addresses or None,
-            "decision": decision,
+            "decision": decision, "requires_approval": True if args.requires_approval else None,
             "runs": args.runs, "criterion": args.criterion, "data": data, "holdout": holdout,
             "code_version": commit, "dirty": dirty if commit is not None else None}
     warnings = plan_warnings(_view(args), body)
@@ -430,7 +430,9 @@ def cmd_verdict(args):
 
 
 def cmd_approve(args):
-    return _write(args, "approval", {"target": args.target, "comment": args.comment})
+    return _write(args, "approval", {"target": args.target, "comment": args.comment,
+                                     "on_behalf_of": args.on_behalf_of, "words": args.words,
+                                     "given_at": args.given_at, "channel": args.channel})
 
 
 def cmd_deviate(args):
@@ -772,6 +774,8 @@ def add_parser(subparsers):
     p.add_argument("--design", help="what will be run, on what, with which settings (required, except with "
                                      "--comment: the test's procedure)")
     p.add_argument("--analysis", required=True, help="what will be computed from the outputs")
+    p.add_argument("--requires-approval", dest="requires_approval", action="store_true",
+                   help="no confirmatory run until the supervisor's approval of this plan is recorded")
     for role, what in (("studied", "what the test studies or compares: methods, interventions, a phenomenon"),
                        ("cases", "what or whom it is tested on: data sets, populations, participants"),
                        ("procedure", "how: evaluation scheme, trial design, sampling, analytic approach"),
@@ -810,9 +814,15 @@ def add_parser(subparsers):
     p = cmd("verdict", cmd_verdict, "the verdict a decided plan's rule gives", parents=(viewer,))
     p.add_argument("plan", help="plan ID")
 
-    p = cmd("approve", cmd_approve, "approve a plan or other event (human actors only)")
+    p = cmd("approve", cmd_approve, "record an approval of a plan or other event: by the human, or by an agent on "
+                                    "the human's behalf with their words")
     p.add_argument("target")
     p.add_argument("--comment")
+    p.add_argument("--on-behalf-of", dest="on_behalf_of", metavar="AC",
+                   help="the human actor whose approval an agent records (the agent writes with --by)")
+    p.add_argument("--words", help="the human's reply, verbatim (required with --on-behalf-of)")
+    p.add_argument("--given-at", dest="given_at", metavar="TIME", help="when the human gave it (ISO 8601, UTC)")
+    p.add_argument("--channel", help="where the human gave it: conversation, email, meeting notes, …")
 
     p = cmd("run", cmd_run, "run a command and record its run and results",
             parents=(common,))
