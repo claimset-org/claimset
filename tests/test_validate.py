@@ -123,7 +123,7 @@ class TestRulesEveryFile(Base):
         self.assertRule(self.d, "6")
 
     def test_07_formal_evidence_without_foundation(self):
-        self.d["evidence"].append({"id": "E2", "profile": "formal", "description": "Derivation.",
+        self.d["evidence"].append({"id": "E2", "profile": "formal", "availability": {"level": "public"}, "description": "Derivation.",
                                    "steps": [{"id": "S1", "statement": "$x=x$", "by": [], "rule": "identity"}]})
         self.d["claims"].append({"id": "C4", "statement": "Identity holds for every real $x$.",
                                  "type": "formal", "role": "supporting", "novelty": "no_prior_found",
@@ -282,7 +282,7 @@ class TestRulesV09V10(Base):
         self.d = load("submission-native.json")
 
     def add_formal(self, **extra):
-        self.d["evidence"].append({"id": "E2", "profile": "formal", "description": "Derivation.",
+        self.d["evidence"].append({"id": "E2", "profile": "formal", "availability": {"level": "public"}, "description": "Derivation.",
                                    "foundation": "ZFC",
                                    "steps": [{"id": "S1", "statement": "$x=x$", "by": [], "rule": "identity"}]})
         c = {"id": "C4", "statement": "Identity holds for every real $x$.", "type": "formal",
@@ -586,7 +586,7 @@ class TestRulesV014(Base):
 
     def test_07_converted_formal_evidence_by_source_spans(self):
         d = converted_base()
-        d["evidence"].append({"id": "E2", "profile": "formal", "description": "Derivation of the identity.",
+        d["evidence"].append({"id": "E2", "profile": "formal", "availability": {"level": "public"}, "description": "Derivation of the identity.",
                               "foundation": "real analysis", "source_spans": ["p3.4", "p3.5"]})
         d["claims"].append({"id": "C4", "statement": "Identity holds for every real $x$.", "type": "formal",
                             "role": "supporting", "novelty": "no_prior_found",
@@ -598,7 +598,7 @@ class TestRulesV014(Base):
         self.assertRule(d, "7")
 
     def test_07_native_formal_evidence_needs_steps(self):
-        self.d["evidence"].append({"id": "E2", "profile": "formal", "description": "Derivation.",
+        self.d["evidence"].append({"id": "E2", "profile": "formal", "availability": {"level": "public"}, "description": "Derivation.",
                                    "foundation": "ZFC", "source_spans": ["sec2:p1"]})
         self.d["claims"].append({"id": "C4", "statement": "Identity holds for every real $x$.", "type": "formal",
                                  "role": "supporting", "novelty": "no_prior_found",
@@ -1138,8 +1138,11 @@ class TestRulesV030(Base):
         definition(self.d, "D2").pop("kind")
         self.assertRule(self.d, "63")
 
-    def test_63_kind_optional_when_not_framed(self):
+    def test_63_kind_required_on_every_definition(self):
+        """v0.32: every definition has a kind, named in a setup or about or not."""
         self.d["definitions"].append({"id": "D6", "term": "store network", "definition": "The stores of one retailer."})
+        self.assertRule(self.d, "63")
+        definition(self.d, "D6")["kind"] = "setting"
         self.assertValid(self.d)
 
     # ----- rule 64 -----
@@ -1297,14 +1300,14 @@ class TestRulesV032(Base):
         self.assertIn("66", self.errors())
 
     def test_66_no_results_in_formal_evidence(self):
-        self.d["evidence"].append({"id": "E2", "profile": "formal", "description": "Proof.", "foundation": "ZFC",
+        self.d["evidence"].append({"id": "E2", "profile": "formal", "availability": {"level": "public"}, "description": "Proof.", "foundation": "ZFC",
                                    "steps": [{"id": "S1", "statement": "x", "by": [], "rule": "r"}],
                                    "results": [{"id": "R1", "variable": "q", "value": 1}]})
         self.assertIn("66", self.errors())
 
     # ----- rule 38: rows of bulk data -----
     def test_38_bulk_data_rows(self):
-        self.d["artefacts"].append({"id": "A3", "kind": "data", "uri": "files/per-series.csv",
+        self.d["artefacts"].append({"id": "A3", "availability": {"level": "public"}, "kind": "data", "uri": "files/per-series.csv",
                                     "version": "sha256:" + "0" * 64, "licence": "CC-BY-4.0",
                                     "columns": [{"name": "series", "dimension": "D4"},
                                                 {"name": "skill", "variable": "D1", "unit": "1"}]})
@@ -1318,7 +1321,7 @@ class TestRulesV032(Base):
     # ----- rule 67: figures, artefacts -----
     def test_67_figures(self):
         framed_table(self.d)
-        fig = {"id": "A3", "kind": "figure", "function": "data_plot", "description": "Forecast skill by method.",
+        fig = {"id": "A3", "availability": {"level": "public"}, "kind": "figure", "function": "data_plot", "description": "Forecast skill by method.",
                "shows": ["E1.T1"], "encoding": {"x": "D7", "y": "D1"}, "licence": "CC-BY-4.0"}
         self.d["artefacts"].append(fig)
         self.c2["support"][0]["artefacts"] = ["A2", "A3"]
@@ -1333,20 +1336,20 @@ class TestRulesV032(Base):
             self.assertIn("67", self.errors(d), change)
 
     def test_67_diagram_is_never_evidence(self):
-        self.d["artefacts"].append({"id": "A3", "kind": "figure", "function": "diagram",
+        self.d["artefacts"].append({"id": "A3", "availability": {"level": "public"}, "kind": "figure", "function": "diagram",
                                     "description": "The structure of method M.", "licence": "CC-BY-4.0"})
         self.c2["support"][0]["artefacts"] = ["A3"]
         self.assertIn("67", self.errors())
 
     def test_67_columns_of_bulk_data(self):
-        self.d["artefacts"].append({"id": "A3", "kind": "data", "uri": "https://example.org/d.csv", "licence": "CC0-1.0",
+        self.d["artefacts"].append({"id": "A3", "availability": {"level": "public"}, "kind": "data", "uri": "https://example.org/d.csv", "licence": "CC0-1.0",
                                     "columns": [{"name": "x", "variable": "D1", "dimension": "D4"}]})
         self.assertIn("67", self.errors())
 
     def test_67_new_artefact_kinds(self):
         for kind in ("instrument", "stimulus", "codebook", "recording"):
             d = copy.deepcopy(self.d)
-            d["artefacts"].append({"id": "A3", "kind": kind, "uri": "https://example.org/x", "licence": "CC-BY-4.0"})
+            d["artefacts"].append({"id": "A3", "availability": {"level": "public"}, "kind": kind, "uri": "https://example.org/x", "licence": "CC-BY-4.0"})
             self.assertValid(d)
 
     # ----- rule 68: definitions -----
@@ -1430,7 +1433,7 @@ class TestRulesV032(Base):
             fig.write_bytes(b"not really a png")
             digest = hashlib.sha256(fig.read_bytes()).hexdigest()
             d = copy.deepcopy(self.d)
-            d["artefacts"].append({"id": "A3", "kind": "figure", "function": "diagram", "description": "Design.",
+            d["artefacts"].append({"id": "A3", "availability": {"level": "public"}, "kind": "figure", "function": "diagram", "description": "Design.",
                                    "uri": "files/fig1.png", "version": f"sha256:{digest}", "licence": "CC-BY-4.0"})
             (root / "data" / "paper.claimset.json").write_text(json.dumps(d), encoding="utf-8")
             (root / "bagit.txt").write_text("BagIt-Version: 1.0\nTag-File-Character-Encoding: UTF-8\n")
@@ -1499,7 +1502,7 @@ class TestRulesV032(Base):
 
     # ----- warning 30 and the figure flag -----
     def test_w30(self):
-        self.d["artefacts"].append({"id": "A3", "kind": "figure", "function": "data_plot",
+        self.d["artefacts"].append({"id": "A3", "availability": {"level": "public"}, "kind": "figure", "function": "data_plot",
                                     "description": "Skill by horizon.", "licence": "CC-BY-4.0"})
         self.c2["support"][0]["artefacts"] = ["A3"]
         rep = validate(self.d)
@@ -1509,7 +1512,7 @@ class TestRulesV032(Base):
         self.assertIn("W30", self.warnings())                                 # text equal to D1's term
 
     def test_specimen_read_into_observations(self):
-        self.d["artefacts"].append({"id": "A3", "kind": "figure", "function": "specimen",
+        self.d["artefacts"].append({"id": "A3", "availability": {"level": "public"}, "kind": "figure", "function": "specimen",
                                     "description": "Gel of the samples.", "licence": "CC-BY-4.0"})
         self.c2["support"][0]["artefacts"] = ["A3"]
         self.e1["results"] = [{"id": "R1", "variable": "band present", "value": True,
@@ -1517,6 +1520,32 @@ class TestRulesV032(Base):
         rep = validate(self.d)
         self.assertNotIn("figure_without_data", rep.computed["C2"]["verifiability_flags"])
         self.assertNotIn("W30", {w["rule"] for w in rep.warnings})
+
+    # ----- rule 61 (revised), rule 75, flag availability_not_stated -----
+    def test_61_setup_required_on_non_formal_evidence(self):
+        self.e1.pop("setup")
+        self.assertIn("61", self.errors())
+
+    def test_75_availability_required(self):
+        self.e1.pop("availability")
+        self.assertIn("75", self.errors())
+        self.e1["availability"] = {"level": "public"}
+        self.d["artefacts"][0].pop("availability")
+        self.assertIn("75", self.errors())
+
+    def test_not_stated(self):
+        self.e1["availability"] = {"level": "not_stated"}              # no reason, no hash needed
+        rep = validate(self.d)
+        self.assertEqual([e for e in rep.errors if e["rule"] in ("12", "75")], [])
+        self.assertIn("availability_not_stated", rep.computed["C2"]["verifiability_flags"])
+        self.assertEqual(rep.computed["C2"]["verifiability"], "open")
+
+    # ----- §8 rule 7: statistically significant -----
+    def test_statistically_significant_is_not_rhetoric(self):
+        self.c2["statement"] = self.c2["statement"].rstrip(".") + ", a statistically significant difference."
+        self.assertNotIn("S7", self.warnings())
+        self.c2["statement"] = self.c2["statement"].replace("statistically significant", "significant")
+        self.assertIn("S7", self.warnings())
 
     # ----- the reading view -----
     def test_reading_view_of_v032_objects(self):
@@ -1598,7 +1627,7 @@ class TestRulesV033(Base):
         definition(self.d, "D2").pop("assumptions")
         self.d["schema_version"] = "0.32"
         _, done, todo = migrate(self.d)
-        self.assertIn("schema_version 0.32 -> 0.33", done)
+        self.assertIn("schema_version 0.32 -> 0.34", done)
         self.assertTrue(any(t.startswith("C2: no longer inherits C3") for t in todo))
 
 
@@ -1640,7 +1669,7 @@ class TestPackage(Base):
         (self.dir / "files").mkdir(parents=True)
         (self.dir / "files" / "fig1.png").write_bytes(b"image bytes")
         d = load("submission-native.json")
-        d["artefacts"].append({"id": "A3", "kind": "figure", "function": "diagram", "description": "Design.",
+        d["artefacts"].append({"id": "A3", "availability": {"level": "public"}, "kind": "figure", "function": "diagram", "description": "Design.",
                                "uri": "files/fig1.png", "licence": "CC-BY-4.0"})
         self.src = self.dir / "paper.claimset.json"
         self.src.write_text(json.dumps(d), encoding="utf-8")

@@ -1,10 +1,20 @@
-# Claimset — Specification v0.33 (draft)
+# Claimset — Specification v0.34 (draft)
 
-Status: working draft · Date: 2026-10-28 · Supersedes v0.32 (`spec/claimset-v0.32.md`) · Companions: lab record specification (`spec/lab-record-v0.13.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-29 · Supersedes v0.33 (`spec/claimset-v0.33.md`) · Companions: lab record specification (`spec/lab-record-v0.14.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.32
+## Changes since v0.33
+
+Anyone in any field should be able to write a claimset, and search should rest on what every claimset states. So what search and verification depend on, and every field can state honestly, is required; and what wrongly excluded a field's normal practice is allowed.
+
+- §3.2: `kind` is required on every definition, so that every term can be found and linked by what it names. Rule 63 revised.
+- §3.4: a `setup` is required on every evidence object except formal ones: search by what was studied, on what cases, how and through what lens rests on it, and every empirical field can fill its roles. Rule 61 revised; warning 28 keeps only its second part.
+- §3.10: `availability` is required on every evidence object and artefact, with the new level `not_stated` for material whose availability the paper does not state, so that a paper's silence is recorded rather than guessed. New rule 75; rule 12 revised; new verifiability flag `availability_not_stated` (§5).
+- §8 rule 4: qualifiers that bound where a claim holds go in `scope`; epistemic qualifiers ("suggests", "may") and magnitude ("slightly") are part of what is claimed and stay in the statement. Qualitative and humanities work state claims with such qualifiers as a matter of method.
+- Companion lab record v0.14: a supervisor's approval can be recorded by an agent on the supervisor's behalf, with the supervisor's words.
+
+## Changes in v0.33 (since v0.32)
 
 Assumptions listed on a term's definition were inherited through the evidence: every claim resting on an evidence object took the assumptions of every term its setup names. A comparison of five methods then gave each claim the assumptions of all five, so that "VETS F has the highest pinball values of the five models" was shown as resting on the error assumption of VETS D, and a claim about ETS on the error assumptions of CES, against which it was only compared.
 
@@ -313,7 +323,7 @@ Top-level layout:
 
 ```json
 {
-  "schema_version": "0.33",
+  "schema_version": "0.34",
   "@context": "optional",
   "paper": {},
   "contributors": [],
@@ -484,7 +494,7 @@ Retracted papers are never deleted. All their claims inherit the retraction stat
 | `id` | string | `D1` … |
 | `term` | string | |
 | `definition` | string | One term, one meaning, used rigidly throughout |
-| `kind` | enum | What sort of thing the term names (below). Required when the definition is named in an evidence `setup` (§3.4) or a claim's `about` (§3.3.5); recommended otherwise |
+| `kind` | enum | Required. What sort of thing the term names (below) |
 | `members` | list | For a term that names a group: the IDs of the definitions of its members, each of the same `kind` as the group (below) |
 | `part_of` | list | The definitions of the wholes this term is a part of: a parameter or component of a method, a subset of a data set, a subgroup of a population, a subscale of an instrument (below) |
 | `broader` | list | The definitions of the more general terms this term is a kind of: a variant of a method, a subtype of a condition, a narrower category (below) |
@@ -881,9 +891,11 @@ Applied to evidence and artefacts.
 
 | Field | Type | Values / notes |
 |---|---|---|
-| `level` | enum | `public` · `platform` (registered users) · `audit` (accessible only to automated audit agents in a secure environment; human auditors optional) · `author_only` (never leaves the originating environment; can be audited only by an attested agent run there) · `unavailable` |
-| `reason` | enum | Required unless `public`: `personal_data` · `commercial` · `legal` · `ethics` · `security` · `other` |
-| `content_hash` | string | Required unless `public` or `unavailable`: cryptographic hash committing to the exact content |
+| `level` | enum | Required. `public` · `platform` (registered users) · `audit` (accessible only to automated audit agents in a secure environment; human auditors optional) · `author_only` (never leaves the originating environment; can be audited only by an attested agent run there) · `unavailable` · `not_stated` (the paper does not say whether the material is available, or where; never a guess at another level) |
+| `reason` | enum | Required unless `public` or `not_stated`: `personal_data` · `commercial` · `legal` · `ethics` · `security` · `other` |
+| `content_hash` | string | Required unless `public`, `unavailable` or `not_stated`: cryptographic hash committing to the exact content |
+
+Every evidence object and every artefact has an `availability` (rule 75): whether the material can be checked is what verifiability is computed from (§5), and readers filter on it. A paper that says nothing about it gives `not_stated`, which records a fact, not a default.
 
 ### 3.11 Contributors
 
@@ -1038,6 +1050,7 @@ For formal claims a check is a re-derivation; for empirical and simulation claim
 
 **Verifiability flags** (computed, list):
 - `api_model_dependency`: the supporting evidence relies on a model with `weights: api_only`; the result may not be reproducible once the model is withdrawn.
+- `availability_not_stated`: an evidence object or artefact the claim's support points to has availability `not_stated`; the claim is computed as `open` if nothing else limits it, and the flag says that this was not confirmed.
 - `figure_without_data`: a supporting figure is a `data_plot` with neither `underlying_data` nor `shows`, or a `specimen` that no observation is read from (§3.6). (Revised in v0.32.)
 - `unpublished_prompts`: a model used in the research design has no `prompts` artefact.
 - `unrecorded_model_settings`: a model used in the research design has no `settings`, or its `record_source` is absent or `self_reported`.
@@ -1063,7 +1076,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 1. One assertion per statement. A claim is one **atom**: one *subject* (the method, model, group of methods, population or object the claim is about), one *relation* (what is asserted of it: is lower than, is stationary when, improves, is equivalent to), at most one *comparator* (what it is compared with; a named group, such as "the univariate methods", is one comparator), and one set of *conditions* (the data, setting, sample size, horizon or parameter region under which it holds). A statement with two subjects, two comparators or two sets of conditions is two or more claims, whatever its wording. Write the atom first and the statement from it; the atom is recorded in the claim's `about` (§3.3.5). A statement also holds more than one claim when one part could be true and another false. Signs of it: a semicolon; contrast (`but`, `while`, `whereas`, `although`, `however`); addition (`as well as`, `also`, `in addition`, `moreover`, `furthermore`, `not only`); explanation (`because`, `since`, `due to`, `thus`, `therefore`, `hence`, `which explains`), which usually joins a result to its explanation, two claims of different types linked by `explains` (§3.7); an assertion in a side clause (`, which …`) or in parentheses; a recommendation added to a finding (`should`, `recommend`); a claim citing results of more than one evidence object; and `and` joining two verbs. The grouping of rule 2 (one subject against one comparator under one set of conditions, better on some measures and worse on others) stays one claim.
 2. **Granularity rule:** split a statement into separate claims when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one interpretive claim with a warrant; sub-themes become separate supporting claims only if they have their own evidence. Atoms are grouped into one claim only when they share subject, comparator and conditions and differ in the measure or summary: "M has a lower mean and median MASE than N, but a higher MSIS" is one claim, supported by the table holding the numbers, whose values it does not repeat (§3.4, *Tables and claims*). The same comparison on two data sets, against two comparators or for two methods is two claims. A conclusion the paper draws over several atoms ("M is the most robust of the variants") is a claim of its own, whose `depends_on` lists the atoms it rests on; it is not written by merging them. Results on which a method is worse are stated in the claim, never left out.
 3. Self-contained: no anaphora or cross-references ("this", "the above", "as shown").
-4. Scope-bearing qualifiers belong in `scope`, not hedged prose.
+4. Qualifiers that bound where the claim holds (the population, setting, period, conditions, exclusions) belong in `scope`, not in the statement. Epistemic qualifiers ("suggests", "may", "is consistent with") and magnitude ("slightly", "by about a fifth") are part of what is claimed: they stay in the statement, worded as the paper words them, and confidence in the claim is recorded in its assessments (§5). (Revised in v0.34.)
 5. Defined terms are marked inline with their definition ID: `[[D2:forecast skill]]`, in statements and in definitions. The text of a marker is plain: it holds no other marker (`[[D24:VETS F]]`, never `[[D24:V[[D27:ETS]] F]]`).
 6. Mathematics is written in LaTeX, delimited by `$…$`. Algorithms in definitions are pseudocode in a fenced block (three backticks before and after).
 7. No evaluative rhetoric ("novel", "significant", "remarkable"). "Statistically significant", the outcome of a test, is a result, not rhetoric.
@@ -1095,7 +1108,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 9. `provenance` or `field_provenance` values `extracted`/`inferred` only when `paper.origin: converted`; `source_spans` required in that case.
 10. Each support kind carries its required pointer (§4); `cited` carries `reference` or `target` with `id_type`. (Revised in v0.16.)
 11. Every limitation affects at least one claim; every claim's `limitations` resolve.
-12. `availability.level` other than `public` ⇒ `reason` present; `audit`/`author_only`/`platform` ⇒ `content_hash` present.
+12. `availability.level` other than `public` and `not_stated` ⇒ `reason` present; `audit`/`author_only`/`platform` ⇒ `content_hash` present. (Revised in v0.34: `not_stated`.)
 13. `verifiability` and `verifiability_flags`, where present, match the platform's computation (§5).
 14. Every `guarantor` and `conversion_guarantor` is a human or an organisation; every human guarantor has an `orcid`.
 15. `author` and `converter` positions are held only by agents; `supervisor` only by humans.
@@ -1192,7 +1205,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 ### 10.18 Rules added in v0.23 (errors: file rejected)
 
-61. (Revised in v0.30.) An evidence object's `setup`, if present, has only the keys `studied`, `cases`, `procedure`, `lens` and `context`, each a non-empty list of IDs of definitions; formal evidence has no `setup`.
+61. (Revised in v0.30 and v0.34.) Every evidence object whose profile is not `formal` has a `setup`, with only the keys `studied`, `cases`, `procedure`, `lens` and `context`, each a non-empty list of IDs of definitions, at least one key present; formal evidence has no `setup`.
 
 ### 10.19 Rules added in v0.24 (errors: file rejected)
 
@@ -1200,7 +1213,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 ### 10.20 Rules added in v0.30 (errors: file rejected)
 
-63. A definition's `kind`, if present, is one of the values of §3.2. Every definition named in an evidence `setup` or in a claim's `about` has a `kind`.
+63. Every definition has a `kind`, one of the values of §3.2. (Revised in v0.34: required of every definition, not only those named in a setup or a claim's `about`.)
 64. `about`: every principal claim has one; no assumption claim has one. It has `subject` and `relation`, each a non-empty string, and `conditions`, a list (possibly empty); `object` and `comparator` are present, each `null` or a slot value; `object` may instead be a non-empty list of IDs of definitions of kind `variable` (`measure` until v0.31). A slot value is a non-empty string: when it has the form of a definition ID (`D` followed by digits) it resolves to a definition, and that definition is marked in the claim's statement (`[[Dn:…]]`). `relation` is text, never an ID.
 
 ### 10.21 Rules added in v0.31 (errors: file rejected)
@@ -1219,6 +1232,10 @@ The platform mints a DOI for every published claimset. The file records identifi
 72. Derived evidence. Each entry of an evidence object's `derived_from` names another evidence object of this paper and has a `how` from the list of §3.4; `derived_from` forms no cycle.
 73. Assumptions of a term. A definition's `assumptions`, if present, is a non-empty list of IDs of assumption claims (support of kind `assumption`).
 74. Contrasts. A `comparator` in an observation's conditions (of a result, a table, a row label or a column) is a definition ID or text; when it is a definition ID and another condition of the observation has a value that is a member of a group, the comparator is a member of the same group.
+
+### 10.23 Rules added in v0.34 (errors: file rejected)
+
+75. Availability. Every evidence object and every artefact has an `availability` with a `level` from §3.10.
 
 ### 10.4 Warnings (file accepted, warning recorded)
 
@@ -1249,7 +1266,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 25. A `secondary` `descriptive` claim with `empirical_quant` or `simulation` support (a result, not a conclusion drawn from results) on which nothing rests: no claim depends on it or lists it in `assumptions`, no warrant names it as a premise, no open question concerns it, and it stands in no relation to another claim of the paper (it neither `explains`, `qualifies`, `supports`, `contradicts` nor `refines` one, nor is the target of such a relation, §3.7). Keep it only if it states a loss, limit or null result of the paper's own method; otherwise the result table of its evidence holds it (§3.3, *Secondary claims in converted papers*). (Revised in v0.33.)
 26. A definition without `source` (a term of the paper's own) is named in the statement of a `formal` claim and contains no mathematics (`$…$`): if it is the paper's own method or model, give its defining equations (§3.2, *The paper's own method or model*).
 27. A supporting or secondary claim that is not an assumption has no `about` (§3.3.5). Also: a slot of `about` holds text that equals, ignoring case, the `term` of a definition in the file: give the definition's ID instead.
-28. An evidence object whose profile is not `formal` has no `setup`, or a definition is named in a claim's `about` and in no setup of the non-formal evidence that claim's support cites, although its kind is `method`, `intervention`, `population`, `data`, `design` or `variable` (a part of the study that the setup leaves out). A definition counts as named when the setup names it, names a group it is a member of, or names every member of it (§3.2, *Groups*). (Revised in v0.31.)
+28. A definition is named in a claim's `about` and in no setup of the non-formal evidence that claim's support cites, although its kind is `method`, `intervention`, `population`, `data`, `design` or `variable` (a part of the study that the setup leaves out). A definition counts as named when the setup names it, names a group it is a member of, or names every member of it (§3.2, *Groups*). (Revised in v0.31.) In v0.34 an evidence object without a setup is an error (rule 61).
 29. A native paper has no `declarations`, or its declarations leave out `funding` or `competing_interests`: ask the guarantor and record what they declare (an empty funding list and "None declared." are declarations).
 30. A `data_plot` figure without `shows` or `underlying_data`; a `specimen` from which no observation is read (`read_from`); or a result whose `variable` or a table column whose variable is text equal, ignoring case, to the `term` of a definition in the file (give the ID).
 
@@ -1307,7 +1324,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.33",
+  "schema_version": "0.34",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",

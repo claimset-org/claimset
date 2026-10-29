@@ -52,6 +52,9 @@ def fixture_claimset():
     for c in d["claims"]:
         if c["id"] in about:
             c["about"] = about[c["id"]]
+    for ev in d["evidence"]:                          # setups, required in v0.32 (rule 61)
+        if ev.get("profile") != "formal":
+            ev["setup"] = {"studied": ["D4"], "cases": ["D8"]}
     from claimset.migrate import migrate              # quantity -> variable (v0.32)
     d, _, _ = migrate(d)
     d["paper"]["declarations"] = {"funding": [], "competing_interests": "None declared."}
