@@ -625,6 +625,9 @@ def cmd_verify(args):
         for a, x in (rep.get("agents") or {}).items():
             state = f"merged by {x['merged_by']}" if x["merged_by"] else "open"
             print(f"  agent log {a}: {x['events']} events, {state}")
+        for w in rep.get("warnings") or []:
+            where = f"{w['log']} " if w.get("log") else ""
+            print(f"  WARNING [{w['rule']}] {where}seq {w['seq']}: {w['message']}")
         for n in rep.get("notes") or []:
             print(f"  NOTE {n}")
         if rep["unchecked_types"]:

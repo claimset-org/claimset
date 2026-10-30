@@ -14,7 +14,7 @@ from pathlib import Path
 from claimset import cli
 from claimset.lab import anchor as anchor_mod
 from claimset.lab import guard, record
-from claimset.lab.core import Lab, verify
+from claimset.lab.core import Lab, header_hash, verify
 
 from test_lab_protect import HAVE_GIT, git, make_repo
 
@@ -362,6 +362,70 @@ class TestCleanCheckout(StudyRepo):
                          "claimset lab: commit anchor receipts (lab record v0.15)")
         self.assertEqual(self.remote_log("alpha")[-1]["id"], lab.read()[-1]["id"])
         self.assertTrue(verify(lab, remote=True)["ok"], verify(lab, remote=True)["errors"])
+
+
+class TestConcurrentWriters(StudyRepo):
+    """Lab record v0.15 §7.1: a receipt names the heads of the commit it was pushed with, not of the working tree,
+    where another writer may have appended meanwhile; receipts that earlier tools made in that race are reported
+    as warnings by verify --remote, not as L14 errors."""
+
+    def two_writers(self):
+        lab = self.new_study()
+        agent = lab.append("actor", {"kind": "agent", "name": "A",
+                                     "models": [{"provider": "P", "name": "M", "version": "1"}]}, by="AC1")["id"]
+        lab.start_agent(agent)
+        lab.append("note", {"text": "The agent's first note."}, by=agent)
+        record.save(lab, len(lab.read()) - 1)
+        # writer 1 (the human) records a note and commits; writer 2 (the agent) appends before writer 1 pushes
+        lab.append("note", {"text": "The human's note."}, by="AC1")
+        c = record.commit(lab, "writer 1")
+        lab.append("note", {"text": "The agent's second note, not in writer 1's commit."}, by=agent)
+        return lab, agent, c
+
+    def test_a_receipt_names_the_heads_of_its_commit(self):
+        lab, agent, c = self.two_writers()
+        entry = record.push(lab)                                 # writer 1 pushes
+        self.assertEqual(entry["receipt"]["commit"], c)
+        self.assertEqual(entry["agents"][agent]["seq"], 1)       # not 2: the second note is not in the commit
+        self.assertEqual(len(lab.read_agent(agent)), 2)
+        self.assertEqual(entry["seq"], lab.read()[-1]["seq"])
+        record.save(lab, len(lab.read()))                        # writer 2 commits and pushes its note
+        rep = verify(lab, remote=True)
+        self.assertTrue(rep["ok"], rep["errors"])
+        self.assertEqual(rep["warnings"], [])
+
+    def test_a_receipt_made_in_the_race_is_a_warning(self):
+        lab, agent, c = self.two_writers()
+        record.push(lab)
+        # the receipt as tools before this fix wrote it: the agent head read from the working tree
+        p = record._pending_path(lab)
+        raced = json.loads(record.pending(lab)[-1])
+        raced["agents"][agent] = {"seq": 2, "head_hash": header_hash(lab.read_agent(agent)[-1])}
+        p.write_text(json.dumps(raced, separators=(",", ":")) + "\n", encoding="utf-8")
+        record.save(lab, len(lab.read()))                        # writer 2 commits its note (and the receipt)
+        rep = verify(lab, remote=True)
+        self.assertTrue(rep["ok"], rep["errors"])
+        self.assertEqual(len(rep["warnings"]), 1)
+        w = rep["warnings"][0]
+        self.assertEqual((w["rule"], w["log"], w["seq"]), ("L14", f"agents/{agent}.jsonl", 2))
+        self.assertIn("another writer appended", w["message"])
+        self.assertIn(c[:12], w["message"])
+        code, out, _ = self.cli("lab", "verify", "--remote", "--study", "alpha")
+        self.assertEqual(code, 0)
+        self.assertIn("WARNING [L14]", out)
+
+    def test_a_named_event_no_commit_holds_is_still_an_error(self):
+        lab, agent, c = self.two_writers()
+        record.push(lab)
+        p = record._pending_path(lab)
+        bad = json.loads(record.pending(lab)[-1])
+        bad["agents"][agent] = {"seq": 3, "head_hash": "sha256:" + "0" * 64}
+        p.write_text(json.dumps(bad, separators=(",", ":")) + "\n", encoding="utf-8")
+        record.save(lab, len(lab.read()))
+        rep = verify(lab, remote=True)
+        self.assertFalse(rep["ok"])
+        self.assertTrue(any(e["rule"] == "L14" and "events were removed" in e["message"] for e in rep["errors"]))
+        self.assertEqual(rep["warnings"], [])
 
 
 if __name__ == "__main__":

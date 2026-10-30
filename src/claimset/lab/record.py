@@ -15,6 +15,7 @@ newest pushed commit, which no commit holds yet, is derived from the remote-trac
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -187,17 +188,13 @@ def push(lab):
     out = git(["push", "-q", remote, f"HEAD:refs/heads/{branch}"], cwd=top, check=False)
     if out.returncode != 0:
         raise LabError("anchor", f"push of {branch} to {remote} failed: {out.stderr.strip()}")
-    events = lab.read()
     commit_id = git(["rev-parse", "HEAD"], cwd=top).stdout.strip()
-    entry = {"seq": events[-1]["seq"], "head_hash": header_hash(events[-1]), "service": "git_remote",
-             "receipt": {"remote": remote, "branch": branch, "commit": commit_id}, "at": lab.clock()}
-    agents = {}
-    for actor in lab.agent_logs():
-        a = lab.read_agent(actor)
-        if a:
-            agents[actor] = {"seq": a[-1]["seq"], "head_hash": header_hash(a[-1])}
-    if agents:
-        entry["agents"] = agents
+    entry = heads_at(lab, commit_id)
+    if entry is None:
+        raise LabError("anchor", f"commit {commit_id[:12]} holds no lab log")
+    entry.update(service="git_remote", receipt={"remote": remote, "branch": branch, "commit": commit_id},
+                 at=lab.clock())
+    entry = {k: entry[k] for k in ("seq", "head_hash", "service", "receipt", "at", "agents") if k in entry}
     known = [json.loads(l) for l in _jsonl(Path(lab.root) / ANCHORS) + pending(lab)]
     if any(isinstance(a, dict) and (a.get("receipt") or {}).get("commit") == commit_id for a in known):
         return entry                    # this commit was pushed and received before
@@ -207,6 +204,38 @@ def push(lab):
         fh.flush()
         os.fsync(fh.fileno())
     return entry
+
+
+def _last_event(top, rev, rel):
+    """The last event of a log as committed in `rev`, or None."""
+    out = git(["show", f"{rev}:{rel}"], cwd=top, check=False)
+    lines = [l for l in out.stdout.splitlines() if l.strip()] if out.returncode == 0 else []
+    try:
+        return json.loads(lines[-1]) if lines else None
+    except ValueError:
+        return None
+
+
+def heads_at(lab, rev):
+    """{seq, head_hash, agents} of the logs as committed in `rev`: what a receipt of that commit may name. The
+    heads are read from the commit, never from the working tree, where another writer may have appended events
+    the commit does not hold (§7.1). None if the commit holds no main log."""
+    top = Path(lab.root).resolve().parent
+    lab_rel = Path(lab.root).resolve().relative_to(top).as_posix()
+    head = _last_event(top, rev, f"{lab_rel}/lab.jsonl")
+    if not isinstance(head, dict) or not isinstance(head.get("seq"), int):
+        return None
+    out = {"seq": head["seq"], "head_hash": header_hash(head)}
+    names = git(["ls-tree", "--name-only", f"{rev}:{lab_rel}/agents"], cwd=top, check=False)
+    agents = {}
+    for name in (names.stdout.split() if names.returncode == 0 else []):
+        if name.endswith(".jsonl") and re.match(r"^AC\d+\.jsonl$", name):
+            e = _last_event(top, rev, f"{lab_rel}/agents/{name}")
+            if isinstance(e, dict) and isinstance(e.get("seq"), int):
+                agents[name[:-len(".jsonl")]] = {"seq": e["seq"], "head_hash": header_hash(e)}
+    if agents:
+        out["agents"] = dict(sorted(agents.items(), key=lambda kv: int(kv[0][2:]) if kv[0][2:].isdigit() else 0))
+    return out
 
 
 def derived_receipt(lab, known):
@@ -225,31 +254,15 @@ def derived_receipt(lab, known):
         return None
     if git(["merge-base", "--is-ancestor", ref, "HEAD"], cwd=top, check=False).returncode != 0:
         return None
-
-    def last(rel):
-        out = git(["show", f"{ref}:{rel}"], cwd=top, check=False)
-        lines = [l for l in out.stdout.splitlines() if l.strip()] if out.returncode == 0 else []
-        try:
-            return json.loads(lines[-1]) if lines else None
-        except ValueError:
-            return None
-    lab_rel = Path(lab.root).resolve().relative_to(top).as_posix()
-    head = last(f"{lab_rel}/lab.jsonl")
-    if not isinstance(head, dict) or not isinstance(head.get("seq"), int):
+    heads = heads_at(lab, ref)
+    if heads is None:
         return None
     at = git(["show", "-s", "--format=%cd", "--date=format-local:%Y-%m-%dT%H:%M:%SZ", ref], cwd=top,
              env={"TZ": "UTC"}).stdout.strip()
-    entry = {"seq": head["seq"], "head_hash": header_hash(head), "service": "git_remote",
+    entry = {"seq": heads["seq"], "head_hash": heads["head_hash"], "service": "git_remote",
              "receipt": {"remote": remote, "branch": branch, "commit": ref}, "at": at, "derived": True}
-    names = git(["ls-tree", "--name-only", f"{ref}:{lab_rel}/agents"], cwd=top, check=False)
-    agents = {}
-    for name in (names.stdout.split() if names.returncode == 0 else []):
-        if name.endswith(".jsonl"):
-            e = last(f"{lab_rel}/agents/{name}")
-            if isinstance(e, dict) and isinstance(e.get("seq"), int):
-                agents[name[:-len(".jsonl")]] = {"seq": e["seq"], "head_hash": header_hash(e)}
-    if agents:
-        entry["agents"] = agents
+    if heads.get("agents"):
+        entry["agents"] = heads["agents"]
     return entry
 
 

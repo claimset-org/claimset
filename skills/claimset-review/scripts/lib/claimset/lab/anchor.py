@@ -401,27 +401,62 @@ def _former_logs(lab, top):
     return out
 
 
+def _later_holder(top, commit, ref, rels, pos):
+    """The first commit after `commit` on `ref` whose log (at one of `rels`) holds the event `pos` names, with the
+    same header hash; None if there is none."""
+    seq = pos.get("seq") if isinstance(pos, dict) else None
+    if not isinstance(seq, int) or isinstance(seq, bool) or seq < 1:
+        return None
+    revs = _git(["rev-list", "--reverse", "--ancestry-path", f"{commit}..{ref}"], cwd=top, check=False)
+    for rev in revs.stdout.split() if revs.returncode == 0 else []:
+        for rel in rels:
+            events = _parsed(_remote_file(top, rel, rev))
+            if len(events) >= seq and isinstance(events[seq - 1], dict) \
+                    and header_hash(events[seq - 1]) == pos.get("head_hash"):
+                return rev
+    return None
+
+
+def _race(n, name, pos, commit, later):
+    return (f"anchor {n} names {name} seq {pos.get('seq')}, which its commit {commit[:12]} does not hold; the "
+            f"later commit {later[:12]} holds it with the same header hash. The receipt was written while another "
+            f"writer appended to {name} (a race in tools before lab record v0.15): nothing was removed (§7.1)")
+
+
 def verify_remote(lab):
     """Check the local logs against the anchor branch on the remote (spec §7.1).
 
-    Returns {"errors", "notes"}: notes report logs that are behind the anchored copy, which is
-    expected in a working copy that has not caught up.
+    Returns {"errors", "notes", "warnings"}: notes report logs that are behind the anchored copy, which is
+    expected in a working copy that has not caught up; warnings report receipts that name an event their commit
+    does not hold but a later commit of the branch does (a receipt made during the race fixed in v0.15).
     """
     def fail(msg, **kw):
         return dict({"seq": None, "id": None, "rule": "L14", "message": msg}, **kw)
 
     cfg = anchoring(lab)
     if not cfg:
-        return {"errors": [fail("anchoring is not configured")], "notes": []}
+        return {"errors": [fail("anchoring is not configured")], "notes": [], "warnings": []}
     top = _repo_top(lab)
     remote, branch = cfg.get("remote", "origin"), cfg.get("branch") or default_branch(lab)
     try:
         exists = _fetch(top, remote, branch)
     except LabError as exc:
-        return {"errors": [fail(exc.message)], "notes": []}
+        return {"errors": [fail(exc.message)], "notes": [], "warnings": []}
     if not exists:
-        return {"errors": [fail(f"{remote}/{branch} does not exist")], "notes": []}
-    errors, notes = [], []
+        return {"errors": [fail(f"{remote}/{branch} does not exist")], "notes": [], "warnings": []}
+    errors, notes, warnings = [], [], []
+
+    def check(events, pos, n, commit, ref, rels, log, what):
+        errs = _check_position(events, pos, n, log, what)
+        seq = pos.get("seq") if isinstance(pos, dict) else None
+        if errs and isinstance(seq, int) and seq > len(events):
+            later = _later_holder(top, commit, ref, rels, pos)
+            if later:
+                warnings.append(dict({"seq": seq, "id": None, "rule": "L14",
+                                      "message": _race(n, log or "lab.jsonl", pos, commit, later)},
+                                     **({"log": log} if log else {})))
+                return []
+        return errs
     for path, rel, name in _log_files(lab, top):
         remote_lines = _remote_file(top, rel)
         if remote_lines is None:
@@ -460,11 +495,12 @@ def verify_remote(lab):
             if anchored is not None:
                 break
             anchored = _remote_file(top, old, commit)
-        errors += _check_position(_parsed(anchored), a, n, what=f"lab.jsonl in commit {commit[:12]}")
+        errors += check(_parsed(anchored), a, n, commit, ref, [main_rel] + _former_logs(lab, top), None,
+                        f"lab.jsonl in commit {commit[:12]}")
         agents = a.get("agents") if isinstance(a.get("agents"), dict) else {}
         for actor, pos in sorted(agents.items()):
             name = lab.agent_log_name(actor)
             rel = (lab.root / name).resolve().relative_to(top.resolve()).as_posix()
-            errors += _check_position(_parsed(_remote_file(top, rel, commit)), pos, n, name,
-                                      f"{name} in commit {commit[:12]}")
-    return {"errors": errors, "notes": notes}
+            errors += check(_parsed(_remote_file(top, rel, commit)), pos, n, commit, ref, [rel], name,
+                            f"{name} in commit {commit[:12]}")
+    return {"errors": errors, "notes": notes, "warnings": warnings}
