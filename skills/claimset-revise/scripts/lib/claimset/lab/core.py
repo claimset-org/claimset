@@ -1681,6 +1681,7 @@ def verify(lab, check_files=True, remote=False):
     from .anchor import verify_anchors, verify_confirmatory_anchoring, verify_remote
 
     rep = verify_events(events)
+    rep.setdefault("warnings", [])
     if check_files:
         rep["errors"] += verify_run_files(lab, events)
     rep["errors"] += verify_anchors(lab, events)
@@ -1726,5 +1727,6 @@ def verify(lab, check_files=True, remote=False):
         r = verify_remote(lab)
         rep["errors"] += r["errors"]
         rep["notes"] += r["notes"]
+        rep["warnings"] += r.get("warnings", [])
     rep["ok"] = not rep["errors"]
     return rep
