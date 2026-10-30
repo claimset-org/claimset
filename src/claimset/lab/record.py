@@ -6,6 +6,11 @@ only the study's folder: `lab/`, the papers and their reading views. It is check
 command that changes the record, the tool commits the study branch and pushes it; the push is the anchor
 (§7.1). A commit made after a run has the run's code commit as a further parent, so the code a run used stays
 reachable even when its branch is squash-merged or deleted.
+
+The receipt of a push cannot be in the commit it names, and writing it into the checkout after the push would
+leave the checkout dirty. It is kept in the checkout's git directory until the next commit, which carries it
+into `lab/anchors.jsonl` (spec v0.15 §7.1): the receipt of push n is in commit n+1, and the receipt of the
+newest pushed commit, which no commit holds yet, is derived from the remote-tracking branch.
 """
 
 import json
@@ -19,6 +24,8 @@ PREFIX = "claimset/"
 FOLDER = "claimset"
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 IGNORE_LINE = "/claimset/"
+ANCHORS = "anchors.jsonl"
+PENDING = "claimset-anchors-pending.jsonl"
 IDENT = {"GIT_AUTHOR_NAME": "claimset", "GIT_AUTHOR_EMAIL": "claimset@localhost",
          "GIT_COMMITTER_NAME": "claimset", "GIT_COMMITTER_EMAIL": "claimset@localhost"}
 
@@ -99,13 +106,62 @@ def check_writable(lab):
 
 # ---------------------------------------------------------------- committing and pushing
 
+def _pending_path(lab):
+    """Where the receipts of pushes not yet committed are kept: the study checkout's git directory, which no
+    commit and no `git status` sees."""
+    top = Path(lab.root).resolve().parent
+    out = git(["rev-parse", "--absolute-git-dir"], cwd=top, check=False)
+    return Path(out.stdout.strip()) / PENDING if out.returncode == 0 and out.stdout.strip() else None
+
+
+def _jsonl(path):
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return [l for l in text.splitlines() if l.strip()]
+
+
+def pending(lab):
+    """Receipts of pushes that no commit holds yet, as JSON lines."""
+    if not config(lab):
+        return []
+    p = _pending_path(lab)
+    return _jsonl(p) if p else []
+
+
+def _fold_pending(lab, top):
+    """Append to lab/anchors.jsonl the receipts no commit holds yet: the pending ones, and the derived receipt of
+    the newest pushed commit when this checkout did not push it (a clone). Returns True if any was added."""
+    path = Path(lab.root) / ANCHORS
+    have = _jsonl(path)
+    lines = pending(lab)
+    known = []
+    for l in have + lines:
+        try:
+            known.append(json.loads(l))
+        except ValueError:
+            pass
+    d = derived_receipt(lab, known)
+    if d:
+        lines.append(json.dumps(d, separators=(",", ":")))
+    new = [l for l in lines if l not in set(have)]
+    if new:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("".join(l + "\n" for l in new))
+        git(["add", "--", str(path)], cwd=top)
+    return bool(new)
+
+
 def commit(lab, message, extra_parents=()):
-    """Commit the study folder to its branch. Returns the commit, or None if nothing changed."""
+    """Commit the study folder to its branch, with the receipts of earlier pushes (§7.1). Returns the commit,
+    or None if nothing changed: receipts alone are not a change, they wait for the next commit."""
     top = Path(lab.root).resolve().parent
     git(["add", "-A", "."], cwd=top)
     head = git(["rev-parse", "--verify", "-q", "HEAD"], cwd=top, check=False).stdout.strip()
     if head and not git(["diff", "--cached", "--quiet", "HEAD"], cwd=top, check=False).returncode:
         return None
+    _fold_pending(lab, top)
     tree = git(["write-tree"], cwd=top).stdout.strip()
     args = ["commit-tree", tree, "-m", message]
     parents = [head] if head else []
@@ -116,11 +172,15 @@ def commit(lab, message, extra_parents=()):
         args += ["-p", p]
     c = git(args, cwd=top, env=_ident()).stdout.strip()
     git(["update-ref", "HEAD", c], cwd=top)
+    p = _pending_path(lab)
+    if p and p.exists():
+        p.unlink()                      # the receipts are in the commit now
     return c
 
 
 def push(lab):
-    """Push the study branch; record the anchor entry. Raises LabError if the push fails."""
+    """Push the study branch; keep the anchor entry until the next commit (§7.1). Raises LabError if the push
+    fails."""
     cfg = config(lab)
     top = Path(lab.root).resolve().parent
     remote, branch = cfg.get("remote", "origin"), cfg["branch"]
@@ -138,9 +198,78 @@ def push(lab):
             agents[actor] = {"seq": a[-1]["seq"], "head_hash": header_hash(a[-1])}
     if agents:
         entry["agents"] = agents
-    with open(Path(lab.root) / "anchors.jsonl", "a", encoding="utf-8") as fh:
+    known = [json.loads(l) for l in _jsonl(Path(lab.root) / ANCHORS) + pending(lab)]
+    if any(isinstance(a, dict) and (a.get("receipt") or {}).get("commit") == commit_id for a in known):
+        return entry                    # this commit was pushed and received before
+    p = _pending_path(lab)
+    with open(p, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, separators=(",", ":")) + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
     return entry
+
+
+def derived_receipt(lab, known):
+    """The receipt of the newest pushed commit when no commit or pending file holds it (a fresh clone, another
+    checkout): derived from the remote-tracking branch, which names a commit the remote has, and from the logs
+    in that commit. Its `at` is the commit's date. None when there is nothing to derive."""
+    cfg = config(lab)
+    if not cfg:
+        return None
+    top = Path(lab.root).resolve().parent
+    if top_of(top) != top:
+        return None
+    remote, branch = cfg.get("remote", "origin"), cfg["branch"]
+    ref = git(["rev-parse", "--verify", "-q", f"refs/remotes/{remote}/{branch}"], cwd=top, check=False).stdout.strip()
+    if not ref or any((a.get("receipt") or {}).get("commit") == ref for a in known if isinstance(a, dict)):
+        return None
+    if git(["merge-base", "--is-ancestor", ref, "HEAD"], cwd=top, check=False).returncode != 0:
+        return None
+
+    def last(rel):
+        out = git(["show", f"{ref}:{rel}"], cwd=top, check=False)
+        lines = [l for l in out.stdout.splitlines() if l.strip()] if out.returncode == 0 else []
+        try:
+            return json.loads(lines[-1]) if lines else None
+        except ValueError:
+            return None
+    lab_rel = Path(lab.root).resolve().relative_to(top).as_posix()
+    head = last(f"{lab_rel}/lab.jsonl")
+    if not isinstance(head, dict) or not isinstance(head.get("seq"), int):
+        return None
+    at = git(["show", "-s", "--format=%cd", "--date=format-local:%Y-%m-%dT%H:%M:%SZ", ref], cwd=top,
+             env={"TZ": "UTC"}).stdout.strip()
+    entry = {"seq": head["seq"], "head_hash": header_hash(head), "service": "git_remote",
+             "receipt": {"remote": remote, "branch": branch, "commit": ref}, "at": at, "derived": True}
+    names = git(["ls-tree", "--name-only", f"{ref}:{lab_rel}/agents"], cwd=top, check=False)
+    agents = {}
+    for name in (names.stdout.split() if names.returncode == 0 else []):
+        if name.endswith(".jsonl"):
+            e = last(f"{lab_rel}/agents/{name}")
+            if isinstance(e, dict) and isinstance(e.get("seq"), int):
+                agents[name[:-len(".jsonl")]] = {"seq": e["seq"], "head_hash": header_hash(e)}
+    if agents:
+        entry["agents"] = agents
+    return entry
+
+
+def migrate(lab):
+    """Records kept by tools before lab record v0.15 left the receipt of the last push in lab/anchors.jsonl,
+    uncommitted. Commit it, so that the checkout is clean; the push of that commit is received as usual.
+    Returns the commit, or None if there was nothing to migrate."""
+    if not config(lab):
+        return None
+    top = Path(lab.root).resolve().parent
+    rel = (Path(lab.root) / ANCHORS).resolve().relative_to(top).as_posix()
+    if not git(["status", "--porcelain", "--", rel], cwd=top).stdout.strip():
+        return None
+    git(["add", "--", rel], cwd=top)
+    head = git(["rev-parse", "--verify", "-q", "HEAD"], cwd=top, check=False).stdout.strip()
+    tree = git(["write-tree"], cwd=top).stdout.strip()
+    c = git(["commit-tree", tree, "-m", "claimset lab: commit anchor receipts (lab record v0.15)"]
+            + (["-p", head] if head else []), cwd=top, env=_ident()).stdout.strip()
+    git(["update-ref", "HEAD", c], cwd=top)
+    return c
 
 
 def save(lab, before=0, message=None):
@@ -148,6 +277,7 @@ def save(lab, before=0, message=None):
     a run takes the run's code commit as a further parent. Returns the anchor entry, or None."""
     if not config(lab):
         return None
+    migrated = migrate(lab)
     events = lab.read()
     new = events[before:]
     codes = [e["body"].get("code_version") for e in new if e.get("type") == "run" and isinstance(e.get("body"), dict)]
@@ -155,7 +285,7 @@ def save(lab, before=0, message=None):
         ids = ", ".join(e["id"] for e in new[:5]) + (" …" if len(new) > 5 else "")
         message = message or f"claimset lab: seq {new[0]['seq']}-{new[-1]['seq']} ({ids})"
     c = commit(lab, message or "claimset lab: update", codes)
-    if c is None and not new:
+    if c is None and not new and not migrated:
         return None
     try:
         return push(lab)

@@ -897,6 +897,7 @@ def run(func, args):
             lab = _lab(args)
             if lab.exists():
                 _record.check_writable(lab)
+                _record.migrate(lab)          # a receipt an earlier tool left uncommitted (lab record v0.15)
                 before = len(lab.read())
         code = func(args)
         if lab is not None and lab.exists() and _record.config(lab):

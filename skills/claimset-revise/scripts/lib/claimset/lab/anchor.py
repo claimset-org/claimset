@@ -36,17 +36,35 @@ def anchoring(lab):
     return record.anchor_config(lab) or load_config(lab).get("anchor")
 
 
-def read_anchors(lab):
+def read_anchors(lab, derive=True):
+    """The anchor receipts of the record: those committed in `anchors.jsonl`, then, on a study branch, those of
+    pushes no commit holds yet (kept in the checkout's git directory) and, when neither holds the receipt of the
+    newest pushed commit, that receipt derived from the remote-tracking branch (§7.1)."""
     p = lab.root / ANCHORS_FILE
-    if not p.exists():
-        return []
-    out = []
-    for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), start=1):
+    lines = p.read_text(encoding="utf-8").splitlines() if p.exists() else []
+    out, seen = [], set()
+    for n, line in enumerate(lines, start=1):
         if line.strip():
             try:
                 out.append(json.loads(line))
             except json.JSONDecodeError:
                 raise LabError("L14", f"{ANCHORS_FILE} line {n} is not valid JSON") from None
+            seen.add(line.strip())
+    from . import record
+    if not record.config(lab):
+        return out
+    for line in record.pending(lab):
+        if line.strip() in seen:
+            continue
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            raise LabError("L14", f"a pending anchor receipt in the git directory is not valid JSON") from None
+        seen.add(line.strip())
+    if derive:
+        d = record.derived_receipt(lab, out)
+        if d:
+            out.append(d)
     return out
 
 

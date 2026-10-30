@@ -1,6 +1,6 @@
 # Claimset — Specification v0.34 (draft)
 
-Status: working draft · Date: 2026-10-29 · Supersedes v0.33 (`spec/claimset-v0.33.md`) · Companions: lab record specification (`spec/lab-record-v0.14.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-10-29 · Supersedes v0.33 (`spec/claimset-v0.33.md`) · Companions: lab record specification (`spec/lab-record-v0.15.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 

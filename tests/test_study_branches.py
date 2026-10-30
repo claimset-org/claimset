@@ -238,5 +238,131 @@ class TestKeptApart(StudyRepo):
         self.assertEqual(cfg["hooks"]["SessionStart"][0]["hooks"][0]["command"], "claimset studies")
 
 
+DECISION = {"framework": "deterministic", "quantities": {"q": {"quantity": "q"}},
+            "supported": "q > 0", "not_supported": "q < 0"}
+
+
+class TestCleanCheckout(StudyRepo):
+    """Lab record v0.15 §7.1: a command leaves the study checkout clean. The receipt of push n is kept in the
+    checkout's git directory and committed with push n+1; the newest one is derived from the remote."""
+
+    def status(self, study="alpha"):
+        return git("status", "--porcelain", "--ignored", cwd=self.top / "claimset" / study)
+
+    def committed_receipts(self, rev="HEAD", study="alpha", cwd=None):
+        out = subprocess.run(["git", "show", f"{rev}:lab/anchors.jsonl"], cwd=cwd or self.top / "claimset" / study,
+                             capture_output=True, text=True)
+        return [json.loads(l)["receipt"]["commit"] for l in out.stdout.splitlines() if l.strip()]
+
+    def script(self):
+        (self.top / "claimset-code").mkdir(exist_ok=True)
+        (self.top / "claimset-code" / "s.py").write_text(SCRIPT, encoding="utf-8")
+        git("add", "-A", cwd=self.top)
+        git("commit", "-qm", "study script", cwd=self.top)
+
+    def test_note_run_and_anchor_leave_the_checkout_clean(self):
+        lab = self.new_study()
+        self.assertEqual(self.status(), "")
+        os.environ["CLAIMSET_ACTOR"] = "AC1"
+        self.script()
+        for args in (("lab", "note", "An observation."),
+                     ("lab", "run", "--", sys.executable, "claimset-code/s.py"),
+                     ("lab", "anchor"),
+                     ("lab", "anchor")):                         # nothing new: no commit, no second receipt
+            code, _, err = self.cli(*args)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(self.status(), "", args)
+        self.assertTrue(verify(lab)["ok"], verify(lab)["errors"])
+        self.assertTrue(verify(lab, remote=True)["ok"], verify(lab, remote=True)["errors"])
+
+    def test_the_receipt_of_each_push_is_in_the_next_commit(self):
+        lab = self.new_study()
+        os.environ["CLAIMSET_ACTOR"] = "AC1"
+        self.assertEqual(self.cli("lab", "note", "One.")[0], 0)
+        self.assertEqual(self.cli("lab", "note", "Two.")[0], 0)
+        study = self.top / "claimset" / "alpha"
+        head, previous = git("rev-parse", "HEAD", "HEAD^", cwd=study).split()
+        self.assertIn(previous, self.committed_receipts())
+        self.assertNotIn(head, self.committed_receipts())        # a commit cannot hold its own receipt
+        pending = [json.loads(l) for l in record.pending(lab)]
+        self.assertEqual([a["receipt"]["commit"] for a in pending], [head])
+        anchors = anchor_mod.read_anchors(lab)
+        self.assertEqual(anchors[-1]["receipt"]["commit"], head)
+        self.assertEqual(anchors[-1]["seq"], lab.read()[-1]["seq"])
+        self.assertNotIn("derived", anchors[-1])
+
+    def test_a_fresh_clone_derives_the_newest_receipt(self):
+        lab = self.new_study()
+        os.environ["CLAIMSET_ACTOR"] = "AC1"
+        self.assertEqual(self.cli("lab", "note", "One.")[0], 0)
+        head = git("rev-parse", "HEAD", cwd=self.top / "claimset" / "alpha")
+        clone = Path(self.tmp.name) / "clone"
+        git("clone", "-q", str(self.remote), str(clone), cwd=Path(self.tmp.name))
+        os.chdir(clone)
+        self.assertEqual(self.cli("setup")[0], 0)
+        other = Lab(clone / "claimset" / "alpha" / "lab")
+        newest = anchor_mod.read_anchors(other)[-1]
+        self.assertEqual((newest["receipt"]["commit"], newest["seq"], newest["derived"]),
+                         (head, lab.read()[-1]["seq"], True))
+        self.assertTrue(verify(other)["ok"], verify(other)["errors"])
+        self.assertTrue(verify(other, remote=True)["ok"], verify(other, remote=True)["errors"])
+        self.assertEqual(self.cli("lab", "note", "From the clone.", "--study", "alpha")[0], 0)
+        self.assertEqual(git("status", "--porcelain", "--ignored", cwd=clone / "claimset" / "alpha"), "")
+        on_remote = self.committed_receipts("refs/heads/claimset/alpha", cwd=self.remote)
+        self.assertIn(head, on_remote)                           # the derived receipt is committed by the clone
+        self.assertEqual(len(on_remote), len(set(on_remote)))
+
+    def test_export_anchors_the_plan_and_pins_the_record(self):
+        from claimset.lab.export import export
+        from claimset.lab.run import run_command
+        code, _, err = self.cli("setup", "--study", "alpha", "--title", "A", "--repository", "https://github.com/o/r")
+        self.assertEqual(code, 0, err)
+        lab = Lab(self.top / "claimset" / "alpha" / "lab")
+
+        def add(etype, body, by):
+            before = len(lab.read())
+            eid = lab.append(etype, body, by=by)["id"]
+            record.save(lab, before)
+            return eid
+        human = add("actor", {"kind": "human", "name": "R", "orcid": "0000-0000-0000-0000"}, "AC1")
+        agent = add("actor", {"kind": "agent", "name": "A", "models": [{"provider": "P", "name": "M",
+                                                                       "version": "1"}]}, human)
+        q = add("question", {"text": "Q?"}, agent)
+        h = add("hypothesis", {"statement": "X improves Y.", "question": q, "origin": "a_priori"}, agent)
+        pl = add("plan", {"kind": "confirmatory", "hypotheses": [h], "design": "d", "analysis": "a",
+                          "decision": DECISION}, agent)
+        self.script()
+        before = len(lab.read())
+        out = run_command(lab, agent, [sys.executable, "claimset-code/s.py"], plan=pl, echo=False, cwd=self.top)
+        record.save(lab, before)
+        add("status", {"target": h, "to": "supported", "rationale": "r", "plan": pl,
+                       "evidence": [r["id"] for r in out["results"]]}, agent)
+        self.assertEqual(self.status(), "")
+        draft = export(lab)["draft"]
+        claim = next(c for c in draft["claims"] if c.get("hypothesis", {}).get("lab_event") == h)
+        self.assertEqual(claim["planned_at_anchor"], "git_remote")
+        head = git("rev-parse", "HEAD", cwd=self.top / "claimset" / "alpha")
+        self.assertEqual(draft["artefacts"][-1]["uri"], f"https://github.com/o/r/blob/{head}/lab/lab.jsonl")
+
+    def test_a_checkout_left_dirty_by_an_earlier_tool_is_migrated(self):
+        lab = self.new_study()
+        os.environ["CLAIMSET_ACTOR"] = "AC1"
+        self.assertEqual(self.cli("lab", "note", "One.")[0], 0)
+        # as tools before v0.15 left it: the receipt of the last push written into anchors.jsonl, uncommitted
+        pending = record.pending(lab)
+        record._pending_path(lab).unlink()
+        with open(lab.root / "anchors.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(pending[-1] + "\n")
+        self.assertIn("anchors.jsonl", self.status())
+        self.assertTrue(verify(lab)["ok"])
+        code, _, err = self.cli("lab", "anchor")                 # nothing new to record: the migration alone
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.status(), "")
+        self.assertEqual(git("log", "-1", "--format=%s", "HEAD", cwd=self.top / "claimset" / "alpha"),
+                         "claimset lab: commit anchor receipts (lab record v0.15)")
+        self.assertEqual(self.remote_log("alpha")[-1]["id"], lab.read()[-1]["id"])
+        self.assertTrue(verify(lab, remote=True)["ok"], verify(lab, remote=True)["errors"])
+
+
 if __name__ == "__main__":
     unittest.main()
