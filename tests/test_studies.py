@@ -14,7 +14,7 @@ from claimset import cli
 from claimset.lab import anchor as anchor_mod
 from claimset.lab import guard, layout
 from claimset.lab.core import Lab, LabError, verify
-from claimset.validate import validate
+from claimset.validate import LOCAL_RE, source_name, validate, validate_path
 
 from test_lab_protect import HAVE_GIT, git, make_repo
 
@@ -305,6 +305,52 @@ class TestValidatorRules(unittest.TestCase):
             self.assertIn("57", self.errors(self.d, local_root=folder))
             self.local("eigen-checker/other.claimset.json")
             self.assertIn("57", self.errors(self.d, local_root=folder))
+
+
+class TestConvertedNames(unittest.TestCase):
+    """§2.4: a converted paper in a claimset/ folder is named from its source's identifier (warning 31)."""
+
+    def test_source_names(self):
+        def name(kind, sid, version=None):
+            return source_name({"id_type": kind, "source_id": sid, "source_version": version})
+        self.assertEqual(name("doi", "10.1016/j.ejor.2022.04.040"), "doi-10-1016-j-ejor-2022-04-040")
+        self.assertEqual(name("doi", "https://doi.org/10.1093/IMAMAN/dpad028"), "doi-10-1093-imaman-dpad028")
+        self.assertEqual(name("arxiv", "arXiv:2401.01234", "v2"), "arxiv-2401-01234v2")
+        self.assertEqual(name("arxiv", "2401.01234v2", "v2"), "arxiv-2401-01234v2")
+        self.assertEqual(name("arxiv", "math/0501234", "v1"), "arxiv-math-0501234v1")
+        self.assertEqual(name("doi", "10.1002/(SICI)1099-131X(199603)15:2<91::AID-FOR614>3.0.CO;2-6"),
+                         "doi-10-1002-sici-1099-131x-199603-15-2-91-aid-for614-3-0-co-2-6")
+        self.assertIsNone(name("doi", ""))
+
+    def warnings(self, file_name):
+        from test_validate import converted_base
+        doc = converted_base()                          # arXiv 2601.00000, version v2
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "claimset" / "pilot" / file_name
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(doc), encoding="utf-8")
+            rep = validate_path(path)
+        self.assertEqual(rep.errors, [])
+        return {w["rule"] for w in rep.warnings}
+
+    def test_w31_named_from_the_source(self):
+        self.assertNotIn("W31", self.warnings("arxiv-2601-00000v2.claimset.json"))
+
+    def test_w31_named_otherwise(self):
+        self.assertIn("W31", self.warnings("2601.00000.claimset.json"))
+
+    def test_w31_only_in_a_claimset_folder_and_for_converted_papers(self):
+        from test_validate import converted_base
+        self.assertNotIn("W31", {w["rule"] for w in validate(converted_base(), file_name="x.claimset.json").warnings})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "claimset" / "eigen-checker" / "eigen-checker.claimset.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(load("submission-native.json")), encoding="utf-8")
+            self.assertNotIn("W31", {w["rule"] for w in validate_path(path).warnings})
+
+    def test_long_converted_names_can_be_cited_locally(self):
+        long = "doi-10-1002-sici-1099-131x-199603-15-2-91-aid-for614-3-0-co-2-6"
+        self.assertRegex(f"pilot/{long}.claimset.json#C3", LOCAL_RE)
 
 
 @unittest.skipUnless(HAVE_GIT, "git is not installed")
