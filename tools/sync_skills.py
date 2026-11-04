@@ -29,19 +29,19 @@ COPIES = {
     "claimset-lab": [
         ("src/claimset", "skills/claimset-lab/scripts/lib/claimset"),   # the whole package
         ("spec/lab-record-v0.15.md", "skills/claimset-lab/references/lab-record-v0.15.md"),
-        ("spec/claimset-revision-v0.2.md", "skills/claimset-lab/references/revision-v0.2.md"),
+        ("spec/claimset-revision-v0.3.md", "skills/claimset-lab/references/revision-v0.3.md"),
     ],
     "claimset-revise": [
         ("src/claimset", "skills/claimset-revise/scripts/lib/claimset"),   # the whole package
         ("skills/claimset-lab/scripts/claimset", "skills/claimset-revise/scripts/claimset"),
-        ("spec/claimset-revision-v0.2.md", "skills/claimset-revise/references/revision-v0.2.md"),
+        ("spec/claimset-revision-v0.3.md", "skills/claimset-revise/references/revision-v0.3.md"),
         ("spec/claimset-v0.35.md", "skills/claimset-revise/references/spec-v0.35.md"),
         ("spec/lab-record-v0.15.md", "skills/claimset-revise/references/lab-record-v0.15.md"),
     ],
     "claimset-review": [
         ("src/claimset", "skills/claimset-review/scripts/lib/claimset"),   # the whole package
         ("skills/claimset-lab/scripts/claimset", "skills/claimset-review/scripts/claimset"),
-        ("spec/claimset-revision-v0.2.md", "skills/claimset-review/references/revision-v0.2.md"),
+        ("spec/claimset-revision-v0.3.md", "skills/claimset-review/references/revision-v0.3.md"),
         ("spec/claimset-v0.35.md", "skills/claimset-review/references/spec-v0.35.md"),
         ("spec/lab-record-v0.15.md", "skills/claimset-review/references/lab-record-v0.15.md"),
     ],
@@ -51,7 +51,7 @@ COPIES = {
     "package-data": [
         ("spec/claimset-v0.35.md", "src/claimset/data/spec/claimset-v0.35.md"),
         ("spec/lab-record-v0.15.md", "src/claimset/data/spec/lab-record-v0.15.md"),
-        ("spec/claimset-revision-v0.2.md", "src/claimset/data/spec/claimset-revision-v0.2.md"),
+        ("spec/claimset-revision-v0.3.md", "src/claimset/data/spec/claimset-revision-v0.3.md"),
         ("examples/submission-native.json", "src/claimset/data/examples/submission-native.json"),
         ("examples/published-native.json", "src/claimset/data/examples/published-native.json"),
         ("examples/submission-from-lab.json", "src/claimset/data/examples/submission-from-lab.json"),

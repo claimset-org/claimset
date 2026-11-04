@@ -1,10 +1,17 @@
-# Claimset Revision — Specification v0.2 (draft)
+# Claimset Revision — Specification v0.3 (draft)
 
-Status: working draft · Date: 2026-10-22 · Supersedes v0.1 (`spec/claimset-revision-v0.1.md`) · Companion to the claimset specification (`spec/claimset-v0.35.md`) and the lab record specification (`spec/lab-record-v0.15.md`)
+Status: working draft · Date: 2026-11-04 · Supersedes v0.2 (`spec/claimset-revision-v0.2.md`) · Companion to the claimset specification (`spec/claimset-v0.35.md`) and the lab record specification (`spec/lab-record-v0.15.md`)
 
 This specification covers what happens to a claimset after its first publication: how the platform's reviewers comment on it, how the author responds, how a revised version is submitted, how disagreements are settled, and how the platform's reviewer judges each claim's credibility and novelty. It specifies the documents the author receives and sends, and the rules the platform checks. The portal itself (accounts, notifications, the website) is out of scope, and so is the scoring rubric, which the portal publishes (§7).
 
-## Changes since v0.1
+## Changes since v0.2
+
+A claimset's identifier is its DOI or, until the platform registers DOIs, the platform's provisional identifier `liblm:<year>.<number>` (claimset §7). The registry's folder names are made from either.
+
+- §2.2: the concept identifier is the claimset's identifier (claimset §7), a DOI or a provisional identifier.
+- §2.4: the folder of a claimset in the registry is named from its identifier by one rule for both kinds: `doi:` removed, then every `:` and `/` replaced by `_` (`10.0000_claimset.2026.000789`, `liblm_2026.000123`). The package computes it (`claimset.revision.record_folder`).
+
+## Changes in v0.2 (since v0.1)
 
 Scores are given by the platform's reviewer, not computed by a formula: the reviewer is the one that analyses the claimset in detail. What keeps a score open to challenge is that every point below the top rests on comments the author can answer. Novelty is judged apart from credibility: a true claim is not less credible because it was known, but a claim labelled as found here when earlier work states it is a flagged problem.
 
@@ -42,7 +49,7 @@ The prefixes differ from those of lab-record events (`RN` runs, `RS` results, `P
 
 ### 2.2 Identifiers
 
-The claimset's DOI is its **concept identifier**; it resolves to the current version. Versions are cited as `<doi>@v<n>` (claimset §2). Documents of the record extend the version they belong to:
+The claimset's identifier, its DOI or the platform's provisional identifier (claimset §7), is its **concept identifier**; it resolves to the current version. Versions are cited as `<identifier>@v<n>` (claimset §2). Documents of the record extend the version they belong to:
 
 - review: `doi:10.0000/claimset.2026.000789@v1/RV1`
 - comment: `doi:10.0000/claimset.2026.000789@v1/RV1.c4`
@@ -84,7 +91,7 @@ The platform commits every document to a public registry repository when it is p
   v2/resolutions/RL1.json
 ```
 
-`<concept id>` is the DOI with `doi:` removed and `/` replaced by `_` (`10.0000_claimset.2026.000789`). Only the platform commits to the registry. Each version is tagged (`<concept id>-v2`). The branch is protected against force-pushes and deletion, so the repository's history is itself an append-only log of the record. The author's own repository, where the research is done, is not part of the record; the lab record published with each version is.
+`<concept id>` is the claimset's identifier with `doi:` removed and every `:` and `/` replaced by `_`: `10.0000_claimset.2026.000789` for a DOI, `liblm_2026.000123` for a provisional identifier, which can never coincide with a DOI's folder. Only the platform commits to the registry. Each version is tagged (`<concept id>-v2`). The branch is protected against force-pushes and deletion, so the repository's history is itself an append-only log of the record. The author's own repository, where the research is done, is not part of the record; the lab record published with each version is.
 
 An author works on a revision from a copy of the claimset's folder of the registry, the **record folder** (a clone, or the files the platform sends). The reference tools read the record folder (§9).
 
