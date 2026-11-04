@@ -680,5 +680,20 @@ class TestLabAnswersAReview(RecordCase):
         self.assertIn("addresses", err)
 
 
+class TestRecordFolder(unittest.TestCase):
+    """Revision spec §2.4: registry folder names."""
+
+    def test_names(self):
+        from claimset.revision import record_folder
+        self.assertEqual(record_folder("doi:10.0000/claimset.2026.000789"), "10.0000_claimset.2026.000789")
+        self.assertEqual(record_folder("liblm:2026.000123"), "liblm_2026.000123")
+
+    def test_refuses_what_is_not_an_identifier(self):
+        from claimset.revision import record_folder
+        for bad in ("liblm:2026.000123@v2", "doi:10.1016/j.x", "../etc", None):
+            with self.assertRaises(ValueError):
+                record_folder(bad)
+
+
 if __name__ == "__main__":
     unittest.main()

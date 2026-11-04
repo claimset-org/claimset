@@ -53,6 +53,17 @@ class RevisionError(Exception):
     pass
 
 
+def record_folder(concept_id):
+    """The folder of a claimset in the registry (revision spec §2.4): its identifier with `doi:` removed and every
+    `:` and `/` replaced by `_`. `doi:10.0000/claimset.2026.000789` -> `10.0000_claimset.2026.000789`;
+    `liblm:2026.000123` -> `liblm_2026.000123`."""
+    from .validate import CLAIMSET_ID_RE
+    if not isinstance(concept_id, str) or not CLAIMSET_ID_RE.match(concept_id):
+        raise ValueError(f"not a claimset identifier (claimset §7): {concept_id!r}")
+    s = concept_id[len("doi:"):] if concept_id.startswith("doi:") else concept_id
+    return s.replace(":", "_").replace("/", "_")
+
+
 def doc_hash(doc):
     """SHA-256 of a document's canonical JSON (revision spec §2.3)."""
     return sha256(canonical(doc))
