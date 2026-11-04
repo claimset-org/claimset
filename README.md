@@ -22,7 +22,7 @@ Research is iterative, so the format has a companion: the **lab record**, an app
 ## Install
 
 ```
-pip install git+https://github.com/claimset-org/claimset
+pip install git+https://github.com/entrylib/claimset
 ```
 
 The package has no dependencies beyond the Python standard library (Python 3.10 or later). It carries the specifications and the agent skills of its version:

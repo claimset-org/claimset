@@ -26,7 +26,7 @@ def spec_path(lab=False, revision=False):
     path = DATA / "spec" / name
     if not path.exists():
         raise FileNotFoundError(f"this copy of claimset ({__version__}) carries no specification texts; install "
-                                f"the package (pip install git+https://github.com/claimset-org/claimset)")
+                                f"the package (pip install git+https://github.com/entrylib/claimset)")
     return path
 
 

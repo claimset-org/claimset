@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Claimset v0.11 reference validator (draft).
 
-Part of the `claimset` package (https://github.com/claimset-org/claimset); also
+Part of the `claimset` package (https://github.com/entrylib/claimset); also
 bundled as a standalone script with the claimset-submit skill.
 
 Usage:
