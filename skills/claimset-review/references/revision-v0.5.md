@@ -1,10 +1,14 @@
-# Claimset Revision — Specification v0.4 (draft)
+# Claimset Revision — Specification v0.5 (draft)
 
-Status: working draft · Date: 2026-11-04 · Supersedes v0.3 (`spec/claimset-revision-v0.3.md`) · Companion to the claimset specification (`spec/claimset-v0.36.md`) and the lab record specification (`spec/lab-record-v0.15.md`)
+Status: working draft · Date: 2026-11-04 · Supersedes v0.4 (`spec/claimset-revision-v0.4.md`) · Companion to the claimset specification (`spec/claimset-v0.37.md`) and the lab record specification (`spec/lab-record-v0.15.md`)
 
 This specification covers what happens to a claimset after its first publication: how the platform's reviewers comment on it, how the author responds, how a revised version is submitted, how disagreements are settled, and how the platform's reviewer judges each claim's credibility and novelty. It specifies the documents the author receives and sends, and the rules the platform checks. The portal itself (accounts, notifications, the website) is out of scope, and so is the scoring rubric, which the portal publishes (§7).
 
-## Changes since v0.3
+## Changes since v0.4
+
+- §2.4: the provisional identifier is renamed `entrylib:` (claimset v0.37), so registry folders are `entrylib_<year>.<number>`.
+
+## Changes in v0.4 (since v0.3)
 
 A claimset has exactly one guarantor, a person with an ORCID iD (claimset v0.36).
 
@@ -97,7 +101,7 @@ The platform commits every document to a public registry repository when it is p
   v2/resolutions/RL1.json
 ```
 
-`<concept id>` is the claimset's identifier with `doi:` removed and every `:` and `/` replaced by `_`: `10.0000_claimset.2026.000789` for a DOI, `liblm_2026.000123` for a provisional identifier, which can never coincide with a DOI's folder. Only the platform commits to the registry. Each version is tagged (`<concept id>-v2`). The branch is protected against force-pushes and deletion, so the repository's history is itself an append-only log of the record. The author's own repository, where the research is done, is not part of the record; the lab record published with each version is.
+`<concept id>` is the claimset's identifier with `doi:` removed and every `:` and `/` replaced by `_`: `10.0000_claimset.2026.000789` for a DOI, `entrylib_2026.000123` for a provisional identifier, which can never coincide with a DOI's folder. Only the platform commits to the registry. Each version is tagged (`<concept id>-v2`). The branch is protected against force-pushes and deletion, so the repository's history is itself an append-only log of the record. The author's own repository, where the research is done, is not part of the record; the lab record published with each version is.
 
 An author works on a revision from a copy of the claimset's folder of the registry, the **record folder** (a clone, or the files the platform sends). The reference tools read the record folder (§9).
 

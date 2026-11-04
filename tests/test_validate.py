@@ -211,12 +211,12 @@ class TestSubmissionAndPublished(Base):
 
     def test_25_id_without_correction(self):
         d = load("submission-native.json")
-        d["paper"]["id"] = "liblm:2026.000123"
+        d["paper"]["id"] = "entrylib:2026.000123"
         self.assertRule(d, "25")
 
     def test_25_correction_is_valid(self):
         d = load("submission-native.json")
-        d["paper"]["id"] = "liblm:2026.000123"
+        d["paper"]["id"] = "entrylib:2026.000123"
         d["paper"]["correction_reason"] = "The interval in E1 was misreported and is corrected."
         self.assertValid(d)
 
@@ -1627,7 +1627,7 @@ class TestRulesV033(Base):
         definition(self.d, "D2").pop("assumptions")
         self.d["schema_version"] = "0.32"
         _, done, todo = migrate(self.d)
-        self.assertIn("schema_version 0.32 -> 0.36", done)
+        self.assertIn("schema_version 0.32 -> 0.37", done)
         self.assertTrue(any(t.startswith("C2: no longer inherits C3") for t in todo))
 
 
@@ -1835,31 +1835,31 @@ class TestRulesV035(Base):
 
     def test_76_provisional_identifier_is_valid(self):
         d = load("published-native.json")
-        d["paper"]["id"] = "liblm:2026.000123"
+        d["paper"]["id"] = "entrylib:2026.000123"
         self.assertValid(d, published=True)
 
     def test_76_doi_identifier_is_valid(self):
         self.assertValid(load("published-native.json"), published=True)       # doi:10.0000/claimset.2026.000123
 
     def test_76_malformed_paper_id(self):
-        for bad in ("doi:10.0000/x", "liblm:26.123", "liblm:2026.123", "liblm:2026.000123@v2", 123):
+        for bad in ("doi:10.0000/x", "entrylib:26.123", "entrylib:2026.123", "entrylib:2026.000123@v2", 123):
             d = load("published-native.json")
             d["paper"]["id"] = bad
             self.assertRule(d, "76", published=True)
 
     def test_76_correction_names_a_provisional_identifier(self):
         d = load("submission-native.json")
-        d["paper"]["id"] = "liblm:2026.000123"
+        d["paper"]["id"] = "entrylib:2026.000123"
         d["paper"]["correction_reason"] = "The interval in E1 was misreported and is corrected."
         self.assertValid(d)
 
     def test_76_claimset_relation_targets(self):
-        for good in ("liblm:2026.000123", "liblm:2026.000123@v2", "liblm:2026.000123#C3",
-                     "liblm:2026.000123@v2#C3", "doi:10.0000/claimset.2026.000123@v1#E2.R1"):
+        for good in ("entrylib:2026.000123", "entrylib:2026.000123@v2", "entrylib:2026.000123#C3",
+                     "entrylib:2026.000123@v2#C3", "doi:10.0000/claimset.2026.000123@v1#E2.R1"):
             d = load("submission-native.json")
             d["claims"][0]["relations"] = [{"type": "extends", "target": good, "id_type": "claimset"}]
             self.assertNotIn("76", self.rules(d)[0], good)
-        for bad in ("liblm:2026.000123@v0#C3", "liblm:2026.000123#c3", "doi:10.1016/j.x.2020.1#C1", "C3"):
+        for bad in ("entrylib:2026.000123@v0#C3", "entrylib:2026.000123#c3", "doi:10.1016/j.x.2020.1#C1", "C3"):
             d = load("submission-native.json")
             d["claims"][0]["relations"] = [{"type": "extends", "target": bad, "id_type": "claimset"}]
             self.assertRule(d, "76")

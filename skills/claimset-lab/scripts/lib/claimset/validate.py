@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Claimset v0.11 reference validator (draft).
 
-Part of the `claimset` package (https://github.com/claimset-org/claimset); also
+Part of the `claimset` package (https://github.com/entrylib/claimset); also
 bundled as a standalone script with the claimset-submit skill.
 
 Usage:
@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.36"
+SCHEMA_VERSION = "0.37"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -167,7 +167,7 @@ SOURCE_PREFIX_RE = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|https?://arxiv\.
 
 
 #: Rule 76: a claimset's identifier (§7): its DOI, or the platform's provisional identifier.
-CLAIMSET_ID = r"(?:doi:10\.\d{4,9}/claimset\.|liblm:)\d{4}\.\d{6,}"
+CLAIMSET_ID = r"(?:doi:10\.\d{4,9}/claimset\.|entrylib:)\d{4}\.\d{6,}"
 CLAIMSET_ID_RE = re.compile(rf"^{CLAIMSET_ID}$")
 CLAIMSET_TARGET_RE = re.compile(rf"^{CLAIMSET_ID}(?:@v[1-9]\d*)?(?:#[A-Z]+[1-9]\d*(?:\.[A-Za-z0-9]+)*)?$")
 
@@ -197,11 +197,11 @@ def check_identifiers(r, doc):
     pid = as_dict(doc.get("paper")).get("id")
     if pid is not None and not (isinstance(pid, str) and CLAIMSET_ID_RE.match(pid)):
         r.err("76", "paper.id", "a claimset identifier: doi:<prefix>/claimset.<year>.<number> or "
-                                "liblm:<year>.<number>, e.g. liblm:2026.000123 (§7)")
+                                "entrylib:<year>.<number>, e.g. entrylib:2026.000123 (§7)")
     for where, target in local_targets(doc, "claimset"):
         if not (isinstance(target, str) and CLAIMSET_TARGET_RE.match(target)):
             r.err("76", where, "a claimset identifier, optionally with @v<n> and #<local ID>, "
-                               "e.g. liblm:2026.000123@v2#C3 (§7)")
+                               "e.g. entrylib:2026.000123@v2#C3 (§7)")
 
 
 def check_local(r, doc, published, local_root):

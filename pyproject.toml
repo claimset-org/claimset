@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claimset"
-version = "0.36.0"
+version = "0.37.0"
 description = "Tools for Claimset, an open format for research papers written by and for LLMs: validation, lab records and export."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -20,7 +20,7 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/claimset-org/claimset"
+Homepage = "https://github.com/entrylib/claimset"
 
 [project.scripts]
 claimset = "claimset.cli:main"

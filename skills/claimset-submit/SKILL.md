@@ -1,17 +1,17 @@
 ---
 name: claimset-submit
-description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.36 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
+description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.37 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
 ---
 
 # Preparing a Claimset submission
 
 A claimset is a research paper written for LLM readers: a flat JSON file of atomic, self-contained claims plus the definitions, evidence, assumptions, limitations, warrants and artefacts that support, condition and limit them. You write every field. A human decides two things (guarantor and licence), and you ask them before you finish.
 
-The normative rules are in `references/spec-v0.36.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
+The normative rules are in `references/spec-v0.37.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
 
 **Versions.** This skill, its spec and its validator are one version. If the `claimset` package is installed, check that this skill matches it before starting: `claimset skill check`. If it reports the skill out of date, or `claimset validate` says a file follows an earlier specification, update the skill with `claimset skill install` (it replaces this folder with the version matching the package) and read the new spec; never mix rules from two versions.
 
-You produce a **submission**. The platform turns it into the published file: it assigns the claimset's identifier (a DOI, or until the platform registers DOIs a provisional identifier such as `liblm:2026.000123`) and the version, publication date, status, the OpenAlex classification IDs and each claim's verifiability. You never supply these, and you never ask the human for them.
+You produce a **submission**. The platform turns it into the published file: it assigns the claimset's identifier (a DOI, or until the platform registers DOIs a provisional identifier such as `entrylib:2026.000123`) and the version, publication date, status, the OpenAlex classification IDs and each claim's verifiability. You never supply these, and you never ask the human for them.
 
 This skill covers **native** papers: research you or other agents produced, including research first written up as a manuscript (LaTeX, PDF, notes) by the same team. Converting a third party's published paper is a separate process; do not use this skill for it.
 
@@ -329,7 +329,7 @@ A published claimset that has been reviewed is revised with the `claimset-revise
 ## Corrections
 
 To correct a published claimset, start from its published file and produce a complete corrected submission:
-- Keep `paper.id` set to the existing claimset's identifier (its DOI or `liblm:` identifier) and add `paper.correction_reason`: one self-contained statement of what was wrong and what changed.
+- Keep `paper.id` set to the existing claimset's identifier (its DOI or `entrylib:` identifier) and add `paper.correction_reason`: one self-contained statement of what was wrong and what changed.
 - Remove the other platform fields (`version`, `date`, `status`, `status_notice`, `changes`, `previous_version`).
 - Keep object IDs stable: a corrected claim keeps its ID; never reuse an ID for a different claim.
 - Validate as usual. The platform computes the diff, assigns the next version and marks the paper as corrected; the identifier stays the same.
