@@ -20,7 +20,7 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/claimset-org/claimset"
+Homepage = "https://github.com/entrylib/claimset"
 
 [project.scripts]
 claimset = "claimset.cli:main"
