@@ -211,12 +211,12 @@ class TestSubmissionAndPublished(Base):
 
     def test_25_id_without_correction(self):
         d = load("submission-native.json")
-        d["paper"]["id"] = "doi:10.0000/x"
+        d["paper"]["id"] = "liblm:2026.000123"
         self.assertRule(d, "25")
 
     def test_25_correction_is_valid(self):
         d = load("submission-native.json")
-        d["paper"]["id"] = "doi:10.0000/x"
+        d["paper"]["id"] = "liblm:2026.000123"
         d["paper"]["correction_reason"] = "The interval in E1 was misreported and is corrected."
         self.assertValid(d)
 
@@ -1627,7 +1627,7 @@ class TestRulesV033(Base):
         definition(self.d, "D2").pop("assumptions")
         self.d["schema_version"] = "0.32"
         _, done, todo = migrate(self.d)
-        self.assertIn("schema_version 0.32 -> 0.34", done)
+        self.assertIn("schema_version 0.32 -> 0.35", done)
         self.assertTrue(any(t.startswith("C2: no longer inherits C3") for t in todo))
 
 
@@ -1829,6 +1829,148 @@ class TestRulesV031(Base):
         self._w28_claim("D90", [{"kind": "formal_proof", "evidence": "E9"}])
         warnings = [w for w in validate(self.d).warnings if w["rule"] == "W28" and "C9" in w["where"]]
         self.assertEqual(warnings, [])
+
+class TestRulesV035(Base):
+    """Rule 76: claimset identifiers (§7); rule 77: package limits (§2.5)."""
+
+    def test_76_provisional_identifier_is_valid(self):
+        d = load("published-native.json")
+        d["paper"]["id"] = "liblm:2026.000123"
+        self.assertValid(d, published=True)
+
+    def test_76_doi_identifier_is_valid(self):
+        self.assertValid(load("published-native.json"), published=True)       # doi:10.0000/claimset.2026.000123
+
+    def test_76_malformed_paper_id(self):
+        for bad in ("doi:10.0000/x", "liblm:26.123", "liblm:2026.123", "liblm:2026.000123@v2", 123):
+            d = load("published-native.json")
+            d["paper"]["id"] = bad
+            self.assertRule(d, "76", published=True)
+
+    def test_76_correction_names_a_provisional_identifier(self):
+        d = load("submission-native.json")
+        d["paper"]["id"] = "liblm:2026.000123"
+        d["paper"]["correction_reason"] = "The interval in E1 was misreported and is corrected."
+        self.assertValid(d)
+
+    def test_76_claimset_relation_targets(self):
+        for good in ("liblm:2026.000123", "liblm:2026.000123@v2", "liblm:2026.000123#C3",
+                     "liblm:2026.000123@v2#C3", "doi:10.0000/claimset.2026.000123@v1#E2.R1"):
+            d = load("submission-native.json")
+            d["claims"][0]["relations"] = [{"type": "extends", "target": good, "id_type": "claimset"}]
+            self.assertNotIn("76", self.rules(d)[0], good)
+        for bad in ("liblm:2026.000123@v0#C3", "liblm:2026.000123#c3", "doi:10.1016/j.x.2020.1#C1", "C3"):
+            d = load("submission-native.json")
+            d["claims"][0]["relations"] = [{"type": "extends", "target": bad, "id_type": "claimset"}]
+            self.assertRule(d, "76")
+
+    # ----- rule 77 -----
+    def _bag(self, root, files):
+        """A bag folder at root with the given payload {path inside data/: bytes} and a valid manifest."""
+        import hashlib
+        (root / "data").mkdir(parents=True)
+        (root / "bagit.txt").write_text("BagIt-Version: 1.0\nTag-File-Character-Encoding: UTF-8\n")
+        lines = []
+        for name, data in files.items():
+            f = root / "data" / name
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_bytes(data)
+            lines.append(f"{hashlib.sha256(data).hexdigest()}  data/{name}")
+        (root / "manifest-sha256.txt").write_text("\n".join(lines) + "\n")
+
+    def _rule77(self, path):
+        from claimset.validate import validate_path
+        rep = validate_path(str(path))
+        return [e for e in rep.errors if e["rule"] == "77"]
+
+    def _zip(self, folder, out):
+        import zipfile
+        with zipfile.ZipFile(out, "w") as z:
+            for f in sorted(folder.rglob("*")):
+                if f.is_file():
+                    z.write(f, f"bag/{f.relative_to(folder).as_posix()}")
+        return out
+
+    def test_77_within_limits(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "bag"
+            self._bag(root, {"paper.claimset.json": json.dumps(load("submission-native.json")).encode(),
+                             "files/results.csv.gz": b"x", "files/lab.jsonl": b"{}"})
+            self.assertEqual(self._rule77(root), [])
+            self.assertEqual(self._rule77(self._zip(root, Path(tmp) / "bag.zip")), [])
+
+    def test_77_file_type(self):
+        import tempfile
+        for name in ("files/code.zip", "files/tool.exe", "files/archive.tar.gz", "files/noextension"):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / "bag"
+                self._bag(root, {"paper.claimset.json": b"{}", name: b"x"})
+                self.assertTrue(self._rule77(root), name)
+                self.assertTrue(self._rule77(self._zip(root, Path(tmp) / "bag.zip")), name)
+
+    def test_77_unlisted_file(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "bag"
+            self._bag(root, {"paper.claimset.json": json.dumps(load("submission-native.json")).encode()})
+            (root / "data" / "extra.csv").write_bytes(b"a,b\n")
+            self.assertTrue(self._rule77(root))
+
+    def test_77_outside_data(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "bag"
+            self._bag(root, {"paper.claimset.json": b"{}"})
+            (root / "notes.txt").write_text("x")
+            self.assertTrue(self._rule77(root))
+
+    def test_77_counts_and_sizes(self):
+        from claimset import validate as v
+        many = [(f"files/f{i}.csv", 1) for i in range(v.PACKAGE_MAX_FILES + 1)]
+        self.assertTrue(v.package_problems(many))
+        self.assertTrue(v.package_problems([("files/big.csv", v.PACKAGE_MAX_FILE_BYTES + 1)]))
+        half = v.PACKAGE_MAX_FILE_BYTES
+        n = v.PACKAGE_MAX_TOTAL_BYTES // half + 1
+        self.assertTrue(v.package_problems([(f"files/p{i}.csv", half) for i in range(n)]))
+        self.assertEqual(v.package_problems([("files/ok.csv", half)]), [])
+
+    def test_77_zip_paths_and_links_checked_before_unpacking(self):
+        import tempfile
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "bad.zip"
+            with zipfile.ZipFile(out, "w") as z:
+                z.writestr("bagit.txt", "BagIt-Version: 1.0\n")
+                z.writestr("manifest-sha256.txt", "")
+                z.writestr("data/../../escape.csv", "x")
+            self.assertTrue(self._rule77(out))
+            self.assertFalse((Path(tmp).parent / "escape.csv").exists())
+            out = Path(tmp) / "link.zip"
+            with zipfile.ZipFile(out, "w") as z:
+                z.writestr("bagit.txt", "BagIt-Version: 1.0\n")
+                info = zipfile.ZipInfo("data/files/link.csv")
+                info.external_attr = (0o120777 << 16)
+                z.writestr(info, "/etc/passwd")
+            self.assertTrue(self._rule77(out))
+
+    def test_77_package_command_refuses(self):
+        import tempfile
+        from claimset.package import PackageError, build
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "study"
+            (d / "files").mkdir(parents=True)
+            (d / "files" / "code.zip").write_bytes(b"PK")
+            doc = load("submission-native.json")
+            doc["artefacts"].append({"id": "A3", "availability": {"level": "public"}, "kind": "code",
+                                     "uri": "files/code.zip", "licence": "MIT"})
+            src = d / "paper.claimset.json"
+            src.write_text(json.dumps(doc), encoding="utf-8")
+            with self.assertRaises(PackageError) as cm:
+                build(src, Path(tmp) / "bag.zip")
+            self.assertIn("rule 77", str(cm.exception))
+            self.assertFalse((Path(tmp) / "bag.zip").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

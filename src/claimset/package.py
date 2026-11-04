@@ -6,6 +6,7 @@ artefacts name by relative path.
 Each artefact whose `uri` is a relative path (`files/fig3.png`) is taken from beside the claimset file, copied to
 `data/<uri>` in the bag, and its `version` set to `sha256:` followed by the file's checksum. The claimset is written
 to `data/<name>`, and `bagit.txt` and `manifest-sha256.txt` list every file of the payload with its checksum.
+A package that would break the limits of §2.5 (rule 77: file count, sizes, paths, file types) is not written.
 """
 
 import hashlib
@@ -15,7 +16,7 @@ import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
-from .validate import is_relative_uri
+from .validate import folder_package_problems, is_relative_uri
 
 BAGIT_TXT = "BagIt-Version: 1.0\nTag-File-Character-Encoding: UTF-8\n"
 
@@ -80,6 +81,10 @@ def build(claimset_path, out, update_source=False):
         lines = [f"{sha256(p)}  {p.relative_to(work).as_posix()}"
                  for p in sorted(payload.rglob("*")) if p.is_file()]
         (work / "manifest-sha256.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        problems = folder_package_problems(work)
+        if problems:
+            raise PackageError("the package would be refused (rule 77):\n" +
+                               "\n".join(f"  {where}: {msg}" for where, msg in problems))
         if out.exists():
             raise PackageError(f"{out} exists; choose another output")
         if as_zip:
