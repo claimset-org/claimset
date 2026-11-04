@@ -1,10 +1,17 @@
-# Claimset — Specification v0.36 (draft)
+# Claimset — Specification v0.37 (draft)
 
-Status: working draft · Date: 2026-11-04 · Supersedes v0.35 (`spec/claimset-v0.35.md`) · Companions: lab record specification (`spec/lab-record-v0.15.md`), revision specification (`spec/claimset-revision-v0.4.md`)
+Status: working draft · Date: 2026-11-04 · Supersedes v0.36 (`spec/claimset-v0.36.md`) · Companions: lab record specification (`spec/lab-record-v0.15.md`), revision specification (`spec/claimset-revision-v0.5.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.35
+## Changes since v0.36
+
+The platform is named EntryLib (entrylib.org), so its provisional identifier is renamed before any claimset is published with it.
+
+- §7, rule 76: the provisional identifier is `entrylib:<year>.<number>` (`entrylib:2026.000123@v2#C3`), formerly `liblm:`.
+- Companion revision specification v0.5: registry folders `entrylib_<year>.<number>`.
+
+## Changes in v0.36 (since v0.35)
 
 One person answers for a claimset's research: its main author, the person to contact about it, who submits it. Accountability then rests with someone the platform can identify, ask and hold to it: a person with an ORCID iD. Several guarantors split an answer that should be one person's. Co-authors and other people who took part are listed as supervisors and contributors, with their CRediT roles and ORCID iDs. The fidelity of a conversion is a separate matter, answered for by a separate party, which may be an organisation.
 
@@ -17,7 +24,7 @@ One person answers for a claimset's research: its main author, the person to con
 
 The platform publishes claimsets before it has a DOI prefix of its own, so it needs an identifier it can assign today and keep forever; and a package is accepted by the platform only within limits that the tools can check before submission.
 
-- §7: the platform's provisional identifier, `liblm:<year>.<number>`, assigned at publication until the platform registers DOIs. It is permanent: a claimset first published with it keeps it in every version. Global IDs extend it as they extend a DOI (`liblm:2026.000123@v2#C3`). §2, §2.2 and rule 27 name the claimset's identifier rather than only a DOI.
+- §7: the platform's provisional identifier, `liblm:<year>.<number>` (renamed `entrylib:` in v0.37), assigned at publication until the platform registers DOIs. It is permanent: a claimset first published with it keeps it in every version. Global IDs extend it as they extend a DOI (`entrylib:2026.000123@v2#C3`). §2, §2.2 and rule 27 name the claimset's identifier rather than only a DOI.
 - New rule 76: the form of a claimset identifier, in `paper.id` and in every target with `id_type: claimset`.
 - §2.5: limits on a package (number of files, size of each file and of the whole, file types, paths). New rule 77, checked by `claimset validate` on a package and by `claimset package` when it builds one.
 
@@ -303,7 +310,7 @@ A format for research papers whose primary reader is an LLM. Humans access conte
 - Canonical format: JSON, validated by a normative JSON Schema (the schema is the standard).
 - Alternative serialisation: JSON Lines, one object per line, each with a `type` field. Intended for retrieval and indexing.
 - Optional `@context` makes the file valid JSON-LD, enabling RDF export without changing the JSON.
-- IDs: local IDs within a paper (`C3`, `E2`, `D1`, `W1`, `A1`, `L1`, `P1`, `M1`). Global IDs append the local ID to the claimset's persistent identifier (§7) and version: `doi:10.xxxx/yyyy@v2#C3`, or `liblm:2026.000123@v2#C3` for a claimset with a provisional identifier (version optional; defaults to latest). For converted papers this is the claimset's own identifier, never the source's.
+- IDs: local IDs within a paper (`C3`, `E2`, `D1`, `W1`, `A1`, `L1`, `P1`, `M1`). Global IDs append the local ID to the claimset's persistent identifier (§7) and version: `doi:10.xxxx/yyyy@v2#C3`, or `entrylib:2026.000123@v2#C3` for a claimset with a provisional identifier (version optional; defaults to latest). For converted papers this is the claimset's own identifier, never the source's.
 
 ### 2.1 Obligation levels
 
@@ -1100,9 +1107,9 @@ Reviews of a published claimset, the author's responses, human resolutions of di
 
 ## 7. Identifiers and source trust
 
-**The claimset's identifier.** The platform assigns every published claimset a persistent identifier at publication: a DOI once the platform registers DOIs, and until then a provisional identifier of the platform (LibLM). Both are built by the same rule and behave alike: one identifier for all versions, extended by `@v<n>` for a version and `#<local ID>` for an object, never reused.
+**The claimset's identifier.** The platform assigns every published claimset a persistent identifier at publication: a DOI once the platform registers DOIs, and until then a provisional identifier of the platform (EntryLib). Both are built by the same rule and behave alike: one identifier for all versions, extended by `@v<n>` for a version and `#<local ID>` for an object, never reused.
 
-**The provisional identifier.** `liblm:<year>.<number>`, with `<year>` and `<number>` as for the DOI below: `liblm:2026.000123`, `liblm:2026.000123@v2#C3`. It is permanent: a claimset first published with it keeps it as `paper.id` in every later version, and it resolves to the claimset on the platform for as long as the platform exists. How a DOI is added to such a claimset, once the platform registers DOIs, is specified when it does; the provisional identifier stays valid either way.
+**The provisional identifier.** `entrylib:<year>.<number>`, with `<year>` and `<number>` as for the DOI below: `entrylib:2026.000123`, `entrylib:2026.000123@v2#C3`. It is permanent: a claimset first published with it keeps it as `paper.id` in every later version, and it resolves to the claimset on the platform for as long as the platform exists. How a DOI is added to such a claimset, once the platform registers DOIs, is specified when it does; the provisional identifier stays valid either way.
 
 **The claimset's DOI.** When the platform registers DOIs, it mints a DOI for every claimset it publishes, at publication, and registers it with DataCite under the platform's DOI prefix.
 
@@ -1282,7 +1289,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 ### 10.24 Rules added in v0.35 (errors: file rejected)
 
-76. Claimset identifiers. `paper.id`, where present, is a claimset identifier: `doi:` followed by a DOI prefix (`10.` and four to nine digits) and `/claimset.<year>.<number>`, or `liblm:<year>.<number>`; `<year>` is four digits and `<number>` at least six. A `target` with `id_type: claimset` is a claimset identifier, optionally followed by `@v<n>` (n ≥ 1) and then optionally by `#` and a local ID.
+76. Claimset identifiers. `paper.id`, where present, is a claimset identifier: `doi:` followed by a DOI prefix (`10.` and four to nine digits) and `/claimset.<year>.<number>`, or `entrylib:<year>.<number>`; `<year>` is four digits and `<number>` at least six. A `target` with `id_type: claimset` is a claimset identifier, optionally followed by `@v<n>` (n ≥ 1) and then optionally by `#` and a local ID.
 77. Package limits. A package (§2.5) keeps within the limits of §2.5: the number of files, the size of each file and of the payload, the form of every path, the manifest listing exactly the files of `data/`, and the file types. A zip is checked before it is unpacked: its entries' sizes and paths, and that it holds no links.
 
 ### 10.4 Warnings (file accepted, warning recorded)

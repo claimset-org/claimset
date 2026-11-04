@@ -56,7 +56,7 @@ class RevisionError(Exception):
 def record_folder(concept_id):
     """The folder of a claimset in the registry (revision spec §2.4): its identifier with `doi:` removed and every
     `:` and `/` replaced by `_`. `doi:10.0000/claimset.2026.000789` -> `10.0000_claimset.2026.000789`;
-    `liblm:2026.000123` -> `liblm_2026.000123`."""
+    `entrylib:2026.000123` -> `entrylib_2026.000123`."""
     from .validate import CLAIMSET_ID_RE
     if not isinstance(concept_id, str) or not CLAIMSET_ID_RE.match(concept_id):
         raise ValueError(f"not a claimset identifier (claimset §7): {concept_id!r}")

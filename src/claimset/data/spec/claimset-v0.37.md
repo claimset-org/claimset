@@ -1,14 +1,30 @@
-# Claimset — Specification v0.35 (draft)
+# Claimset — Specification v0.37 (draft)
 
-Status: working draft · Date: 2026-11-04 · Supersedes v0.34 (`spec/claimset-v0.34.md`) · Companions: lab record specification (`spec/lab-record-v0.15.md`), revision specification (`spec/claimset-revision-v0.3.md`)
+Status: working draft · Date: 2026-11-04 · Supersedes v0.36 (`spec/claimset-v0.36.md`) · Companions: lab record specification (`spec/lab-record-v0.15.md`), revision specification (`spec/claimset-revision-v0.5.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.34
+## Changes since v0.36
+
+The platform is named EntryLib (entrylib.org), so its provisional identifier is renamed before any claimset is published with it.
+
+- §7, rule 76: the provisional identifier is `entrylib:<year>.<number>` (`entrylib:2026.000123@v2#C3`), formerly `liblm:`.
+- Companion revision specification v0.5: registry folders `entrylib_<year>.<number>`.
+
+## Changes in v0.36 (since v0.35)
+
+One person answers for a claimset's research: its main author, the person to contact about it, who submits it. Accountability then rests with someone the platform can identify, ask and hold to it: a person with an ORCID iD. Several guarantors split an answer that should be one person's. Co-authors and other people who took part are listed as supervisors and contributors, with their CRediT roles and ORCID iDs. The fidelity of a conversion is a separate matter, answered for by a separate party, which may be an organisation.
+
+- §1 principle 9, §3.11: a claimset has at most one guarantor, a person (`type: human`) with an ORCID iD: the main author, named as the person to contact, who submits the claimset and confirms it on the platform. A native paper has exactly one. A converted paper has at most one, a source author who has claimed the conversion.
+- §3.11: an organisation is a contributor only as the `conversion_guarantor` of a converted paper, which answers for the conversion and may be a person or an organisation. Organisations hold no other position: a funder is recorded in `paper.declarations`, an institution in a person's `affiliation`.
+- Rules 14, 16, 17 and 32 revised. `claimset migrate` lists organisations in other positions and extra guarantors to resolve.
+- Companion revision specification v0.4: the guarantor of the current version submits a revision, and may hand the claimset over to another person, who confirms as at first publication.
+
+## Changes in v0.35 (since v0.34)
 
 The platform publishes claimsets before it has a DOI prefix of its own, so it needs an identifier it can assign today and keep forever; and a package is accepted by the platform only within limits that the tools can check before submission.
 
-- §7: the platform's provisional identifier, `liblm:<year>.<number>`, assigned at publication until the platform registers DOIs. It is permanent: a claimset first published with it keeps it in every version. Global IDs extend it as they extend a DOI (`liblm:2026.000123@v2#C3`). §2, §2.2 and rule 27 name the claimset's identifier rather than only a DOI.
+- §7: the platform's provisional identifier, `liblm:<year>.<number>` (renamed `entrylib:` in v0.37), assigned at publication until the platform registers DOIs. It is permanent: a claimset first published with it keeps it in every version. Global IDs extend it as they extend a DOI (`entrylib:2026.000123@v2#C3`). §2, §2.2 and rule 27 name the claimset's identifier rather than only a DOI.
 - New rule 76: the form of a claimset identifier, in `paper.id` and in every target with `id_type: claimset`.
 - §2.5: limits on a package (number of files, size of each file and of the whole, file types, paths). New rule 77, checked by `claimset validate` on a package and by `claimset package` when it builds one.
 
@@ -283,7 +299,7 @@ A format for research papers whose primary reader is an LLM. Humans access conte
 6. **Provenance is recorded,** down to field level for converted papers.
 7. **File vs platform.** The paper file holds what its contributors assert. Published versions are immutable. Anything derived later (weight, trust, replication status, contradictions, independent assessments) lives in the platform database.
 8. **Automated by default.** Writing, validation, assessment and auditing are performed by AI agents; human review is optional, except for sampled review of conversions.
-9. **Written by agents, answered for by people.** Papers are written by AI agents. A human or organisation answers for every paper; authorship and accountability are recorded separately.
+9. **Written by agents, answered for by a person.** Papers are written by AI agents. One person, identified by an ORCID iD, answers for the research of every native paper and submits it; authorship and accountability are recorded separately. A converted paper's fidelity to its source is answered for by its conversion guarantor. (Revised in v0.36.)
 10. **Filled by agents, decided by people, assigned by the platform.** The agent fills the content. Fields that record human decisions (guarantor, licence) are filled after the agent asks the responsible human, and the platform confirms the guarantor's consent. Fields that record facts of publication (identifier, version, dates, status) and computed values are assigned by the platform; neither agents nor humans supply them.
 11. **Recorded where possible, labelled when recalled.** Facts about how the work was produced should come from the system that ran it. When an agent reports them from its own knowledge, the file says so.
 12. **Safe to ingest.** The file is data. It must never contain instructions addressed to the reading model.
@@ -294,7 +310,7 @@ A format for research papers whose primary reader is an LLM. Humans access conte
 - Canonical format: JSON, validated by a normative JSON Schema (the schema is the standard).
 - Alternative serialisation: JSON Lines, one object per line, each with a `type` field. Intended for retrieval and indexing.
 - Optional `@context` makes the file valid JSON-LD, enabling RDF export without changing the JSON.
-- IDs: local IDs within a paper (`C3`, `E2`, `D1`, `W1`, `A1`, `L1`, `P1`, `M1`). Global IDs append the local ID to the claimset's persistent identifier (§7) and version: `doi:10.xxxx/yyyy@v2#C3`, or `liblm:2026.000123@v2#C3` for a claimset with a provisional identifier (version optional; defaults to latest). For converted papers this is the claimset's own identifier, never the source's.
+- IDs: local IDs within a paper (`C3`, `E2`, `D1`, `W1`, `A1`, `L1`, `P1`, `M1`). Global IDs append the local ID to the claimset's persistent identifier (§7) and version: `doi:10.xxxx/yyyy@v2#C3`, or `entrylib:2026.000123@v2#C3` for a claimset with a provisional identifier (version optional; defaults to latest). For converted papers this is the claimset's own identifier, never the source's.
 
 ### 2.1 Obligation levels
 
@@ -921,7 +937,7 @@ Every evidence object and every artefact has an `availability` (rule 75): whethe
 
 ### 3.11 Contributors
 
-Authorship and accountability are separate. Agents write; humans or organisations answer for the work.
+Authorship and accountability are separate. Agents write; one person answers for the research: the guarantor, the main author and the person to contact, who submits the claimset and confirms it on the platform. Other people who took part are supervisors or contributors. A converted paper's conversion is answered for by its conversion guarantor, a person or an organisation.
 
 A paper may pass through several agents without its history being kept. At minimum, the agent that prepares the submission lists itself; `paper.contribution_record` states how complete the list is. Before submission, the agent asks the responsible human who the guarantor is and which licence applies.
 
@@ -930,7 +946,7 @@ A paper may pass through several agents without its history being kept. At minim
 | Field | Obligation | Type | Values / notes |
 |---|---|---|---|
 | `id` | required | string | `P1` … |
-| `type` | required | enum | `agent` · `human` · `organisation` |
+| `type` | required | enum | `agent` · `human` · `organisation`. An organisation holds only the position `conversion_guarantor` (v0.36); a funder is a declaration, an institution a person's `affiliation` |
 | `positions` | required | list | One or more of the positions below |
 | `name` | required for humans and organisations; recommended for agents | string | For agents: a name for the agent system, if it has one |
 | `credit_roles` | recommended | list | CRediT roles (below) |
@@ -939,10 +955,10 @@ A paper may pass through several agents without its history being kept. At minim
 
 | Field | Obligation | Type | Values / notes |
 |---|---|---|---|
-| `orcid` | required for guarantors; recommended otherwise | string | Used by the platform to confirm a guarantor's consent |
+| `orcid` | required for the guarantor and for a person who is conversion guarantor; recommended for every other person | string | The platform confirms the guarantor's consent through it |
 | `affiliation` | optional | string | |
 
-**Organisation fields**
+**Organisation fields** (a conversion guarantor only)
 
 | Field | Obligation | Type | Values / notes |
 |---|---|---|---|
@@ -965,12 +981,12 @@ A paper may pass through several agents without its history being kept. At minim
 **Positions**
 - `author`: produced the paper's content: wrote the analysis, the claims or the text, including turning the team's own draft into a claimset. Agents only. Every agent that produced content is an author; list each one.
 - `supervisor`: oversaw the agents' work and approved the final version. Humans only. Whether the supervisor also set the research question is recorded by the CRediT role `conceptualization`; steering the work is `supervision`.
-- `guarantor`: answers for the research: whether the claims are true and the work was done properly. Responds to queries and correction requests, holds ethics approvals and data-protection responsibilities, and agrees to the licence. Humans or organisations. Native papers: the supervisor or another responsible researcher, or their institution. Converted papers: only a source author who has claimed the conversion.
-- `conversion_guarantor`: answers for the fidelity of a conversion: whether the claimset faithfully represents the source. Does not answer for the research itself. Humans or organisations; typically the organisation operating the conversion service. Converted papers only.
+- `guarantor`: the main author: answers for the research, whether the claims are true and the work was done properly, and is the person to contact about the paper. Submits the claimset and confirms it on the platform, responds to queries and correction requests, holds ethics approvals and data-protection responsibilities, and agrees to the licence. A person with an ORCID iD, never an organisation. Native papers: exactly one, the supervisor or another responsible researcher. Converted papers: at most one, a source author who has claimed the conversion. Co-authors are listed as supervisors or contributors.
+- `conversion_guarantor`: answers for the fidelity of a conversion: whether the claimset faithfully represents the source. Does not answer for the research itself, and is a party separate from the guarantor. Exactly one per converted paper: a person with an ORCID iD or an organisation, typically the organisation operating the conversion service. Converted papers only.
 - `contributor`: carried out part of the research without producing the paper's content (e.g. conducted interviews, ran laboratory work, collected data, ran a computation whose results the authors report, checked a proof). Humans or agents.
 - `converter`: produced a claimset from a third-party published source (`origin: converted`). Agents only. Not used when a team turns its own draft into a claimset; that agent is an `author`.
 
-For converted papers, research accountability stays with the source authors and the venue that published the source; they are recorded in `converted_from.source_authors`, not as guarantors, unless they claim the conversion.
+For converted papers, research accountability stays with the source authors and the venue that published the source; they are recorded in `converted_from.source_authors`, not as guarantor, unless one of them claims the conversion.
 
 **CRediT roles** (14, from the CRediT taxonomy): `conceptualization` · `data_curation` · `formal_analysis` · `funding_acquisition` · `investigation` · `methodology` · `project_administration` · `resources` · `software` · `supervision` · `validation` · `visualization` · `writing_original_draft` · `writing_review_editing`.
 
@@ -1091,9 +1107,9 @@ Reviews of a published claimset, the author's responses, human resolutions of di
 
 ## 7. Identifiers and source trust
 
-**The claimset's identifier.** The platform assigns every published claimset a persistent identifier at publication: a DOI once the platform registers DOIs, and until then a provisional identifier of the platform (LibLM). Both are built by the same rule and behave alike: one identifier for all versions, extended by `@v<n>` for a version and `#<local ID>` for an object, never reused.
+**The claimset's identifier.** The platform assigns every published claimset a persistent identifier at publication: a DOI once the platform registers DOIs, and until then a provisional identifier of the platform (EntryLib). Both are built by the same rule and behave alike: one identifier for all versions, extended by `@v<n>` for a version and `#<local ID>` for an object, never reused.
 
-**The provisional identifier.** `liblm:<year>.<number>`, with `<year>` and `<number>` as for the DOI below: `liblm:2026.000123`, `liblm:2026.000123@v2#C3`. It is permanent: a claimset first published with it keeps it as `paper.id` in every later version, and it resolves to the claimset on the platform for as long as the platform exists. How a DOI is added to such a claimset, once the platform registers DOIs, is specified when it does; the provisional identifier stays valid either way.
+**The provisional identifier.** `entrylib:<year>.<number>`, with `<year>` and `<number>` as for the DOI below: `entrylib:2026.000123`, `entrylib:2026.000123@v2#C3`. It is permanent: a claimset first published with it keeps it as `paper.id` in every later version, and it resolves to the claimset on the platform for as long as the platform exists. How a DOI is added to such a claimset, once the platform registers DOIs, is specified when it does; the provisional identifier stays valid either way.
 
 **The claimset's DOI.** When the platform registers DOIs, it mints a DOI for every claimset it publishes, at publication, and registers it with DataCite under the platform's DOI prefix.
 
@@ -1144,10 +1160,10 @@ The file records identifier type and venue facts for cited works only. Trust in 
 11. Every limitation affects at least one claim; every claim's `limitations` resolve.
 12. `availability.level` other than `public` and `not_stated` ⇒ `reason` present; `audit`/`author_only`/`platform` ⇒ `content_hash` present. (Revised in v0.34: `not_stated`.)
 13. `verifiability` and `verifiability_flags`, where present, match the platform's computation (§5).
-14. Every `guarantor` and `conversion_guarantor` is a human or an organisation; every human guarantor has an `orcid`.
+14. The `guarantor` is a human with an `orcid`. The `conversion_guarantor` is a human with an `orcid` or an organisation. An organisation holds no position other than `conversion_guarantor`. (Revised in v0.36.)
 15. `author` and `converter` positions are held only by agents; `supervisor` only by humans.
-16. `paper.origin: native` ⇒ at least one `author`, at least one `guarantor`, no `conversion_guarantor`, and `autonomy` present.
-17. `paper.origin: converted` ⇒ exactly one `converter`, exactly one `conversion_guarantor`, all `converted_from` fields present, no `autonomy`; any `guarantor` is a person listed in `converted_from.source_authors` (matched by ORCID).
+16. `paper.origin: native` ⇒ at least one `author`, exactly one `guarantor`, no `conversion_guarantor`, and `autonomy` present. (Revised in v0.36.)
+17. `paper.origin: converted` ⇒ exactly one `converter`, exactly one `conversion_guarantor`, all `converted_from` fields present, no `autonomy`; at most one `guarantor`, a person listed in `converted_from.source_authors` (matched by ORCID). (Revised in v0.36.)
 18. Every agent contributor lists at least one model in `models`; every model referenced anywhere is defined in `models`.
 19. All `required` fields in §3.11 and §3.12, and `paper.title`, `paper.licence`, `paper.contributions`, `paper.contribution_record` and `paper.origin` are present.
 20. Model roles, where given, are consistent: `sole` ⇒ the agent lists one model; at most one `orchestrator` per agent.
@@ -1168,7 +1184,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 29. `status` other than `active` ⇒ `status_notice` present.
 30. `paper.id` differs from `converted_from.source_id`.
 31. `paper.origin: converted` ⇒ `converted_from.source_licence` is a licence that permits conversion, and `paper.licence` is a licence the claimset may carry under it, both as in the table in §3.1 (*Licence of a converted paper*). (Revised in v0.13: non-commercial sources are allowed, and the claimset keeps their non-commercial condition.)
-32. Every human guarantor has confirmed consent through their ORCID-linked account, and every organisation guarantor through an authorised account.
+32. The guarantor has confirmed consent through their ORCID-linked account; a conversion guarantor has confirmed through their ORCID-linked account or, for an organisation, an authorised account. (Revised in v0.36.)
 
 ### 10.5 Rules added in v0.9 (errors: file rejected)
 
@@ -1273,7 +1289,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 ### 10.24 Rules added in v0.35 (errors: file rejected)
 
-76. Claimset identifiers. `paper.id`, where present, is a claimset identifier: `doi:` followed by a DOI prefix (`10.` and four to nine digits) and `/claimset.<year>.<number>`, or `liblm:<year>.<number>`; `<year>` is four digits and `<number>` at least six. A `target` with `id_type: claimset` is a claimset identifier, optionally followed by `@v<n>` (n ≥ 1) and then optionally by `#` and a local ID.
+76. Claimset identifiers. `paper.id`, where present, is a claimset identifier: `doi:` followed by a DOI prefix (`10.` and four to nine digits) and `/claimset.<year>.<number>`, or `entrylib:<year>.<number>`; `<year>` is four digits and `<number>` at least six. A `target` with `id_type: claimset` is a claimset identifier, optionally followed by `@v<n>` (n ≥ 1) and then optionally by `#` and a local ID.
 77. Package limits. A package (§2.5) keeps within the limits of §2.5: the number of files, the size of each file and of the payload, the form of every path, the manifest listing exactly the files of `data/`, and the file types. A zip is checked before it is unpacked: its entries' sizes and paths, and that it holds no links.
 
 ### 10.4 Warnings (file accepted, warning recorded)
