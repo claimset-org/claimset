@@ -1,13 +1,13 @@
 ---
 name: claimset-submit
-description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.35 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
+description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.36 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
 ---
 
 # Preparing a Claimset submission
 
 A claimset is a research paper written for LLM readers: a flat JSON file of atomic, self-contained claims plus the definitions, evidence, assumptions, limitations, warrants and artefacts that support, condition and limit them. You write every field. A human decides two things (guarantor and licence), and you ask them before you finish.
 
-The normative rules are in `references/spec-v0.35.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
+The normative rules are in `references/spec-v0.36.md`. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
 
 **Versions.** This skill, its spec and its validator are one version. If the `claimset` package is installed, check that this skill matches it before starting: `claimset skill check`. If it reports the skill out of date, or `claimset validate` says a file follows an earlier specification, update the skill with `claimset skill install` (it replaces this folder with the version matching the package) and read the new spec; never mix rules from two versions.
 
@@ -33,9 +33,9 @@ Collect everything the research consists of: the draft or notes, results, code, 
 
 Ask the person who supervised the work, in a single message:
 
-1. **Guarantor:** who answers for this research? Name and ORCID iD for each person (or name and ROR/company number for an organisation). The guarantor must confirm on the platform before publication.
+1. **Guarantor:** who is the main author, the person who answers for this research and whom readers contact about it? One person, with their name and ORCID iD: the guarantor submits the claimset and confirms it on the platform before publication. Never an organisation, and never more than one person; co-authors are listed as supervisors or contributors.
 2. **Supervisor:** who oversaw the work and approves the final version, if not the guarantor? (Name, ORCID iD.) And who set the research question? (Recorded as the CRediT role `conceptualization`.)
-3. **Other human contributors:** anyone who collected data, ran experiments or conducted interviews, with their CRediT roles.
+3. **Other human contributors:** co-authors and anyone who collected data, ran experiments or conducted interviews, with their CRediT roles and ORCID iDs.
 4. **Licence:** which licence? Suggest `CC-BY-4.0` as the default for open research.
 5. **Confidentiality:** is any data, code or material not publicly shareable? If so, why (personal data, commercial, legal, ethics, security)?
 6. **Declarations:** who funded the work (funder and award number), and are there competing interests? If people took part: which ethics committee approved it (and its reference), and what did participants consent to, including publication of quotations? These go in `paper.declarations`; an empty funding list and "None declared." are declarations too (W29).

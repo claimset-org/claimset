@@ -1,10 +1,16 @@
-# Claimset Revision — Specification v0.3 (draft)
+# Claimset Revision — Specification v0.4 (draft)
 
-Status: working draft · Date: 2026-11-04 · Supersedes v0.2 (`spec/claimset-revision-v0.2.md`) · Companion to the claimset specification (`spec/claimset-v0.35.md`) and the lab record specification (`spec/lab-record-v0.15.md`)
+Status: working draft · Date: 2026-11-04 · Supersedes v0.3 (`spec/claimset-revision-v0.3.md`) · Companion to the claimset specification (`spec/claimset-v0.36.md`) and the lab record specification (`spec/lab-record-v0.15.md`)
 
 This specification covers what happens to a claimset after its first publication: how the platform's reviewers comment on it, how the author responds, how a revised version is submitted, how disagreements are settled, and how the platform's reviewer judges each claim's credibility and novelty. It specifies the documents the author receives and sends, and the rules the platform checks. The portal itself (accounts, notifications, the website) is out of scope, and so is the scoring rubric, which the portal publishes (§7).
 
-## Changes since v0.2
+## Changes since v0.3
+
+A claimset has exactly one guarantor, a person with an ORCID iD (claimset v0.36).
+
+- §5.1: the guarantor of the current version submits a revision. A revision may name another person as guarantor, a handover; the new guarantor confirms on the platform, as at first publication. R14 revised.
+
+## Changes in v0.3 (since v0.2)
 
 A claimset's identifier is its DOI or, until the platform registers DOIs, the platform's provisional identifier `liblm:<year>.<number>` (claimset §7). The registry's folder names are made from either.
 
@@ -286,7 +292,7 @@ A revision submission consists of:
 
 The revision is built from the current version. A revision of an older version is refused: there is one line of versions.
 
-Only a guarantor of the current version, identified by ORCID, can submit a revision. A revision may add or remove guarantors; the platform obtains every new guarantor's consent, as at first publication.
+Only the guarantor of the current version, identified by ORCID, can submit a revision. A revision may name another person as guarantor, handing the claimset over; the platform obtains the new guarantor's consent, as at first publication.
 
 ### 5.2 Publication
 
@@ -444,7 +450,7 @@ Errors (the document or submission is refused) and warnings (accepted, recorded)
 
 ### 8.3 Revisions
 
-- R14. A revision names the claimset's concept identifier in `paper.id`, has no `correction_reason`, revises the current version, comes with a response, and is submitted by a guarantor of the current version. (Claimset rule 25 allows `paper.id` in a correction or a revision.)
+- R14. A revision names the claimset's concept identifier in `paper.id`, has no `correction_reason`, revises the current version, comes with a response, and is submitted by the guarantor of the current version. (Revised in v0.4.) (Claimset rule 25 allows `paper.id` in a correction or a revision.)
 - R15. Every operation of the JSON Patch from the previous version falls under a field path listed in a response entry's `changes` or in `other_changes`.
 - R16. No ID removed in an earlier version is used again.
 - R17. If the previous version had a lab record, the revision has one, it begins with the previous record unchanged (every line), and it verifies (lab record §6).

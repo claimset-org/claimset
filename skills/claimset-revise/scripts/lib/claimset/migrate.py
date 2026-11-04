@@ -8,7 +8,8 @@ Only what is mechanical is changed:
 From v0.33 a claim inherits the assumptions of the methods studied only for its own subject (§3.2): the
 assumptions a claim inherited under v0.32 and no longer does are listed, to be added to its own `assumptions`
 where it does rest on them.
-What needs judgement is listed, not guessed: definitions without a `kind` (rule 63), claims that need an `about`
+From v0.36 a claimset has one guarantor, a person: organisations in positions other than conversion
+guarantor, and extra guarantors, are listed. What needs judgement is listed, not guessed: definitions without a `kind` (rule 63), claims that need an `about`
 (rule 64 for principal claims, warning 27 for the others), figures that need a `function` (rule 67), evidence without a setup (rule 61) and evidence or artefacts
 without an availability (rule 75), the
 `exemplars` of qualitative evidence, which become excerpt results (rule 66), and declarations (warning 29).
@@ -57,6 +58,18 @@ def migrate(doc):
                 todo.append(f"{x.get('id')}: give its availability; not_stated when the paper does not say (rule 75)")
             if coll == "evidence" and isinstance(x, dict) and x.get("profile") != "formal" and not x.get("setup"):
                 todo.append(f"{x.get('id')}: give its setup, the parts of the study by role (rule 61)")
+    guarantors = []
+    for c in out.get("contributors") or []:
+        if isinstance(c, dict) and c.get("type") == "organisation" and \
+                set(c.get("positions") or []) - {"conversion_guarantor"}:
+            todo.append(f"{c.get('id')}: an organisation is only ever a conversion guarantor (v0.36); the guarantor "
+                        f"is one person with an ORCID iD; record a funder in paper.declarations or an institution as "
+                        f"a person's affiliation (rule 14)")
+        if isinstance(c, dict) and "guarantor" in (c.get("positions") or []):
+            guarantors.append(c.get("id"))
+    if len(guarantors) > 1:
+        todo.append(f"{', '.join(guarantors)}: one guarantor only, the person who submits (v0.36); give the others "
+                    f"the position supervisor or contributor (rule 16)")
     for d in out.get("definitions") or []:
         if not isinstance(d, dict):
             continue

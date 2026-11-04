@@ -1627,7 +1627,7 @@ class TestRulesV033(Base):
         definition(self.d, "D2").pop("assumptions")
         self.d["schema_version"] = "0.32"
         _, done, todo = migrate(self.d)
-        self.assertIn("schema_version 0.32 -> 0.35", done)
+        self.assertIn("schema_version 0.32 -> 0.36", done)
         self.assertTrue(any(t.startswith("C2: no longer inherits C3") for t in todo))
 
 
@@ -1970,6 +1970,65 @@ class TestRulesV035(Base):
                 build(src, Path(tmp) / "bag.zip")
             self.assertIn("rule 77", str(cm.exception))
             self.assertFalse((Path(tmp) / "bag.zip").exists())
+
+
+class TestRulesV036(Base):
+    """Rules 14, 16 and 17 revised in v0.36: one guarantor, a person with an ORCID iD; no organisations."""
+
+    def test_16_one_guarantor(self):
+        d = load("submission-native.json")
+        d["contributors"].append({"id": "P9", "type": "human", "name": "B. Colleague", "orcid": "0000-0000-0000-0003",
+                                  "positions": ["guarantor"], "credit_roles": ["investigation"]})
+        self.assertRule(d, "16")
+        d["contributors"][-1]["positions"] = ["contributor"]                    # a co-author is a contributor
+        self.assertValid(d)
+
+    def test_14_organisations_are_not_contributors(self):
+        d = load("submission-native.json")
+        d["contributors"].append({"id": "P9", "type": "organisation", "name": "Example Ltd",
+                                  "positions": ["contributor"]})
+        self.assertRule(d, "14")
+
+    def test_14_organisation_guarantor(self):
+        d = load("submission-native.json")
+        g = next(c for c in d["contributors"] if "guarantor" in c["positions"])
+        g["positions"].remove("guarantor")
+        d["contributors"].append({"id": "P9", "type": "organisation", "name": "Example Ltd",
+                                  "positions": ["guarantor"]})
+        errors, _ = self.rules(d)
+        self.assertIn("14", errors)
+
+    def test_14_conversion_guarantor_is_a_person_or_an_organisation(self):
+        self.assertValid(converted_base())                                    # an organisation
+        d = converted_base()
+        d["contributors"][1] = {"id": "P3", "type": "human", "name": "C. Conversion Lead",
+                                "orcid": "0000-0000-0000-0002", "positions": ["conversion_guarantor"],
+                                "credit_roles": ["validation"]}
+        self.assertValid(d)                                                   # a person
+        d["contributors"][1].pop("orcid")
+        self.assertRule(d, "14")                                              # a person needs an ORCID iD
+        d = converted_base()
+        d["contributors"][1]["type"] = "agent"
+        self.assertRule(d, "14")
+
+    def test_17_at_most_one_guarantor_in_a_converted_paper(self):
+        d = converted_base()
+        d["paper"]["converted_from"]["source_authors"].append({"name": "D. Scholar", "orcid": "0000-0000-0000-0004"})
+        for i, orcid in ((4, "0000-0000-0000-0001"), (5, "0000-0000-0000-0004")):
+            d["contributors"].append({"id": f"P{i}", "type": "human", "name": "Source author", "orcid": orcid,
+                                      "positions": ["guarantor"], "credit_roles": ["validation"]})
+        self.assertRule(d, "17")
+        d["contributors"].pop()
+        self.assertNotIn("17", self.rules(d)[0])
+
+    def test_migrate_lists_organisations_and_extra_guarantors(self):
+        from claimset.migrate import migrate
+        d = load("submission-native.json")
+        d["contributors"] += [{"id": "P8", "type": "organisation", "name": "Example Ltd", "positions": ["guarantor"]},
+                              {"id": "P9", "type": "human", "name": "B. Colleague", "positions": ["guarantor"]}]
+        _, _, todo = migrate(d)
+        self.assertTrue(any(x.startswith("P8: an organisation is only ever") for x in todo))
+        self.assertTrue(any("one guarantor only" in x for x in todo))
 
 
 if __name__ == "__main__":
