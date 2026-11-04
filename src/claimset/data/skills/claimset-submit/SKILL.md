@@ -33,7 +33,7 @@ Collect everything the research consists of: the draft or notes, results, code, 
 
 Ask the person who supervised the work, in a single message:
 
-1. **Guarantor:** who answers for this research? One person, with their name and ORCID iD: the guarantor submits the claimset and confirms it on the platform before publication. Never an organisation, and never more than one person; co-authors are listed as supervisors or contributors.
+1. **Guarantor:** who is the main author, the person who answers for this research and whom readers contact about it? One person, with their name and ORCID iD: the guarantor submits the claimset and confirms it on the platform before publication. Never an organisation, and never more than one person; co-authors are listed as supervisors or contributors.
 2. **Supervisor:** who oversaw the work and approves the final version, if not the guarantor? (Name, ORCID iD.) And who set the research question? (Recorded as the CRediT role `conceptualization`.)
 3. **Other human contributors:** co-authors and anyone who collected data, ran experiments or conducted interviews, with their CRediT roles and ORCID iDs.
 4. **Licence:** which licence? Suggest `CC-BY-4.0` as the default for open research.

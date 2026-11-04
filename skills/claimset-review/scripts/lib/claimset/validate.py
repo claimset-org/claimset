@@ -72,7 +72,7 @@ ENUM = {
     "mitigation": {"none", "partial", "addressed"},
     "level": {"public", "platform", "audit", "author_only", "unavailable", "not_stated"},
     "reason": {"personal_data", "commercial", "legal", "ethics", "security", "other"},
-    "contributor_type": {"agent", "human"},
+    "contributor_type": {"agent", "human", "organisation"},
     "position": {"author", "supervisor", "guarantor", "conversion_guarantor", "contributor", "converter"},
     "credit": {"conceptualization", "data_curation", "formal_analysis", "funding_acquisition", "investigation",
                "methodology", "project_administration", "resources", "software", "supervision", "validation",
@@ -2444,12 +2444,12 @@ def validate_contributors(r, contributors, paper, ref, converted):
         if not p.get("credit_roles"):
             r.warn("W1", f"{w}.credit_roles", "recommended field missing")
 
-        if t == "organisation":
-            r.err("14", f"{w}.type", "organisations are not contributors (v0.36): one person, with an ORCID iD, is "
-                                    "the guarantor; record a funder in paper.declarations and an institution as a "
-                                    "person's affiliation")
-        if t == "human" and not p.get("name"):
-            r.err("19", f"{w}.name", "required for humans")
+        if t == "organisation" and set(pos) - {"conversion_guarantor"}:
+            r.err("14", f"{w}.positions", "an organisation is only ever a converted paper's conversion_guarantor "
+                                         "(v0.36): the guarantor is one person with an ORCID iD; record a funder in "
+                                         "paper.declarations and an institution as a person's affiliation")
+        if t in ("human", "organisation") and not p.get("name"):
+            r.err("19", f"{w}.name", "required for humans and organisations")
         if t == "agent" and not p.get("name"):
             r.warn("W1", f"{w}.name", "recommended for agents")
         if t == "human":
@@ -2457,12 +2457,17 @@ def validate_contributors(r, contributors, paper, ref, converted):
             if orcid and not ORCID_RE.match(str(orcid)):
                 r.err("14", f"{w}.orcid", "must be an ORCID iD like 0000-0002-1825-0097")
             if not orcid and ("guarantor" in pos or "conversion_guarantor" in pos):
-                r.err("14", f"{w}.orcid", "required for the guarantor and the conversion guarantor")
+                r.err("14", f"{w}.orcid", "required for the guarantor and for a person who is conversion guarantor")
             elif not orcid:
                 r.warn("W1", f"{w}.orcid", "recommended field missing")
 
-        if ("guarantor" in pos or "conversion_guarantor" in pos) and t == "agent":
-            r.err("14", w, "the guarantor and the conversion guarantor are people (type human) with an ORCID iD")
+        if t == "organisation" and not (p.get("ror") or p.get("registration")):
+            r.warn("W1", w, "ror or registration recommended for organisations")
+        if "guarantor" in pos and t != "human":
+            r.err("14", w, "the guarantor is a person (type human) with an ORCID iD: the main author, the person "
+                           "to contact")
+        if "conversion_guarantor" in pos and t == "agent":
+            r.err("14", w, "the conversion guarantor is a person with an ORCID iD or an organisation")
         if ("author" in pos or "converter" in pos) and t != "agent":
             r.err("15", w, "author and converter positions are held only by agents")
         if "supervisor" in pos and t != "human":

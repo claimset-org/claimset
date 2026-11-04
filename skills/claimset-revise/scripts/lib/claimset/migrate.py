@@ -8,8 +8,8 @@ Only what is mechanical is changed:
 From v0.33 a claim inherits the assumptions of the methods studied only for its own subject (§3.2): the
 assumptions a claim inherited under v0.32 and no longer does are listed, to be added to its own `assumptions`
 where it does rest on them.
-From v0.36 a claimset has one guarantor, a person: organisation contributors and extra guarantors are
-listed. What needs judgement is listed, not guessed: definitions without a `kind` (rule 63), claims that need an `about`
+From v0.36 a claimset has one guarantor, a person: organisations in positions other than conversion
+guarantor, and extra guarantors, are listed. What needs judgement is listed, not guessed: definitions without a `kind` (rule 63), claims that need an `about`
 (rule 64 for principal claims, warning 27 for the others), figures that need a `function` (rule 67), evidence without a setup (rule 61) and evidence or artefacts
 without an availability (rule 75), the
 `exemplars` of qualitative evidence, which become excerpt results (rule 66), and declarations (warning 29).
@@ -60,9 +60,11 @@ def migrate(doc):
                 todo.append(f"{x.get('id')}: give its setup, the parts of the study by role (rule 61)")
     guarantors = []
     for c in out.get("contributors") or []:
-        if isinstance(c, dict) and c.get("type") == "organisation":
-            todo.append(f"{c.get('id')}: organisations are no longer contributors (v0.36); remove it, record a funder "
-                        f"in paper.declarations or an institution as a person's affiliation (rule 14)")
+        if isinstance(c, dict) and c.get("type") == "organisation" and \
+                set(c.get("positions") or []) - {"conversion_guarantor"}:
+            todo.append(f"{c.get('id')}: an organisation is only ever a conversion guarantor (v0.36); the guarantor "
+                        f"is one person with an ORCID iD; record a funder in paper.declarations or an institution as "
+                        f"a person's affiliation (rule 14)")
         if isinstance(c, dict) and "guarantor" in (c.get("positions") or []):
             guarantors.append(c.get("id"))
     if len(guarantors) > 1:

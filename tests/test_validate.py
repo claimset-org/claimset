@@ -43,7 +43,7 @@ def converted_base():
          "models": [{"model": "M1", "role": "sole"}], "credit_roles": ["data_curation"],
          "ai_tasks": [{"task": "json_preparation", "extent": "full"}], "tools": ["file_access"],
          "record_source": "harness"},
-        {"id": "P3", "type": "human", "name": "C. Conversion Lead", "orcid": "0000-0000-0000-0002",
+        {"id": "P3", "type": "organisation", "name": "Example Ltd", "registration": "00000000",
          "positions": ["conversion_guarantor"], "credit_roles": ["validation"]},
     ]
     for c in d["claims"]:
@@ -1998,11 +1998,17 @@ class TestRulesV036(Base):
         errors, _ = self.rules(d)
         self.assertIn("14", errors)
 
-    def test_14_conversion_guarantor_is_a_person(self):
-        self.assertValid(converted_base())
+    def test_14_conversion_guarantor_is_a_person_or_an_organisation(self):
+        self.assertValid(converted_base())                                    # an organisation
         d = converted_base()
-        d["contributors"][1]["type"] = "organisation"
+        d["contributors"][1] = {"id": "P3", "type": "human", "name": "C. Conversion Lead",
+                                "orcid": "0000-0000-0000-0002", "positions": ["conversion_guarantor"],
+                                "credit_roles": ["validation"]}
+        self.assertValid(d)                                                   # a person
         d["contributors"][1].pop("orcid")
+        self.assertRule(d, "14")                                              # a person needs an ORCID iD
+        d = converted_base()
+        d["contributors"][1]["type"] = "agent"
         self.assertRule(d, "14")
 
     def test_17_at_most_one_guarantor_in_a_converted_paper(self):
@@ -2021,7 +2027,7 @@ class TestRulesV036(Base):
         d["contributors"] += [{"id": "P8", "type": "organisation", "name": "Example Ltd", "positions": ["guarantor"]},
                               {"id": "P9", "type": "human", "name": "B. Colleague", "positions": ["guarantor"]}]
         _, _, todo = migrate(d)
-        self.assertTrue(any(x.startswith("P8: organisations") for x in todo))
+        self.assertTrue(any(x.startswith("P8: an organisation is only ever") for x in todo))
         self.assertTrue(any("one guarantor only" in x for x in todo))
 
 
