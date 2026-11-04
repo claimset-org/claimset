@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.35"
+SCHEMA_VERSION = "0.36"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -72,7 +72,7 @@ ENUM = {
     "mitigation": {"none", "partial", "addressed"},
     "level": {"public", "platform", "audit", "author_only", "unavailable", "not_stated"},
     "reason": {"personal_data", "commercial", "legal", "ethics", "security", "other"},
-    "contributor_type": {"agent", "human", "organisation"},
+    "contributor_type": {"agent", "human"},
     "position": {"author", "supervisor", "guarantor", "conversion_guarantor", "contributor", "converter"},
     "credit": {"conceptualization", "data_curation", "formal_analysis", "funding_acquisition", "investigation",
                "methodology", "project_administration", "resources", "software", "supervision", "validation",
@@ -2444,8 +2444,12 @@ def validate_contributors(r, contributors, paper, ref, converted):
         if not p.get("credit_roles"):
             r.warn("W1", f"{w}.credit_roles", "recommended field missing")
 
-        if t in ("human", "organisation") and not p.get("name"):
-            r.err("19", f"{w}.name", "required for humans and organisations")
+        if t == "organisation":
+            r.err("14", f"{w}.type", "organisations are not contributors (v0.36): one person, with an ORCID iD, is "
+                                    "the guarantor; record a funder in paper.declarations and an institution as a "
+                                    "person's affiliation")
+        if t == "human" and not p.get("name"):
+            r.err("19", f"{w}.name", "required for humans")
         if t == "agent" and not p.get("name"):
             r.warn("W1", f"{w}.name", "recommended for agents")
         if t == "human":
@@ -2453,14 +2457,12 @@ def validate_contributors(r, contributors, paper, ref, converted):
             if orcid and not ORCID_RE.match(str(orcid)):
                 r.err("14", f"{w}.orcid", "must be an ORCID iD like 0000-0002-1825-0097")
             if not orcid and ("guarantor" in pos or "conversion_guarantor" in pos):
-                r.err("14", f"{w}.orcid", "required for human guarantors")
+                r.err("14", f"{w}.orcid", "required for the guarantor and the conversion guarantor")
             elif not orcid:
                 r.warn("W1", f"{w}.orcid", "recommended field missing")
-        if t == "organisation" and not (p.get("ror") or p.get("registration")):
-            r.warn("W1", w, "ror or registration recommended for organisations")
 
         if ("guarantor" in pos or "conversion_guarantor" in pos) and t == "agent":
-            r.err("14", w, "guarantors must be humans or organisations")
+            r.err("14", w, "the guarantor and the conversion guarantor are people (type human) with an ORCID iD")
         if ("author" in pos or "converter" in pos) and t != "agent":
             r.err("15", w, "author and converter positions are held only by agents")
         if "supervisor" in pos and t != "human":
@@ -2508,8 +2510,10 @@ def validate_contributors(r, contributors, paper, ref, converted):
     if origin == "native":
         if not has("author"):
             r.err("16", "contributors", "native papers need at least one author (an agent)")
-        if not has("guarantor"):
-            r.err("16", "contributors", "native papers need at least one guarantor (ask the responsible human)")
+        if len(has("guarantor")) != 1:
+            r.err("16", "contributors", "a native paper has exactly one guarantor, the person who submits it "
+                                        f"(found {len(has('guarantor'))}); list other people as supervisors or "
+                                        "contributors")
         if has("conversion_guarantor"):
             r.err("16", "contributors", "conversion_guarantor appears only in converted papers")
         if "autonomy" not in paper:
@@ -2526,6 +2530,8 @@ def validate_contributors(r, contributors, paper, ref, converted):
                   "source_status_at_conversion", "converter", "date"):
             if f not in cf:
                 r.err("17", f"paper.converted_from.{f}", "missing required field")
+        if len(has("guarantor")) > 1:
+            r.err("17", "contributors", "a converted paper has at most one guarantor, a source author who claimed it")
         source_orcids = {as_dict(a).get("orcid") for a in as_list(cf.get("source_authors"))} - {None}
         for g in has("guarantor"):
             if g.get("orcid") not in source_orcids:

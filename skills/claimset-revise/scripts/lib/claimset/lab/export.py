@@ -641,8 +641,8 @@ class _Exporter:
         self.completion[:0] = [
             {"where": "paper.licence", "what": "ask the supervisor or guarantor which licence applies "
                                                "(SPDX identifier)"},
-            {"where": "contributors", "what": "ask who the guarantor is (a person with an ORCID, or an organisation) "
-                                              "and give them the guarantor position"},
+            {"where": "contributors", "what": "ask who the guarantor is: one person, with an ORCID iD, who submits "
+                                              "the claimset; give them the guarantor position"},
             {"where": "paper.contributions", "what": "choose the principal claims, set their role to principal and "
                                                      "list them in priority order"},
             {"where": "paper.autonomy", "what": "set autonomy (exported as unknown): autonomous, human_supervised or "

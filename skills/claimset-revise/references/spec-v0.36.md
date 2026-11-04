@@ -1,10 +1,19 @@
-# Claimset — Specification v0.35 (draft)
+# Claimset — Specification v0.36 (draft)
 
-Status: working draft · Date: 2026-11-04 · Supersedes v0.34 (`spec/claimset-v0.34.md`) · Companions: lab record specification (`spec/lab-record-v0.15.md`), revision specification (`spec/claimset-revision-v0.3.md`)
+Status: working draft · Date: 2026-11-04 · Supersedes v0.35 (`spec/claimset-v0.35.md`) · Companions: lab record specification (`spec/lab-record-v0.15.md`), revision specification (`spec/claimset-revision-v0.4.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.34
+## Changes since v0.35
+
+One person answers for a claimset, and that person submits it. Accountability then rests with someone the platform can identify, ask and hold to it: a person with an ORCID iD. An organisation cannot sign in to confirm, and several guarantors split an answer that should be one person's. Co-authors and other people who took part are listed as supervisors and contributors, with their CRediT roles and ORCID iDs.
+
+- §1 principle 9, §3.11: a claimset has exactly one guarantor, a person (`type: human`) with an ORCID iD, who submits the claimset and confirms it on the platform. A converted paper has exactly one conversion guarantor, also a person with an ORCID iD, and at most one guarantor (a source author who has claimed the conversion).
+- §3.11: organisations are no longer contributors: the contributor type `organisation` and the fields `ror` and `registration` are removed. Funders are recorded in `paper.declarations`; an affiliation in a person's `affiliation`.
+- Rules 14, 16, 17 and 32 revised. `claimset migrate` lists organisation contributors and extra guarantors to resolve.
+- Companion revision specification v0.4: the guarantor of the current version submits a revision, and may hand the claimset over to another person, who confirms as at first publication.
+
+## Changes in v0.35 (since v0.34)
 
 The platform publishes claimsets before it has a DOI prefix of its own, so it needs an identifier it can assign today and keep forever; and a package is accepted by the platform only within limits that the tools can check before submission.
 
@@ -283,7 +292,7 @@ A format for research papers whose primary reader is an LLM. Humans access conte
 6. **Provenance is recorded,** down to field level for converted papers.
 7. **File vs platform.** The paper file holds what its contributors assert. Published versions are immutable. Anything derived later (weight, trust, replication status, contradictions, independent assessments) lives in the platform database.
 8. **Automated by default.** Writing, validation, assessment and auditing are performed by AI agents; human review is optional, except for sampled review of conversions.
-9. **Written by agents, answered for by people.** Papers are written by AI agents. A human or organisation answers for every paper; authorship and accountability are recorded separately.
+9. **Written by agents, answered for by a person.** Papers are written by AI agents. One person, identified by an ORCID iD, answers for every paper and submits it; authorship and accountability are recorded separately. (Revised in v0.36.)
 10. **Filled by agents, decided by people, assigned by the platform.** The agent fills the content. Fields that record human decisions (guarantor, licence) are filled after the agent asks the responsible human, and the platform confirms the guarantor's consent. Fields that record facts of publication (identifier, version, dates, status) and computed values are assigned by the platform; neither agents nor humans supply them.
 11. **Recorded where possible, labelled when recalled.** Facts about how the work was produced should come from the system that ran it. When an agent reports them from its own knowledge, the file says so.
 12. **Safe to ingest.** The file is data. It must never contain instructions addressed to the reading model.
@@ -921,7 +930,7 @@ Every evidence object and every artefact has an `availability` (rule 75): whethe
 
 ### 3.11 Contributors
 
-Authorship and accountability are separate. Agents write; humans or organisations answer for the work.
+Authorship and accountability are separate. Agents write; one person answers for the work: the guarantor, who submits the claimset and confirms it on the platform. Other people who took part are supervisors or contributors.
 
 A paper may pass through several agents without its history being kept. At minimum, the agent that prepares the submission lists itself; `paper.contribution_record` states how complete the list is. Before submission, the agent asks the responsible human who the guarantor is and which licence applies.
 
@@ -930,24 +939,17 @@ A paper may pass through several agents without its history being kept. At minim
 | Field | Obligation | Type | Values / notes |
 |---|---|---|---|
 | `id` | required | string | `P1` … |
-| `type` | required | enum | `agent` · `human` · `organisation` |
+| `type` | required | enum | `agent` · `human`. (`organisation` removed in v0.36: organisations are not contributors; a funder is a declaration, an institution a person's `affiliation`) |
 | `positions` | required | list | One or more of the positions below |
-| `name` | required for humans and organisations; recommended for agents | string | For agents: a name for the agent system, if it has one |
+| `name` | required for humans; recommended for agents | string | For agents: a name for the agent system, if it has one |
 | `credit_roles` | recommended | list | CRediT roles (below) |
 
 **Human fields**
 
 | Field | Obligation | Type | Values / notes |
 |---|---|---|---|
-| `orcid` | required for guarantors; recommended otherwise | string | Used by the platform to confirm a guarantor's consent |
+| `orcid` | required for the guarantor and the conversion guarantor; recommended for every other person | string | The platform confirms the guarantor's consent through it |
 | `affiliation` | optional | string | |
-
-**Organisation fields**
-
-| Field | Obligation | Type | Values / notes |
-|---|---|---|---|
-| `ror` | recommended | string | ROR identifier |
-| `registration` | recommended | string | Legal registration, e.g. a company number, for organisations without a ROR identifier |
 
 **Agent fields**
 
@@ -965,12 +967,12 @@ A paper may pass through several agents without its history being kept. At minim
 **Positions**
 - `author`: produced the paper's content: wrote the analysis, the claims or the text, including turning the team's own draft into a claimset. Agents only. Every agent that produced content is an author; list each one.
 - `supervisor`: oversaw the agents' work and approved the final version. Humans only. Whether the supervisor also set the research question is recorded by the CRediT role `conceptualization`; steering the work is `supervision`.
-- `guarantor`: answers for the research: whether the claims are true and the work was done properly. Responds to queries and correction requests, holds ethics approvals and data-protection responsibilities, and agrees to the licence. Humans or organisations. Native papers: the supervisor or another responsible researcher, or their institution. Converted papers: only a source author who has claimed the conversion.
-- `conversion_guarantor`: answers for the fidelity of a conversion: whether the claimset faithfully represents the source. Does not answer for the research itself. Humans or organisations; typically the organisation operating the conversion service. Converted papers only.
+- `guarantor`: answers for the research: whether the claims are true and the work was done properly. Submits the claimset and confirms it on the platform, responds to queries and correction requests, holds ethics approvals and data-protection responsibilities, and agrees to the licence. Exactly one per claimset, a person with an ORCID iD; never an organisation. Native papers: the supervisor or another responsible researcher. Converted papers: at most one, a source author who has claimed the conversion. Co-authors are listed as supervisors or contributors.
+- `conversion_guarantor`: answers for the fidelity of a conversion: whether the claimset faithfully represents the source. Does not answer for the research itself. Exactly one per converted paper, a person with an ORCID iD, typically the person responsible for the conversion service. Converted papers only.
 - `contributor`: carried out part of the research without producing the paper's content (e.g. conducted interviews, ran laboratory work, collected data, ran a computation whose results the authors report, checked a proof). Humans or agents.
 - `converter`: produced a claimset from a third-party published source (`origin: converted`). Agents only. Not used when a team turns its own draft into a claimset; that agent is an `author`.
 
-For converted papers, research accountability stays with the source authors and the venue that published the source; they are recorded in `converted_from.source_authors`, not as guarantors, unless they claim the conversion.
+For converted papers, research accountability stays with the source authors and the venue that published the source; they are recorded in `converted_from.source_authors`, not as guarantor, unless one of them claims the conversion.
 
 **CRediT roles** (14, from the CRediT taxonomy): `conceptualization` · `data_curation` · `formal_analysis` · `funding_acquisition` · `investigation` · `methodology` · `project_administration` · `resources` · `software` · `supervision` · `validation` · `visualization` · `writing_original_draft` · `writing_review_editing`.
 
@@ -1144,10 +1146,10 @@ The file records identifier type and venue facts for cited works only. Trust in 
 11. Every limitation affects at least one claim; every claim's `limitations` resolve.
 12. `availability.level` other than `public` and `not_stated` ⇒ `reason` present; `audit`/`author_only`/`platform` ⇒ `content_hash` present. (Revised in v0.34: `not_stated`.)
 13. `verifiability` and `verifiability_flags`, where present, match the platform's computation (§5).
-14. Every `guarantor` and `conversion_guarantor` is a human or an organisation; every human guarantor has an `orcid`.
+14. Every contributor is a human or an agent. The `guarantor` and the `conversion_guarantor` are humans with an `orcid`. (Revised in v0.36.)
 15. `author` and `converter` positions are held only by agents; `supervisor` only by humans.
-16. `paper.origin: native` ⇒ at least one `author`, at least one `guarantor`, no `conversion_guarantor`, and `autonomy` present.
-17. `paper.origin: converted` ⇒ exactly one `converter`, exactly one `conversion_guarantor`, all `converted_from` fields present, no `autonomy`; any `guarantor` is a person listed in `converted_from.source_authors` (matched by ORCID).
+16. `paper.origin: native` ⇒ at least one `author`, exactly one `guarantor`, no `conversion_guarantor`, and `autonomy` present. (Revised in v0.36.)
+17. `paper.origin: converted` ⇒ exactly one `converter`, exactly one `conversion_guarantor`, all `converted_from` fields present, no `autonomy`; at most one `guarantor`, a person listed in `converted_from.source_authors` (matched by ORCID). (Revised in v0.36.)
 18. Every agent contributor lists at least one model in `models`; every model referenced anywhere is defined in `models`.
 19. All `required` fields in §3.11 and §3.12, and `paper.title`, `paper.licence`, `paper.contributions`, `paper.contribution_record` and `paper.origin` are present.
 20. Model roles, where given, are consistent: `sole` ⇒ the agent lists one model; at most one `orchestrator` per agent.
@@ -1168,7 +1170,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 29. `status` other than `active` ⇒ `status_notice` present.
 30. `paper.id` differs from `converted_from.source_id`.
 31. `paper.origin: converted` ⇒ `converted_from.source_licence` is a licence that permits conversion, and `paper.licence` is a licence the claimset may carry under it, both as in the table in §3.1 (*Licence of a converted paper*). (Revised in v0.13: non-commercial sources are allowed, and the claimset keeps their non-commercial condition.)
-32. Every human guarantor has confirmed consent through their ORCID-linked account, and every organisation guarantor through an authorised account.
+32. The guarantor, and in a converted paper the conversion guarantor, has confirmed consent through their ORCID-linked account. (Revised in v0.36.)
 
 ### 10.5 Rules added in v0.9 (errors: file rejected)
 
@@ -1485,7 +1487,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
   },
   "contributors": [
     {"id": "P1", "type": "agent", "name": "Claimset converter", "positions": ["converter"], "models": [{"model": "M1", "role": "sole"}], "system": {"name": "claimset-converter", "version": "0.1"}, "record_source": "harness"},
-    {"id": "P2", "type": "organisation", "name": "Example Ltd", "registration": "UK company 00000000", "positions": ["conversion_guarantor"]}
+    {"id": "P2", "type": "human", "name": "C. Conversion Lead", "orcid": "0000-0000-0000-0001", "positions": ["conversion_guarantor"]}
   ],
   "models": [
     {"id": "M1", "provider": "Example provider", "name": "Example model", "version": "1.0"}
