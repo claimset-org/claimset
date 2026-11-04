@@ -1,10 +1,30 @@
-# Claimset — Specification v0.33 (draft)
+# Claimset — Specification v0.35 (draft)
 
-Status: working draft · Date: 2026-10-28 · Supersedes v0.32 (`spec/claimset-v0.32.md`) · Companions: lab record specification (`spec/lab-record-v0.13.md`), revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-11-04 · Supersedes v0.34 (`spec/claimset-v0.34.md`) · Companions: lab record specification (`spec/lab-record-v0.15.md`), revision specification (`spec/claimset-revision-v0.2.md`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.32
+## Changes since v0.34
+
+The platform publishes claimsets before it has a DOI prefix of its own, so it needs an identifier it can assign today and keep forever; and a package is accepted by the platform only within limits that the tools can check before submission.
+
+- §7: the platform's provisional identifier, `liblm:<year>.<number>`, assigned at publication until the platform registers DOIs. It is permanent: a claimset first published with it keeps it in every version. Global IDs extend it as they extend a DOI (`liblm:2026.000123@v2#C3`). §2, §2.2 and rule 27 name the claimset's identifier rather than only a DOI.
+- New rule 76: the form of a claimset identifier, in `paper.id` and in every target with `id_type: claimset`.
+- §2.5: limits on a package (number of files, size of each file and of the whole, file types, paths). New rule 77, checked by `claimset validate` on a package and by `claimset package` when it builds one.
+
+## Changes in v0.34 (since v0.33)
+
+Anyone in any field should be able to write a claimset, and search should rest on what every claimset states. So what search and verification depend on, and every field can state honestly, is required; and what wrongly excluded a field's normal practice is allowed.
+
+- §3.2: `kind` is required on every definition, so that every term can be found and linked by what it names. Rule 63 revised.
+- §3.4: a `setup` is required on every evidence object except formal ones: search by what was studied, on what cases, how and through what lens rests on it, and every empirical field can fill its roles. Rule 61 revised; warning 28 keeps only its second part.
+- §3.10: `availability` is required on every evidence object and artefact, with the new level `not_stated` for material whose availability the paper does not state, so that a paper's silence is recorded rather than guessed. New rule 75; rule 12 revised; new verifiability flag `availability_not_stated` (§5).
+- §8 rule 4: qualifiers that bound where a claim holds go in `scope`; epistemic qualifiers ("suggests", "may") and magnitude ("slightly") are part of what is claimed and stay in the statement. Qualitative and humanities work state claims with such qualifiers as a matter of method.
+- Companion lab record v0.14: a supervisor's approval can be recorded by an agent on the supervisor's behalf, with the supervisor's words.
+- §2.4: converted papers are kept in a collection folder, `claimset/<collection>/<name>.claimset.json`, named from the source's identifier (`doi-10-1016-j-ejor-2022-04-040`, `arxiv-2401-01234v2`). New warning 31.
+- §7: the claimset's DOI: registered with DataCite, one DOI for all versions of a claimset, with the suffix `claimset.<year>.<number>` that carries no other information.
+
+## Changes in v0.33 (since v0.32)
 
 Assumptions listed on a term's definition were inherited through the evidence: every claim resting on an evidence object took the assumptions of every term its setup names. A comparison of five methods then gave each claim the assumptions of all five, so that "VETS F has the highest pinball values of the five models" was shown as resting on the error assumption of VETS D, and a claim about ETS on the error assumptions of CES, against which it was only compared.
 
@@ -274,7 +294,7 @@ A format for research papers whose primary reader is an LLM. Humans access conte
 - Canonical format: JSON, validated by a normative JSON Schema (the schema is the standard).
 - Alternative serialisation: JSON Lines, one object per line, each with a `type` field. Intended for retrieval and indexing.
 - Optional `@context` makes the file valid JSON-LD, enabling RDF export without changing the JSON.
-- IDs: local IDs within a paper (`C3`, `E2`, `D1`, `W1`, `A1`, `L1`, `P1`, `M1`). Global IDs append the local ID to the claimset's persistent identifier and version: `doi:10.xxxx/yyyy@v2#C3` (version optional; defaults to latest). For converted papers this is the claimset's own identifier, never the source's.
+- IDs: local IDs within a paper (`C3`, `E2`, `D1`, `W1`, `A1`, `L1`, `P1`, `M1`). Global IDs append the local ID to the claimset's persistent identifier (§7) and version: `doi:10.xxxx/yyyy@v2#C3`, or `liblm:2026.000123@v2#C3` for a claimset with a provisional identifier (version optional; defaults to latest). For converted papers this is the claimset's own identifier, never the source's.
 
 ### 2.1 Obligation levels
 
@@ -289,13 +309,13 @@ Unknown values of non-required fields are omitted or set to `null`. `null` means
 The same format exists in two forms:
 
 - **Submission:** written by the agent and sent to the platform. It contains everything the agent and the responsible humans can state. It does not contain platform-assigned fields.
-- **Published file:** the submission after the platform has validated it, obtained guarantor consent, minted the DOI and filled the platform-assigned fields. Published files are immutable.
+- **Published file:** the submission after the platform has validated it, obtained guarantor consent, assigned the claimset's identifier (§7) and filled the platform-assigned fields. Published files are immutable.
 
 **Platform-assigned fields** (absent from submissions, required in published files unless noted):
 
 | Field | Assigned when |
 |---|---|
-| `paper.id` | At publication: the platform mints a DOI. Exception: a correction or revision submission names the existing claimset's `paper.id` (§9) |
+| `paper.id` | At publication: the platform assigns the claimset's identifier, a DOI or a provisional identifier (§7). Exception: a correction or revision submission names the existing claimset's `paper.id` (§9) |
 | `paper.version` | At publication: 1 for a new paper; incremented for corrections and revisions |
 | `paper.previous_version` | At publication of a correction or revision |
 | `paper.changes` | At publication of a correction or revision: JSON Patch computed by the platform, each operation with `reason` and, for a revision, `addresses` (the global IDs of the review comments it answers) |
@@ -313,7 +333,7 @@ Top-level layout:
 
 ```json
 {
-  "schema_version": "0.33",
+  "schema_version": "0.34",
   "@context": "optional",
   "paper": {},
   "contributors": [],
@@ -356,6 +376,11 @@ claimset/
 - A study and a paper are named with lower-case letters, digits and hyphens, starting with a letter (`eigen-checker`, `eigen-checker-cpp`). A study can give several papers; each reports whole questions of the study's lab (lab record §5.17). Papers from different studies are independent unless their claims link to each other.
 - A paper may cite or relate to a paper of the same repository that is not yet published, with `id_type: claimset_local` and the target `<study>/<paper>.claimset.json#C3` (a claim) or `<study>/<paper>.claimset.json` (the paper), relative to `claimset/` (§4). The validator checks that the file and the claim exist when the file lies in a `claimset/` folder. At publication the platform replaces each local reference with the global ID of the published claim, so the cited paper is published first, or both are submitted together.
 - The file keeps its name through revisions: the date and version of a submitted or published version are recorded by the platform (§9) and in git. A version is marked with the git tag `claimset/<study>/<paper>/v<n>` (`claimset tag`), made on the commit that holds it.
+- **Converted papers.** A converted paper comes from no study of the repository and has no lab. Converted papers are kept in a collection folder, named as a study is: `claimset/<collection>/<name>.claimset.json`, with the reading view beside it (`<name>.claimset.txt`). The name is made from the source's identifier, so that a conversion of the same source has the same name in every repository and no two sources share a name:
+  1. the identifier type (`converted_from.id_type`), a hyphen, and the identifier (`converted_from.source_id`) without a prefix (`doi:`, `arXiv:`) or a resolver address (`https://doi.org/`, `https://arxiv.org/abs/`); for arXiv, followed by the version (`converted_from.source_version`) when the identifier does not end with it;
+  2. in lower case, with every run of characters other than the letters a–z and the digits 0–9 replaced by one hyphen, and no hyphen at the end.
+
+  The DOI `10.1016/j.ejor.2022.04.040` gives `doi-10-1016-j-ejor-2022-04-040`; the arXiv identifier `2401.01234` with version `v2` gives `arxiv-2401-01234v2`. Other files a repository keeps for the conversion (the source text its `source_spans` point into, a conversion report) carry the same name with their own extension. Warning 31 flags a converted paper in a `claimset/` folder whose file is named otherwise.
 - The `claimset/` folder is left out of package builds (lab record §3.3).
 
 ### 2.5 Submission package
@@ -377,6 +402,13 @@ data/
 - A package with no files is the claimset file alone, which may be submitted as it is.
 - At publication the platform stores each packaged file by its checksum, so a correction or revision that keeps a file stores it once, and replaces its relative `uri` with the file's permanent location (§2.2). A published file names no relative paths.
 - In a repository, a paper's files live in its study folder, `claimset/<study>/files/` (§2.4), and the package is built from there (`claimset package`, which copies the files, sets each `version` and writes the manifest).
+- **Limits.** The platform accepts a package within these limits, and `claimset package` and `claimset validate` apply the same ones (rule 77):
+  - at most 200 files in `data/`, the claimset included;
+  - each file at most 50 MB, and the payload at most 200 MB in total;
+  - every path relative, inside `data/`, of letters, digits, `.`, `-`, `_` and `/`, with no `..` component; no links;
+  - every file of `data/` listed in the manifest, and every file listed present;
+  - file types by extension, from this list: data and text `csv` `tsv` `json` `jsonl` `ndjson` `txt` `md` `xml` `yaml` `yml` `toml` `parquet` `feather` `arrow` `nc` `h5` `hdf5` `rds` `rda` `rdata` `dta` `sav` `xlsx` `ods`; documents `pdf` `tex` `bib`; images `png` `jpg` `jpeg` `gif` `webp` `tif` `tiff` `svg`; audio and video `wav` `mp3` `flac` `ogg` `m4a` `mp4` `webm` `mov`; code `r` `py` `jl` `m` `ipynb` `sql` `do` `sas` `stan` `c` `cpp` `h` `hpp` `f90` `java` `js` `ts` `rs` `go` `sh`; and any of these compressed with gzip (`results.csv.gz`). Archives (`zip`, `tar`, `7z`, `rar`) and executables are refused: a package lists its files, so each is checked and archived by itself.
+  The platform serves every packaged file as a download; none is rendered or run.
 - A converted paper packages a file taken from its source (a figure, a supplementary table) only under the source's licence, which conversion already requires to permit derivatives (§3.1); the artefact names its `reference` and `locator` in the source.
 
 ## 3. Object types
@@ -385,7 +417,7 @@ data/
 
 | Field | Type | Notes |
 |---|---|---|
-| `id` | string | Platform-assigned. Persistent identifier of this claimset: a DOI minted by the platform. For converted papers, distinct from the source's identifier |
+| `id` | string | Platform-assigned. Persistent identifier of this claimset: a DOI minted by the platform, or the platform's provisional identifier (§7). For converted papers, distinct from the source's identifier |
 | `title` | string | Required |
 | `version` | integer | Platform-assigned. 1, 2, …; each published version is immutable |
 | `previous_version` | string | Platform-assigned. Global ID of the previous version; absent for version 1 |
@@ -484,7 +516,7 @@ Retracted papers are never deleted. All their claims inherit the retraction stat
 | `id` | string | `D1` … |
 | `term` | string | |
 | `definition` | string | One term, one meaning, used rigidly throughout |
-| `kind` | enum | What sort of thing the term names (below). Required when the definition is named in an evidence `setup` (§3.4) or a claim's `about` (§3.3.5); recommended otherwise |
+| `kind` | enum | Required. What sort of thing the term names (below) |
 | `members` | list | For a term that names a group: the IDs of the definitions of its members, each of the same `kind` as the group (below) |
 | `part_of` | list | The definitions of the wholes this term is a part of: a parameter or component of a method, a subset of a data set, a subgroup of a population, a subscale of an instrument (below) |
 | `broader` | list | The definitions of the more general terms this term is a kind of: a variant of a method, a subtype of a condition, a narrower category (below) |
@@ -881,9 +913,11 @@ Applied to evidence and artefacts.
 
 | Field | Type | Values / notes |
 |---|---|---|
-| `level` | enum | `public` · `platform` (registered users) · `audit` (accessible only to automated audit agents in a secure environment; human auditors optional) · `author_only` (never leaves the originating environment; can be audited only by an attested agent run there) · `unavailable` |
-| `reason` | enum | Required unless `public`: `personal_data` · `commercial` · `legal` · `ethics` · `security` · `other` |
-| `content_hash` | string | Required unless `public` or `unavailable`: cryptographic hash committing to the exact content |
+| `level` | enum | Required. `public` · `platform` (registered users) · `audit` (accessible only to automated audit agents in a secure environment; human auditors optional) · `author_only` (never leaves the originating environment; can be audited only by an attested agent run there) · `unavailable` · `not_stated` (the paper does not say whether the material is available, or where; never a guess at another level) |
+| `reason` | enum | Required unless `public` or `not_stated`: `personal_data` · `commercial` · `legal` · `ethics` · `security` · `other` |
+| `content_hash` | string | Required unless `public`, `unavailable` or `not_stated`: cryptographic hash committing to the exact content |
+
+Every evidence object and every artefact has an `availability` (rule 75): whether the material can be checked is what verifiability is computed from (§5), and readers filter on it. A paper that says nothing about it gives `not_stated`, which records a fact, not a default.
 
 ### 3.11 Contributors
 
@@ -1038,6 +1072,7 @@ For formal claims a check is a re-derivation; for empirical and simulation claim
 
 **Verifiability flags** (computed, list):
 - `api_model_dependency`: the supporting evidence relies on a model with `weights: api_only`; the result may not be reproducible once the model is withdrawn.
+- `availability_not_stated`: an evidence object or artefact the claim's support points to has availability `not_stated`; the claim is computed as `open` if nothing else limits it, and the flag says that this was not confirmed.
 - `figure_without_data`: a supporting figure is a `data_plot` with neither `underlying_data` nor `shows`, or a `specimen` that no observation is read from (§3.6). (Revised in v0.32.)
 - `unpublished_prompts`: a model used in the research design has no `prompts` artefact.
 - `unrecorded_model_settings`: a model used in the research design has no `settings`, or its `record_source` is absent or `self_reported`.
@@ -1056,14 +1091,26 @@ Reviews of a published claimset, the author's responses, human resolutions of di
 
 ## 7. Identifiers and source trust
 
-The platform mints a DOI for every published claimset. The file records identifier type and venue facts for cited works only. Trust in a source is a derived score computed by the platform. Papers published on Claimset are scored by the same rules as all others.
+**The claimset's identifier.** The platform assigns every published claimset a persistent identifier at publication: a DOI once the platform registers DOIs, and until then a provisional identifier of the platform (LibLM). Both are built by the same rule and behave alike: one identifier for all versions, extended by `@v<n>` for a version and `#<local ID>` for an object, never reused.
+
+**The provisional identifier.** `liblm:<year>.<number>`, with `<year>` and `<number>` as for the DOI below: `liblm:2026.000123`, `liblm:2026.000123@v2#C3`. It is permanent: a claimset first published with it keeps it as `paper.id` in every later version, and it resolves to the claimset on the platform for as long as the platform exists. How a DOI is added to such a claimset, once the platform registers DOIs, is specified when it does; the provisional identifier stays valid either way.
+
+**The claimset's DOI.** When the platform registers DOIs, it mints a DOI for every claimset it publishes, at publication, and registers it with DataCite under the platform's DOI prefix.
+
+- **Form:** `doi:<prefix>/claimset.<year>.<number>`. `<year>` is the year of first publication; `<number>` is the claimset's sequence number among those first published that year, with at least six digits, zero-padded. Example: `doi:10.0000/claimset.2026.000123`, where `10.0000` stands for the platform's prefix throughout this specification. The suffix holds nothing else (no title, author, subject or source), so nothing in it can later become wrong.
+- **One DOI for all versions.** Corrections and revisions keep the DOI; a version is named by appending `@v<n>`, and an object by appending its local ID: `doi:10.0000/claimset.2026.000123@v2#C3` (§2, §9). The DOI resolves to the claimset's page on the platform, which shows the latest version, its status and the list of earlier versions.
+- **Converted papers** get a DOI of their own by the same rule; a claimset never takes its source's DOI (rule 30), and the source is recorded in `converted_from`. A conversion of a new version of the source is a new claimset with a new DOI (§9).
+- **Never reused.** A DOI is never deleted or given to another claimset. A retracted or withdrawn claimset keeps its DOI, which resolves to the claimset and its status (§9).
+- Before publication a submission has only the platform's internal submission ID (§2.2), which is never cited. In a repository, a paper that is not yet published is named by its path (§2.4).
+
+The file records identifier type and venue facts for cited works only. Trust in a source is a derived score computed by the platform. Papers published on Claimset are scored by the same rules as all others.
 
 ## 8. Statement text rules
 
 1. One assertion per statement. A claim is one **atom**: one *subject* (the method, model, group of methods, population or object the claim is about), one *relation* (what is asserted of it: is lower than, is stationary when, improves, is equivalent to), at most one *comparator* (what it is compared with; a named group, such as "the univariate methods", is one comparator), and one set of *conditions* (the data, setting, sample size, horizon or parameter region under which it holds). A statement with two subjects, two comparators or two sets of conditions is two or more claims, whatever its wording. Write the atom first and the statement from it; the atom is recorded in the claim's `about` (§3.3.5). A statement also holds more than one claim when one part could be true and another false. Signs of it: a semicolon; contrast (`but`, `while`, `whereas`, `although`, `however`); addition (`as well as`, `also`, `in addition`, `moreover`, `furthermore`, `not only`); explanation (`because`, `since`, `due to`, `thus`, `therefore`, `hence`, `which explains`), which usually joins a result to its explanation, two claims of different types linked by `explains` (§3.7); an assertion in a side clause (`, which …`) or in parentheses; a recommendation added to a finding (`should`, `recommend`); a claim citing results of more than one evidence object; and `and` joining two verbs. The grouping of rule 2 (one subject against one comparator under one set of conditions, better on some measures and worse on others) stays one claim.
 2. **Granularity rule:** split a statement into separate claims when its parts differ in support, scope or status; keep it whole when splitting would lose meaning. A qualitative theme is one interpretive claim with a warrant; sub-themes become separate supporting claims only if they have their own evidence. Atoms are grouped into one claim only when they share subject, comparator and conditions and differ in the measure or summary: "M has a lower mean and median MASE than N, but a higher MSIS" is one claim, supported by the table holding the numbers, whose values it does not repeat (§3.4, *Tables and claims*). The same comparison on two data sets, against two comparators or for two methods is two claims. A conclusion the paper draws over several atoms ("M is the most robust of the variants") is a claim of its own, whose `depends_on` lists the atoms it rests on; it is not written by merging them. Results on which a method is worse are stated in the claim, never left out.
 3. Self-contained: no anaphora or cross-references ("this", "the above", "as shown").
-4. Scope-bearing qualifiers belong in `scope`, not hedged prose.
+4. Qualifiers that bound where the claim holds (the population, setting, period, conditions, exclusions) belong in `scope`, not in the statement. Epistemic qualifiers ("suggests", "may", "is consistent with") and magnitude ("slightly", "by about a fifth") are part of what is claimed: they stay in the statement, worded as the paper words them, and confidence in the claim is recorded in its assessments (§5). (Revised in v0.34.)
 5. Defined terms are marked inline with their definition ID: `[[D2:forecast skill]]`, in statements and in definitions. The text of a marker is plain: it holds no other marker (`[[D24:VETS F]]`, never `[[D24:V[[D27:ETS]] F]]`).
 6. Mathematics is written in LaTeX, delimited by `$…$`. Algorithms in definitions are pseudocode in a fenced block (three backticks before and after).
 7. No evaluative rhetoric ("novel", "significant", "remarkable"). "Statistically significant", the outcome of a test, is a result, not rhetoric.
@@ -1074,7 +1121,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 - Every published version is immutable and permanently retrievable.
 - **Order and IDs.** Claims are listed in reading order: principal claims, then supporting claims, then secondary claims and assumptions, each in the order of the paper's argument, since the reading view follows file order (§2). Before the first submission, IDs follow that order without gaps: `claimset renumber FILE` renumbers claims, warrants, definitions, limitations and open questions and rewrites every reference to them; a claimset exported from a lab record keeps its link to the record through `hypothesis.lab_event`, not through claim IDs. After publication IDs never change (revision §2, *Stable object IDs*): a revision places a new claim where it belongs in the file, with the next free number, and an ID that is dropped is not reused.
-- A correction is submitted as a complete corrected file whose `paper.id` names the existing claimset and which carries a `correction_reason`. The platform computes the JSON Patch against the latest published version, records it in `changes` with the reason, assigns the next `version` and `previous_version`, and sets `status: corrected`. The DOI does not change; versions are distinguished by `@v<n>`.
+- A correction is submitted as a complete corrected file whose `paper.id` names the existing claimset and which carries a `correction_reason`. The platform computes the JSON Patch against the latest published version, records it in `changes` with the reason, assigns the next `version` and `previous_version`, and sets `status: corrected`. The identifier (§7) does not change; versions are distinguished by `@v<n>`.
 - A revision is submitted as a complete file built from the current version, whose `paper.id` names the existing claimset and which has no `correction_reason`, together with a response to the unresolved review comments (revision §4–5). The platform records the patch as for a correction, with the comments each operation answers, sets `paper.answers`, and keeps `status: active`. Object IDs are stable across versions: an object that keeps its ID is the same object, refined, and an ID removed from the claimset is never used again.
 - Retraction, withdrawal or an expression of concern is a governance action by the platform, recorded by `status` and `status_notice`. The paper's content is retained so references still resolve, and every reader sees the status and reason.
 - Global IDs without a version resolve to the latest version and carry its status.
@@ -1095,7 +1142,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 9. `provenance` or `field_provenance` values `extracted`/`inferred` only when `paper.origin: converted`; `source_spans` required in that case.
 10. Each support kind carries its required pointer (§4); `cited` carries `reference` or `target` with `id_type`. (Revised in v0.16.)
 11. Every limitation affects at least one claim; every claim's `limitations` resolve.
-12. `availability.level` other than `public` ⇒ `reason` present; `audit`/`author_only`/`platform` ⇒ `content_hash` present.
+12. `availability.level` other than `public` and `not_stated` ⇒ `reason` present; `audit`/`author_only`/`platform` ⇒ `content_hash` present. (Revised in v0.34: `not_stated`.)
 13. `verifiability` and `verifiability_flags`, where present, match the platform's computation (§5).
 14. Every `guarantor` and `conversion_guarantor` is a human or an organisation; every human guarantor has an `orcid`.
 15. `author` and `converter` positions are held only by agents; `supervisor` only by humans.
@@ -1116,7 +1163,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 ### 10.3 Published-file rules (errors; checked by the platform at publication)
 
-27. All platform-assigned fields in §2.2 are present; `paper.id` is a DOI minted by the platform.
+27. All platform-assigned fields in §2.2 are present; `paper.id` is an identifier assigned by the platform (§7). (Revised in v0.35.)
 28. `version` > 1 ⇒ `previous_version` and `changes` present.
 29. `status` other than `active` ⇒ `status_notice` present.
 30. `paper.id` differs from `converted_from.source_id`.
@@ -1192,7 +1239,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 ### 10.18 Rules added in v0.23 (errors: file rejected)
 
-61. (Revised in v0.30.) An evidence object's `setup`, if present, has only the keys `studied`, `cases`, `procedure`, `lens` and `context`, each a non-empty list of IDs of definitions; formal evidence has no `setup`.
+61. (Revised in v0.30 and v0.34.) Every evidence object whose profile is not `formal` has a `setup`, with only the keys `studied`, `cases`, `procedure`, `lens` and `context`, each a non-empty list of IDs of definitions, at least one key present; formal evidence has no `setup`.
 
 ### 10.19 Rules added in v0.24 (errors: file rejected)
 
@@ -1200,7 +1247,7 @@ The platform mints a DOI for every published claimset. The file records identifi
 
 ### 10.20 Rules added in v0.30 (errors: file rejected)
 
-63. A definition's `kind`, if present, is one of the values of §3.2. Every definition named in an evidence `setup` or in a claim's `about` has a `kind`.
+63. Every definition has a `kind`, one of the values of §3.2. (Revised in v0.34: required of every definition, not only those named in a setup or a claim's `about`.)
 64. `about`: every principal claim has one; no assumption claim has one. It has `subject` and `relation`, each a non-empty string, and `conditions`, a list (possibly empty); `object` and `comparator` are present, each `null` or a slot value; `object` may instead be a non-empty list of IDs of definitions of kind `variable` (`measure` until v0.31). A slot value is a non-empty string: when it has the form of a definition ID (`D` followed by digits) it resolves to a definition, and that definition is marked in the claim's statement (`[[Dn:…]]`). `relation` is text, never an ID.
 
 ### 10.21 Rules added in v0.31 (errors: file rejected)
@@ -1219,6 +1266,15 @@ The platform mints a DOI for every published claimset. The file records identifi
 72. Derived evidence. Each entry of an evidence object's `derived_from` names another evidence object of this paper and has a `how` from the list of §3.4; `derived_from` forms no cycle.
 73. Assumptions of a term. A definition's `assumptions`, if present, is a non-empty list of IDs of assumption claims (support of kind `assumption`).
 74. Contrasts. A `comparator` in an observation's conditions (of a result, a table, a row label or a column) is a definition ID or text; when it is a definition ID and another condition of the observation has a value that is a member of a group, the comparator is a member of the same group.
+
+### 10.23 Rules added in v0.34 (errors: file rejected)
+
+75. Availability. Every evidence object and every artefact has an `availability` with a `level` from §3.10.
+
+### 10.24 Rules added in v0.35 (errors: file rejected)
+
+76. Claimset identifiers. `paper.id`, where present, is a claimset identifier: `doi:` followed by a DOI prefix (`10.` and four to nine digits) and `/claimset.<year>.<number>`, or `liblm:<year>.<number>`; `<year>` is four digits and `<number>` at least six. A `target` with `id_type: claimset` is a claimset identifier, optionally followed by `@v<n>` (n ≥ 1) and then optionally by `#` and a local ID.
+77. Package limits. A package (§2.5) keeps within the limits of §2.5: the number of files, the size of each file and of the payload, the form of every path, the manifest listing exactly the files of `data/`, and the file types. A zip is checked before it is unpacked: its entries' sizes and paths, and that it holds no links.
 
 ### 10.4 Warnings (file accepted, warning recorded)
 
@@ -1249,15 +1305,16 @@ The platform mints a DOI for every published claimset. The file records identifi
 25. A `secondary` `descriptive` claim with `empirical_quant` or `simulation` support (a result, not a conclusion drawn from results) on which nothing rests: no claim depends on it or lists it in `assumptions`, no warrant names it as a premise, no open question concerns it, and it stands in no relation to another claim of the paper (it neither `explains`, `qualifies`, `supports`, `contradicts` nor `refines` one, nor is the target of such a relation, §3.7). Keep it only if it states a loss, limit or null result of the paper's own method; otherwise the result table of its evidence holds it (§3.3, *Secondary claims in converted papers*). (Revised in v0.33.)
 26. A definition without `source` (a term of the paper's own) is named in the statement of a `formal` claim and contains no mathematics (`$…$`): if it is the paper's own method or model, give its defining equations (§3.2, *The paper's own method or model*).
 27. A supporting or secondary claim that is not an assumption has no `about` (§3.3.5). Also: a slot of `about` holds text that equals, ignoring case, the `term` of a definition in the file: give the definition's ID instead.
-28. An evidence object whose profile is not `formal` has no `setup`, or a definition is named in a claim's `about` and in no setup of the non-formal evidence that claim's support cites, although its kind is `method`, `intervention`, `population`, `data`, `design` or `variable` (a part of the study that the setup leaves out). A definition counts as named when the setup names it, names a group it is a member of, or names every member of it (§3.2, *Groups*). (Revised in v0.31.)
+28. A definition is named in a claim's `about` and in no setup of the non-formal evidence that claim's support cites, although its kind is `method`, `intervention`, `population`, `data`, `design` or `variable` (a part of the study that the setup leaves out). A definition counts as named when the setup names it, names a group it is a member of, or names every member of it (§3.2, *Groups*). (Revised in v0.31.) In v0.34 an evidence object without a setup is an error (rule 61).
 29. A native paper has no `declarations`, or its declarations leave out `funding` or `competing_interests`: ask the guarantor and record what they declare (an empty funding list and "None declared." are declarations).
 30. A `data_plot` figure without `shows` or `underlying_data`; a `specimen` from which no observation is read (`read_from`); or a result whose `variable` or a table column whose variable is text equal, ignoring case, to the `term` of a definition in the file (give the ID).
+31. A converted paper lies in a `claimset/` folder and its file is not named `<name>.claimset.json` with the name made from its source's identifier (§2.4). The message gives the name.
 
 ## 11. Platform dependencies
 
 Platform functionality is specified in the platform requirements document. The file format depends on the platform for:
 
-- **Identifiers and publication facts:** minting the DOI at publication, and assigning version, dates and status (§2.2).
+- **Identifiers and publication facts:** assigning the claimset's identifier at publication, a provisional identifier until the platform registers DOIs with DataCite (§7), and assigning version, dates and status (§2.2).
 - **Guarantor consent:** a paper is not published until every human guarantor has confirmed through their ORCID-linked account, and every organisation guarantor through an authorised account.
 - **Classification:** assigning the OpenAlex subfield and topics.
 - **Derived data:** verifiability computation and recomputation, trust scores, claim weights, contradictions, replication status and assessments, stored outside the file.
@@ -1283,7 +1340,7 @@ Platform functionality is specified in the platform requirements document. The f
 - **Packages:** BagIt (RFC 8493).
 - **Identifiers of things:** compact identifiers with prefixes from the Bioregistry and identifiers.org; ROR and the Crossref Funder Registry for funders; ECLI and ELI for legal sources.
 - **Contributor roles:** CRediT.
-- **Identity:** ORCID for people, ROR for organisations; DOIs for claimsets.
+- **Identity:** ORCID for people, ROR for organisations; DOIs for claimsets, and the platform's provisional identifiers until it registers DOIs.
 - **Classification:** OpenAlex topics.
 - **Secondary mapping:** ORKG.
 - **Mechanism:** an optional JSON-LD `@context` keeps the format plain JSON while enabling RDF export.
@@ -1307,7 +1364,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.33",
+  "schema_version": "0.34",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",

@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.34"
+SCHEMA_VERSION = "0.35"
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -166,24 +166,42 @@ LOCAL_RE = re.compile(r"^([a-z][a-z0-9-]{1,59})/([a-z][a-z0-9-]*)\.claimset\.jso
 SOURCE_PREFIX_RE = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|https?://arxiv\.org/abs/|doi:|arxiv:)", re.I)
 
 
-def local_targets(doc):
-    """[(where, target)] for every claimset_local reference: references, cited support and relations."""
+#: Rule 76: a claimset's identifier (§7): its DOI, or the platform's provisional identifier.
+CLAIMSET_ID = r"(?:doi:10\.\d{4,9}/claimset\.|liblm:)\d{4}\.\d{6,}"
+CLAIMSET_ID_RE = re.compile(rf"^{CLAIMSET_ID}$")
+CLAIMSET_TARGET_RE = re.compile(rf"^{CLAIMSET_ID}(?:@v[1-9]\d*)?(?:#[A-Z]+[1-9]\d*(?:\.[A-Za-z0-9]+)*)?$")
+
+
+def local_targets(doc, id_type="claimset_local"):
+    """[(where, target)] for every reference of the given id_type: references, cited support and relations."""
     out = []
     for b in as_list(doc.get("references")):
         b = as_dict(b)
-        if b.get("id_type") == "claimset_local":
+        if b.get("id_type") == id_type:
             out.append((f"references:{b.get('id')}.target", b.get("target")))
     for c in as_list(doc.get("claims")):
         c = as_dict(c)
         for i, s_ in enumerate(as_list(c.get("support"))):
             s_ = as_dict(s_)
-            if s_.get("id_type") == "claimset_local":
+            if s_.get("id_type") == id_type:
                 out.append((f"claims:{c.get('id')}.support[{i}].target", s_.get("target")))
         for i, rel in enumerate(as_list(c.get("relations"))):
             rel = as_dict(rel)
-            if rel.get("id_type") == "claimset_local":
+            if rel.get("id_type") == id_type:
                 out.append((f"claims:{c.get('id')}.relations[{i}].target", rel.get("target")))
     return out
+
+
+def check_identifiers(r, doc):
+    """Rule 76: paper.id and every target with id_type claimset have the form of a claimset identifier (§7)."""
+    pid = as_dict(doc.get("paper")).get("id")
+    if pid is not None and not (isinstance(pid, str) and CLAIMSET_ID_RE.match(pid)):
+        r.err("76", "paper.id", "a claimset identifier: doi:<prefix>/claimset.<year>.<number> or "
+                                "liblm:<year>.<number>, e.g. liblm:2026.000123 (§7)")
+    for where, target in local_targets(doc, "claimset"):
+        if not (isinstance(target, str) and CLAIMSET_TARGET_RE.match(target)):
+            r.err("76", where, "a claimset identifier, optionally with @v<n> and #<local ID>, "
+                               "e.g. liblm:2026.000123@v2#C3 (§7)")
 
 
 def check_local(r, doc, published, local_root):
@@ -928,6 +946,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
     if isinstance(paper.get("exploration"), dict):
         check_covers(r, paper["exploration"])
     check_local(r, doc, published, local_root)
+    check_identifiers(r, doc)
     if local_root is not None and file_name and paper.get("origin") == "converted":
         name = source_name(paper.get("converted_from"))
         if name and file_name != f"{name}.claimset.json":
@@ -1860,20 +1879,121 @@ def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
                                             "(an empty funding list and \"None declared.\" are declarations)")
 
 
+#: Rule 77: the limits on a submission package (§2.5), applied alike by the platform, `claimset validate` and
+#: `claimset package`.
+PACKAGE_MAX_FILES = 200
+PACKAGE_MAX_FILE_BYTES = 50 * 1024 * 1024
+PACKAGE_MAX_TOTAL_BYTES = 200 * 1024 * 1024
+PACKAGE_EXTENSIONS = frozenset("""
+    csv tsv json jsonl ndjson txt md xml yaml yml toml parquet feather arrow nc h5 hdf5 rds rda rdata dta sav xlsx ods
+    pdf tex bib png jpg jpeg gif webp tif tiff svg wav mp3 flac ogg m4a mp4 webm mov
+    r py jl m ipynb sql do sas stan c cpp h hpp f90 java js ts rs go sh""".split())
+PACKAGE_PATH_RE = re.compile(r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$")
+#: The files a bag may hold beside data/ (RFC 8493 §2).
+BAG_TAG_FILE_RE = re.compile(r"^(?:bagit\.txt|bag-info\.txt|manifest-[a-z0-9]+\.txt|tagmanifest-[a-z0-9]+\.txt)$")
+
+
+def package_file_problems(name, size):
+    """Rule 77: what is wrong with one payload file, by its path inside data/ and its size in bytes."""
+    out = []
+    if not PACKAGE_PATH_RE.match(name) or any(part in (".", "..") for part in name.split("/")):
+        out.append("a path of letters, digits, '.', '-', '_' and '/', with no '..' (§2.5)")
+        return out
+    parts = name.rsplit("/", 1)[-1].lower().split(".")
+    ext = parts[-2] if len(parts) > 2 and parts[-1] == "gz" else (parts[-1] if len(parts) > 1 else "")
+    if ext not in PACKAGE_EXTENSIONS:
+        out.append(f"file type '{ext or '(none)'}' is not accepted in a package; archives and executables are "
+                   f"refused, and each file is packaged by itself (§2.5)")
+    if size > PACKAGE_MAX_FILE_BYTES:
+        out.append(f"{size} bytes; a packaged file is at most {PACKAGE_MAX_FILE_BYTES} bytes (§2.5)")
+    return out
+
+
+def package_problems(files):
+    """Rule 77: [(where, message)] for a payload given as [(path inside data/, size in bytes)]."""
+    out = []
+    if len(files) > PACKAGE_MAX_FILES:
+        out.append(("data/", f"{len(files)} files; a package holds at most {PACKAGE_MAX_FILES} (§2.5)"))
+    total = sum(size for _, size in files)
+    if total > PACKAGE_MAX_TOTAL_BYTES:
+        out.append(("data/", f"{total} bytes in all; a package holds at most {PACKAGE_MAX_TOTAL_BYTES} (§2.5)"))
+    for name, size in files:
+        out += [(f"data/{name}", m) for m in package_file_problems(name, size)]
+    return out
+
+
+def _zip_problems(z):
+    """Rule 77, before a zip is unpacked: its entries' paths, links and sizes. [(where, message)]."""
+    out, payload = [], []
+    names = [i.filename for i in z.infolist() if not i.is_dir()]
+    tops = {n.split("/", 1)[0] for n in names}
+    strip = len(tops) == 1 and all("/" in n for n in names)
+    for info in z.infolist():
+        name = info.filename
+        if name.startswith("/") or "\\" in name or ".." in name.split("/"):
+            out.append((name, "a zip entry with an absolute path or '..' (§2.5)"))
+            continue
+        if (info.external_attr >> 16) & 0o170000 == 0o120000:
+            out.append((name, "a link; a package holds only regular files (§2.5)"))
+            continue
+        if info.is_dir():
+            continue
+        rel = name.split("/", 1)[1] if strip else name
+        if rel.startswith("data/"):
+            payload.append((rel[len("data/"):], info.file_size))
+        elif not BAG_TAG_FILE_RE.match(rel):
+            out.append((name, "outside data/; a bag holds bagit.txt, its manifests and data/ (§2.5)"))
+    return out + package_problems(payload)
+
+
+def folder_package_problems(root):
+    """Rule 77 for a bag folder: links, files outside data/, and the payload's limits. [(where, message)]."""
+    import os
+    out, payload = [], []
+    root = Path(root)
+    for dirpath, dirnames, filenames in os.walk(root):
+        for n in dirnames + filenames:
+            f = Path(dirpath) / n
+            rel = f.relative_to(root).as_posix()
+            if f.is_symlink():
+                out.append((rel, "a link; a package holds only regular files (§2.5)"))
+            elif f.is_file():
+                if rel.startswith("data/"):
+                    payload.append((rel[len("data/"):], f.stat().st_size))
+                elif not BAG_TAG_FILE_RE.match(rel):
+                    out.append((rel, "outside data/; a bag holds bagit.txt, its manifests and data/ (§2.5)"))
+        dirnames[:] = [d for d in dirnames if not (Path(dirpath) / d).is_symlink()]
+    return out + package_problems(payload)
+
+
 def validate_package(path):
-    """Rule 70: a submission package (BagIt, RFC 8493): a folder or a zip holding bagit.txt, manifest-sha256.txt
-    and data/ with one claimset file and the files its artefacts name. Returns (report, claimset document)."""
+    """Rules 70 and 77: a submission package (BagIt, RFC 8493): a folder or a zip holding bagit.txt,
+    manifest-sha256.txt and data/ with one claimset file and the files its artefacts name, within the limits of
+    §2.5. A zip is checked before it is unpacked. Returns (report, claimset document)."""
     import hashlib
     import tempfile
     import zipfile
     root = Path(path)
     tmp = None
     if root.is_file() and zipfile.is_zipfile(root):
-        tmp = tempfile.TemporaryDirectory()
         with zipfile.ZipFile(root) as z:
+            problems = _zip_problems(z)
+            if problems:
+                r = Report()
+                for where, msg in problems:
+                    r.err("77", where, msg)
+                return r, None
+            tmp = tempfile.TemporaryDirectory()
             z.extractall(tmp.name)
         inner = [p for p in Path(tmp.name).iterdir() if p.is_dir()]
         root = inner[0] if len(inner) == 1 and not (Path(tmp.name) / "bagit.txt").exists() else Path(tmp.name)
+    else:
+        problems = folder_package_problems(root)
+        if problems:
+            r = Report()
+            for where, msg in problems:
+                r.err("77", where, msg)
+            return r, None
     r = Report()
     manifest = {}
     mpath = root / "manifest-sha256.txt"
@@ -1896,6 +2016,9 @@ def validate_package(path):
             for chunk in iter(lambda: fh.read(1 << 20), b""):
                 h.update(chunk)
         return h.hexdigest()
+    present = {f.relative_to(root).as_posix() for f in (root / "data").rglob("*") if f.is_file()}
+    for name in sorted(present - set(manifest)):
+        r.err("77", name, "in data/ but not listed in the manifest; the manifest lists every file (§2.5)")
     for name, digest in manifest.items():
         f = root / name
         if not f.is_file():
