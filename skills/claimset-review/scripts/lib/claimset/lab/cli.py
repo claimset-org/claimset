@@ -220,8 +220,36 @@ def _about_from_args(args):
 
 
 def cmd_term(args):
+    code = None
+    if args.include or args.exclude or args.example:
+        code = _clean({"include": args.include, "exclude": args.exclude, "examples": args.example or None})
     return _write(args, "term", {"term": args.term, "kind": args.kind, "definition": args.definition,
-                                 "source": args.source})
+                                 "source": args.source, "code": code, "broader": args.broader or None})
+
+
+def cmd_code(args):
+    from . import sources as _sources
+    lab = _lab(args)
+    by = _actor(args)
+    st = lab.view(by)
+    src = st.latest(args.source) if st.get(args.source) else None
+    if src is None or src["type"] != "source":
+        raise LabError("L12", f"no source '{args.source}'")
+    body = {"source": src["id"], "codes": list(args.codes or []), "unit": args.unit, "pass": args.pass_,
+            "memo": args.memo, "withdrawn": True if args.withdraw else None}
+    if args.withdraw:
+        if not args.supersedes:
+            raise LabError("schema", "code: --withdraw corrects a coding: give --supersedes CD…")
+        body["codes"] = []
+    else:
+        body["code_versions"] = {c: st.latest(c)["id"] for c in body["codes"] if st.get(c)}
+    if args.excerpt:
+        sel = _sources.quote(lab, src, args.excerpt)
+        if sel["occurrences"] > 1:
+            raise LabError("L25", f"code: the words occur {sel['occurrences']} times in {src['id']}; quote enough to "
+                                  f"tell them apart")
+        body["quote"] = {k: sel[k] for k in ("exact", "prefix", "suffix", "start", "end")}
+    return _write(args, "coding", body, by=by)
 
 
 def cmd_hypothesis(args):
@@ -762,6 +790,21 @@ def add_parser(subparsers):
     p.add_argument("--definition", required=True,
                    help="what the term means here; for the study's own method, every defining equation")
     p.add_argument("--source", help="where a borrowed term is defined: a DOI, arXiv ID or citation")
+    p.add_argument("--include", help="makes the term a code of the codebook (kind concept): what a passage must show "
+                                     "to get it")
+    p.add_argument("--exclude", help="a code's exclusion criteria: what does not count, though it may look alike")
+    p.add_argument("--example", action="append", metavar="TEXT", help="a typical passage for the code; repeat")
+    p.add_argument("--broader", nargs="+", metavar="TM", help="the broader terms (codes, themes) this is a kind of")
+
+    p = cmd("code", cmd_code, "apply codes to a captured source, or to a passage of it (a coding)")
+    p.add_argument("source", help="source ID (SR1)")
+    p.add_argument("--codes", nargs="+", metavar="TM", help="the codes applied (terms with --include)")
+    p.add_argument("--excerpt", help="the passage coded, as the source has it (checked against its text); leave out "
+                                     "to code the whole source")
+    p.add_argument("--unit", help="what was coded: thread, post, issue, answer, paragraph")
+    p.add_argument("--pass", dest="pass_", metavar="PASS", help="the coding pass or round: 1, 2, \"second coder\"")
+    p.add_argument("--memo", help="why these codes: the coder's note")
+    p.add_argument("--withdraw", action="store_true", help="with --supersedes: the passage no longer has codes")
 
     p = cmd("hypothesis", cmd_hypothesis, "record a hypothesis")
     p.add_argument("statement", help="mark the terms it names: [[TM3:MASE]]")

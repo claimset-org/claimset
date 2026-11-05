@@ -139,6 +139,14 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
     rdir.mkdir()
     env = dict(os.environ, CLAIMSET_RUN_DIR=str(rdir.resolve()),
                CLAIMSET_RESULTS=str((rdir / RESULTS_FILE).resolve()))
+    from .sources import CODINGS_FILE, codings_snapshot
+    snapshot = codings_snapshot(st)
+    codings_entry = None
+    if snapshot is not None:                    # the codings in force, read by the run as data (§5.21)
+        (rdir / CODINGS_FILE).write_text(json.dumps(snapshot, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        env["CLAIMSET_CODINGS"] = str((rdir / CODINGS_FILE).resolve())
+        codings_entry = {"path": CODINGS_FILE, "hash": file_hash(rdir / CODINGS_FILE),
+                         "count": len(snapshot["codings"])}
 
     commit, dirty = code_version(cwd, lab.root)
     started = lab.clock()
@@ -173,6 +181,7 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
 
     body = {"plan": plan, "plan_version": plan_version, "label": label, "command": list(argv), "code_version": commit, "dirty": dirty,
             "parameters": parameters or None, "seeds": seeds or None, "data": data_entries or None,
+            "codings": codings_entry,
             "environment": environment(), "started_at": started, "ended_at": ended,
             "exit_status": status, "exit_code": exit_code, "outputs": _outputs(rdir)}
     body = {k: v for k, v in body.items() if v is not None}

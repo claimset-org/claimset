@@ -1,6 +1,6 @@
 # Claimset Revision — Specification v0.5 (draft)
 
-Status: working draft · Date: 2026-11-04 · Supersedes v0.4 (`spec/claimset-revision-v0.4.md`) · Companion to the claimset specification (`spec/claimset-v0.37.md`) and the lab record specification (`spec/lab-record-v0.16.md`)
+Status: working draft · Date: 2026-11-04 · Supersedes v0.4 (`spec/claimset-revision-v0.4.md`) · Companion to the claimset specification (`spec/claimset-v0.37.md`) and the lab record specification (`spec/lab-record-v0.17.md`)
 
 This specification covers what happens to a claimset after its first publication: how the platform's reviewers comment on it, how the author responds, how a revised version is submitted, how disagreements are settled, and how the platform's reviewer judges each claim's credibility and novelty. It specifies the documents the author receives and sends, and the rules the platform checks. The portal itself (accounts, notifications, the website) is out of scope, and so is the scoring rubric, which the portal publishes (§7).
 
