@@ -24,6 +24,16 @@ import re
 import sys
 
 SCHEMA_VERSION = "0.37"
+#: The first specification version accepted (spec §2.6). Files of every version from it to SCHEMA_VERSION are
+#: valid for good; each is checked by its own version's rules (a frozen validator in claimset.versions).
+BASELINE_VERSION = "0.37"
+SCHEMA_VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+
+
+def schema_version_tuple(v):
+    """(major, minor) of a specification version such as "0.37", or None if `v` is not one."""
+    m = SCHEMA_VERSION_RE.match(v) if isinstance(v, str) else None
+    return (int(m.group(1)), int(m.group(2))) if m else None
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -360,12 +370,27 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
         r.err("2", "$", "top level must be a JSON object")
         return r
 
-    if doc.get("schema_version") != SCHEMA_VERSION:
-        got = doc.get("schema_version")
-        r.err("2", "schema_version", f"must be '{SCHEMA_VERSION}'" + (
-            f"; the file follows specification {got}, an earlier version with different rules. Read the "
-            f"current specification (`claimset spec`) and update the skills (`claimset skill install`)"
-            if isinstance(got, str) and got else ""))
+    got = doc.get("schema_version")
+    if got != SCHEMA_VERSION:
+        # Rule 79 (spec §2.6): every version from the baseline is checked by its own rules, by a frozen copy of
+        # that version's validator; a later version is unknown here.
+        gv = schema_version_tuple(got)
+        if gv is not None and gv > schema_version_tuple(SCHEMA_VERSION):
+            r.err("79", "schema_version", f"the file follows specification {got}, newer than this validator "
+                  f"({SCHEMA_VERSION}), which does not know its rules. The file may be valid: check it with a "
+                  f"current validator (update the claimset package)")
+            return r
+        if gv is not None and gv >= schema_version_tuple(BASELINE_VERSION):
+            from .versions import frozen_validator
+            frozen = frozen_validator(got)
+            if frozen is not None:
+                return frozen.validate(doc, published=published, local_root=local_root, revision=revision,
+                                       file_name=file_name)
+        r.err("79", "schema_version", f"must be a specification version from {BASELINE_VERSION} to "
+              f"{SCHEMA_VERSION}" + (
+                  f"; the file follows specification {got}, an earlier version with different rules. Bring it "
+                  f"to the current one (`claimset migrate`), read the current specification (`claimset spec`) "
+                  f"and update the skills (`claimset skill install`)" if isinstance(got, str) and got else ""))
 
     for key in ("paper", "contributors", "models", "claims"):
         if key not in doc:

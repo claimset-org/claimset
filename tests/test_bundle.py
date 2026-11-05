@@ -36,7 +36,7 @@ class TestSpec(unittest.TestCase):
     def test_older_schema_is_explained(self):
         d = json.loads((ROOT / "examples" / "submission-native.json").read_text(encoding="utf-8"))
         d["schema_version"] = "0.9"
-        msg = next(e["message"] for e in validate(d).errors if e["rule"] == "2")
+        msg = next(e["message"] for e in validate(d).errors if e["rule"] == "79")
         self.assertIn("follows specification 0.9", msg)
         self.assertIn("claimset skill install", msg)
 

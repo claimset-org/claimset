@@ -19,6 +19,10 @@ Amended on 2026-11-05, for qualitative research kept in a lab record (lab record
 - §3.4, qual profile: `analytic_approach` gains `content_analysis`: coding material against a codebook and counting the codes, as a lab record's counts do.
 - Appendices A and C give `schema_version` 0.37 (they still said 0.34 and 0.17).
 
+Amended on 2026-11-05, before the platform goes live, for compatibility between versions:
+
+- §2.6 (new): what `schema_version` means, and the compatibility promise. v0.37 is the baseline: a file valid under v0.37 or any later version stays valid under that version for good, checked by that version's rules, by every later validator. Rule 79 refuses a file following a version older than v0.37 (pointing to `claimset migrate`) and, with a message of its own, a file following a version newer than the validator, so the reader knows the validator is behind, not the file.
+
 ## Changes in v0.36 (since v0.35)
 
 One person answers for a claimset's research: its main author, the person to contact about it, who submits it. Accountability then rests with someone the platform can identify, ask and hold to it: a person with an ORCID iD. Several guarantors split an answer that should be one person's. Co-authors and other people who took part are listed as supervisors and contributors, with their CRediT roles and ORCID iDs. The fidelity of a conversion is a separate matter, answered for by a separate party, which may be an organisation.
@@ -434,6 +438,16 @@ data/
   - file types by extension, from this list: data and text `csv` `tsv` `json` `jsonl` `ndjson` `txt` `md` `xml` `yaml` `yml` `toml` `parquet` `feather` `arrow` `nc` `h5` `hdf5` `rds` `rda` `rdata` `dta` `sav` `xlsx` `ods`; documents `pdf` `tex` `bib`; images `png` `jpg` `jpeg` `gif` `webp` `tif` `tiff` `svg`; audio and video `wav` `mp3` `flac` `ogg` `m4a` `mp4` `webm` `mov`; code `r` `py` `jl` `m` `ipynb` `sql` `do` `sas` `stan` `c` `cpp` `h` `hpp` `f90` `java` `js` `ts` `rs` `go` `sh`; and any of these compressed with gzip (`results.csv.gz`). Archives (`zip`, `tar`, `7z`, `rar`) and executables are refused: a package lists its files, so each is checked and archived by itself.
   The platform serves every packaged file as a download; none is rendered or run.
 - A converted paper packages a file taken from its source (a figure, a supplementary table) only under the source's licence, which conversion already requires to permit derivatives (§3.1); the artefact names its `reference` and `locator` in the source.
+
+### 2.6 Specification versions and compatibility
+
+`schema_version` (required, top level) is the version of this specification the file follows: `"0.37"`.
+
+- **Baseline.** v0.37 is the first version the platform accepts. A file following an earlier version is refused (rule 79); `claimset migrate` brings it to the current version.
+- **Every version from the baseline is accepted, for good.** A file is checked by the rules of the version it follows, never by rules added later. A validator of a later version keeps the rules of every earlier version from the baseline and applies the ones the file's version calls for. A file valid under its version when it was published is valid under it in every later validator.
+- **A later version may** add optional fields, add values to lists, loosen rules, and add rules and required fields that apply to files following that version or later. **It may not** make a file valid under an earlier version invalid under that version, or change what a field of an earlier version means.
+- **Reading.** Every tool of a later version reads and renders files of every version from the baseline.
+- **A file newer than the validator** (its `schema_version` is later than the validator's own) is refused by rule 79: the validator cannot check rules it does not know. The file may be valid; check it with a current validator.
 
 ## 3. Object types
 
@@ -1300,6 +1314,10 @@ The file records identifier type and venue facts for cited works only. Trust in 
 76. Claimset identifiers. `paper.id`, where present, is a claimset identifier: `doi:` followed by a DOI prefix (`10.` and four to nine digits) and `/claimset.<year>.<number>`, or `entrylib:<year>.<number>`; `<year>` is four digits and `<number>` at least six. A `target` with `id_type: claimset` is a claimset identifier, optionally followed by `@v<n>` (n ≥ 1) and then optionally by `#` and a local ID.
 77. Package limits. A package (§2.5) keeps within the limits of §2.5: the number of files, the size of each file and of the payload, the form of every path, the manifest listing exactly the files of `data/`, and the file types. A zip is checked before it is unpacked: its entries' sizes and paths, and that it holds no links.
 78. Excerpt locators. A structured excerpt `locator` has only `artefact`, `start`, `end` and `lab_event`; `artefact` resolves to an artefact; `start` and `end` are integers with 0 ≤ `start` < `end`; `lab_event`, if present, is a lab record event ID (`CD3`, `AC2.CD3`). When the claimset is validated as part of a package and the artefact is a packaged text file, the excerpt's `text` is that file's characters `start` to `end`.
+
+### 10.25 Rules added in v0.37 (errors: file rejected)
+
+79. Specification version. `schema_version` names a version of this specification from v0.37 (the baseline) to the validator's own (§2.6). A file following an earlier version is refused, and `claimset migrate` brings it to the current one. A file following a later version is refused because its rules are not known to the validator: the file may be valid, and a current validator can check it.
 
 ### 10.4 Warnings (file accepted, warning recorded)
 

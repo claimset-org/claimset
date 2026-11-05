@@ -17,6 +17,9 @@ The lab skill had the agent type the human's registration, which the record then
 - §6: new rule L28. An agent's registration of a person without their words is refused; `words` are given only by an agent quoting a person.
 - `verify` notes a record with no human actor (an agent working alone), and, in records begun before v0.19, people who registered themselves and then the agent, as the skill then had the agent type both.
 
+
+Amended on 2026-11-05: new rule L29, a record begun under a later version than the tool is refused with its own message, so the reader knows the tool is behind, not the record.
+
 ## Changes in v0.18 (since v0.17)
 
 A qualitative test's rules were text, judged by the writer: "supported if at least 5 independent threads from different years ask for automatic arranging" could be written but not computed, and nothing showed whether the threads had been coded before the test was fixed. A one-day desk scan also had to keep a git remote it did not need.
@@ -734,6 +737,7 @@ L25. An excerpt quoted from a source is in that source's text (§5.20); a coding
 L26. A source whose `rights.holder` is `third_party` is `public` only with a `licence` or `terms` (§5.20).
 L27. A coding names a captured source and, unless it is withdrawn, at least one code: a term with a `code` part (§5.19, §5.21); its `code_versions` name versions of those codes. The codes a plan's counts name are codes of the codebook (§5.21.1).
 L28. In records begun under v0.19 or later: an `actor` event of kind `human` written by an agent actor (its `by` is an agent, not the actor registered) has non-empty `words`, the person's own reply; `words` appear only in such events (§5.2).
+L29. A record begun under a version of this specification later than the tool's own (`init.lab_spec_version`) is refused: the tool does not know that version's rules. The record may be valid; read it with a current tool (update the claimset package). Records of every earlier version are checked by the rules of the version they were begun under (§5.1).
 
 The tool enforces L1–L5 and L8–L23 mechanically, and refuses L6 and L7 violations. L15–L17 apply to records begun under v0.5 or later, and to records whose `init` is withheld. Where a check depends on withheld content (a withheld run, result or plan), `verify` does not report it as a violation; withholding lowers verifiability instead (§8).
 
