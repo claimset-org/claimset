@@ -710,8 +710,11 @@ def plan_flags(state, plan_version, runs):
     b = plan_version["body"]
     commit = b.get("code_version")
     visible = [r for r in runs if not is_withheld(r)]
-    if commit is not None and any(r["body"].get("code_version") != commit or r["body"].get("dirty") for r in visible) \
-            or b.get("dirty"):
+    # a run of the built-in counter (§5.21.1) runs the tool's own code, whose version it records: the study's
+    # analysis code is not what decides it
+    analysed = [r for r in visible if not (r["body"].get("parameters") or {}).get("counter")]
+    if analysed and (commit is not None and any(r["body"].get("code_version") != commit or r["body"].get("dirty")
+                                                for r in analysed) or b.get("dirty")):
         flags.append("code_changed_after_plan")
     sealed = {d.get("hash") for d in b.get("holdout") or [] if isinstance(d, dict)}
     deciding = {r["id"] for r in runs}
@@ -726,7 +729,82 @@ def plan_flags(state, plan_version, runs):
         flags.append("reproduces_prompting_result")
     if sources_after_plan(state, plan_version, runs):
         flags.append("sources_captured_after_plan")
+    if coded_before_plan(state, plan_version, runs):
+        flags.append("coded_before_plan")
+    if codebook_changed(state, plan_version, runs):
+        flags.append("codebook_changed_after_plan")
     return flags
+
+
+def count_specs(decision):
+    """{name: count specification} of a decision rule's count quantities (§5.21.1)."""
+    q = decision.get("quantities") if isinstance(decision, dict) else None
+    return {n: v["count"] for n, v in (q or {}).items() if isinstance(v, dict) and isinstance(v.get("count"), dict)}
+
+
+def plan_codes(state, plan_version):
+    """The roots of the codes a plan's counts name, with every narrower code (whose broader chain reaches them).
+    None if the plan counts no codes."""
+    named = {state.root(c) for spec in count_specs(plan_version["body"].get("decision")).values()
+             for c in spec.get("codes") or [] if isinstance(c, str) and state.get(c)}
+    if not named:
+        return None
+    out = set(named)
+    grew = True
+    while grew:
+        grew = False
+        for e in state.events:
+            if e.get("type") != "term" or state.root(e["id"]) in out:
+                continue
+            cur = state.latest(e["id"])
+            if cur and {state.root(b) for b in cur["body"].get("broader") or [] if state.get(b)} & out:
+                out.add(state.root(e["id"]))
+                grew = True
+    return out
+
+
+def codebook_changed(state, plan_version, runs):
+    """Codes the plan counts (or, if it counts none, codes applied by codings its deciding runs read) whose term
+    was corrected after the plan and before a deciding run (§5.7.5): the codebook the test used is not the one the
+    plan fixed. Returns their root IDs."""
+    if not any(isinstance(r["body"].get("codings"), dict) for r in runs if not is_withheld(r)):
+        return []
+    codes = plan_codes(state, plan_version)
+    if codes is None:
+        codes = {state.root(c) for e in state.events if e.get("type") == "coding"
+                 for c in e["body"].get("codes") or [] if isinstance(c, str) and state.get(c)}
+    start = state.pos[plan_version["id"]]
+    end = max(state.pos.get(r["id"], 0) for r in runs)
+    out = []
+    for e in state.events:
+        if e.get("type") == "term" and e.get("supersedes") and state.root(e["id"]) in codes \
+                and start < state.pos.get(e["id"], 0) < end and state.root(e["id"]) not in out:
+            out.append(state.root(e["id"]))
+    return out
+
+
+def coded_before_plan(state, plan_version, runs):
+    """Codings written before the plan that its deciding runs read, of the codes the plan counts (or of any code,
+    if it counts none) (§5.7.5): the material was coded before the test was fixed. Returns their root IDs."""
+    if not any(isinstance(r["body"].get("codings"), dict) for r in runs if not is_withheld(r)):
+        return []
+    codes = plan_codes(state, plan_version)
+    start = state.pos[plan_version["id"]]
+    end = max(state.pos.get(r["id"], 0) for r in runs)
+    out = []
+    for e in state.events:
+        if e.get("type") != "coding" or e.get("supersedes") or state.pos.get(e["id"], 0) >= start:
+            continue
+        latest = None
+        for v in [e] + [x for x in state.events if x.get("type") == "coding" and state.root(x["id"]) == e["id"]]:
+            if state.pos.get(v["id"], 0) < end:
+                latest = v
+        if latest is None or is_withheld(latest) or latest["body"].get("withdrawn") or not latest["body"].get("codes"):
+            continue
+        applied = {state.root(c) for c in latest["body"]["codes"] if isinstance(c, str) and state.get(c)}
+        if codes is None or applied & codes:
+            out.append(e["id"])
+    return out
 
 
 def sources_after_plan(state, plan_version, runs):
@@ -996,6 +1074,10 @@ def check_source(state, body, by, eid):
     method = _enum(body, "method", "source_method", "source")
     _req(body, "format", "source")
     vis = _enum(body, "visibility", "source_visibility", "source")
+    for f in ("author", "title", "venue", "uri", "archive_uri"):
+        v = body.get(f)
+        if v is not None and (not isinstance(v, str) or not v.strip()):
+            raise LabError("schema", f"source: {f} must be non-empty text")
     files = body.get("files")
     if not isinstance(files, list) or not files or not all(
             isinstance(f, dict) and isinstance(f.get("path"), str) and f["path"] and "/" not in f["path"]
@@ -1080,6 +1162,11 @@ def check_plan(state, body, by, eid):
             probs = _decision.problems(body["decision"], runs, hyps, state.same_hypothesis)
             if probs:
                 raise LabError("L15", "plan: " + "; ".join(probs))
+            for name, code in count_specs(body["decision"]).items():
+                for c in code.get("codes") or []:
+                    if state.get(c) is None or not is_code(state, c):
+                        raise LabError("L27", f"plan: the count '{name}' names {c}, which is not a code of the "
+                                              f"codebook (a term with --include)")
         else:
             _req(body, "criterion", "plan")
     for d in body.get("data") or []:

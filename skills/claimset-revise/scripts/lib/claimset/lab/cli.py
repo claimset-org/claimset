@@ -20,7 +20,7 @@ from . import layout as _layout
 from . import record as _record
 
 #: Commands that only read the record: they are allowed anywhere and never commit.
-READERS = {"summary", "list", "show", "verify", "verdict", "guard", "studies"}
+READERS = {"summary", "list", "show", "verify", "verdict", "guard", "studies", "quote"}
 
 def _lab(args):
     return Lab(_layout.find_lab(args.lab, getattr(args, "study", None)))
@@ -282,8 +282,14 @@ def cmd_capture(args):
                              retrieved_at=args.retrieved_at, title=args.title, fmt=args.format, text=args.text,
                              visibility=vis, holder="study" if args.own else "third_party", licence=args.licence,
                              terms=args.terms, archive_uri=args.archive_uri, venue=args.venue,
-                             published_at=args.published_at, description=args.description)
+                             published_at=args.published_at, description=args.description,
+                             author=args.author, author_as_given=args.author_as_given)
     _emit(args, event)
+    b = event["body"]
+    if b.get("uri") and not b.get("archive_uri") and (b.get("rights") or {}).get("holder") == "third_party":
+        print(f"claimset: note: {event['id']} has no archived copy; a claimset cites a web page with one "
+              f"(a web archive snapshot): save one and give --archive-uri when you correct it, or before export",
+              file=sys.stderr)
     _auto_anchor(lab, event)
     return 0
 
@@ -528,6 +534,35 @@ def _parse_param(p):
     except json.JSONDecodeError:
         pass
     return k, v
+
+
+def cmd_count(args):
+    """A run of the built-in counter (§5.21.1): the plan's counts, or one exploratory count from the options."""
+    from .run import count_run
+    lab = _lab(args)
+    by = _actor(args)
+    counts = None
+    if not args.plan:
+        if not args.codes:
+            raise LabError("schema", "count: give --plan, or --codes (with --unit, --distinct-by, --where) for an "
+                                     "exploratory count")
+        spec = {"codes": args.codes, "match": args.match, "unit": args.unit, "distinct_by": args.distinct_by,
+                "where": dict(_parse_param(w) for w in args.where) or None}
+        counts = {args.name: {k: v for k, v in spec.items() if v is not None}}
+    out = count_run(lab, by, plan=args.plan, counts=counts, echo=not args.json)
+    run = out["run"]
+    if args.json:
+        print(json.dumps({"run": run, "results": out["results"], "problems": out["problems"]},
+                         ensure_ascii=False, indent=2))
+    print(f"claimset: recorded {run['id']} ({run['body']['label']}, {run['body']['exit_status']})"
+          + ("; results " + " ".join(r["id"] for r in out["results"]) if out["results"] else ""), file=sys.stderr)
+    for p in out["problems"]:
+        print(f"claimset: results.json {p}", file=sys.stderr)
+    cfg = _anchor.anchoring(lab)
+    if cfg and cfg.get("every") == "event":
+        _auto_anchor(lab, out["results"][-1] if out["results"] else run)
+    code = out["exit_code"]
+    return 1 if code is None else (code if code >= 0 else 1)
 
 
 def cmd_run(args):
@@ -796,6 +831,18 @@ def add_parser(subparsers):
     p.add_argument("--example", action="append", metavar="TEXT", help="a typical passage for the code; repeat")
     p.add_argument("--broader", nargs="+", metavar="TM", help="the broader terms (codes, themes) this is a kind of")
 
+    p = cmd("count", cmd_count, "count coded material from the codings in force: a plan's counts (its deciding "
+                                "run) or an exploratory count")
+    p.add_argument("--plan", metavar="PL", help="run the plan's count quantities as its deciding run")
+    p.add_argument("--codes", nargs="+", metavar="TM", help="exploratory: the codes counted (with narrower codes)")
+    p.add_argument("--match", choices=["any", "all"], help="a unit qualifies with any (default) or all the codes")
+    p.add_argument("--unit", choices=["source", "coding"], help="what is counted (default source)")
+    p.add_argument("--distinct-by", dest="distinct_by", choices=["source", "coding", "author", "year", "venue"],
+                   help="count distinct values of this among the qualifying units")
+    p.add_argument("--where", action="append", default=[], metavar="KEY=VALUE",
+                   help="keep only codings with pass, unit, coder, venue, published_from or published_to; repeat")
+    p.add_argument("--name", default="n", help="exploratory: the count's name (default n)")
+
     p = cmd("code", cmd_code, "apply codes to a captured source, or to a passage of it (a coding)")
     p.add_argument("source", help="source ID (SR1)")
     p.add_argument("--codes", nargs="+", metavar="TM", help="the codes applied (terms with --include)")
@@ -853,6 +900,10 @@ def add_parser(subparsers):
     p.add_argument("--archive-uri", dest="archive_uri", help="an archived copy of the page (a web archive snapshot)")
     p.add_argument("--venue", help="where it was published (a forum, a repository, a journal)")
     p.add_argument("--published-at", dest="published_at", metavar="DATE", help="when it was written or published")
+    p.add_argument("--author", metavar="HANDLE", help="who wrote it: recorded as a stable pseudonym for the study "
+                                                      "(a-…), so counts can tell authors apart without names")
+    p.add_argument("--author-as-given", dest="author_as_given", action="store_true",
+                   help="record --author as given (an organisation, a public author), not as a pseudonym")
     p.add_argument("--description")
 
     p = cmd("quote", cmd_quote, "check that words are in a captured source and print their locator",

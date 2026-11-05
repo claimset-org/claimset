@@ -1,6 +1,6 @@
 # Claimset — Specification v0.37 (draft)
 
-Status: working draft · Date: 2026-11-04 · Supersedes v0.36 (`spec/claimset-v0.36.md`) · Companions: lab record specification (`spec/lab-record-v0.17.md`), revision specification (`spec/claimset-revision-v0.5.md`)
+Status: working draft · Date: 2026-11-04 · Supersedes v0.36 (`spec/claimset-v0.36.md`) · Companions: lab record specification (`spec/lab-record-v0.18.md`), revision specification (`spec/claimset-revision-v0.5.md`)
 
 Claimset is the name of both the open format and the platform.
 
@@ -10,6 +10,13 @@ The platform is named EntryLib (entrylib.org), so its provisional identifier is 
 
 - §7, rule 76: the provisional identifier is `entrylib:<year>.<number>` (`entrylib:2026.000123@v2#C3`), formerly `liblm:`.
 - Companion revision specification v0.5: registry folders `entrylib_<year>.<number>`.
+
+Amended on 2026-11-05, for qualitative research kept in a lab record (lab record v0.16 to v0.18):
+
+- §3.3.3, `test.flags`: the lab record's flags `sources_captured_after_plan`, `coded_before_plan` and `codebook_changed_after_plan` are valid flags; a claim exported with them failed rule 47.
+- §3.4, *Excerpts*: an excerpt's `locator` can be structured, `{artefact, start, end, lab_event}`: the artefact holding the source (a captured source exported from a lab record) and the excerpt's character positions in its text, so a reader can find the passage and a validator can check it against the packaged file. New rule 78.
+- §3.4, qual profile: `analytic_approach` gains `content_analysis`: coding material against a codebook and counting the codes, as a lab record's counts do.
+- Appendices A and C give `schema_version` 0.37 (they still said 0.34 and 0.17).
 
 ## Changes in v0.36 (since v0.35)
 
@@ -349,7 +356,7 @@ Top-level layout:
 
 ```json
 {
-  "schema_version": "0.34",
+  "schema_version": "0.37",
   "@context": "optional",
   "paper": {},
   "contributors": [],
@@ -667,7 +674,7 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
 - `verdict`: `computed` (the rules are expressions and the outcome was computed from the recorded results by the lab tool) · `judged` (the rules are text and the outcome was stated by the writer, who said which rule the evidence met).
 - `runs`: how many runs decided the test. `lab_plan`: the plan's lab-record ID, when there is one. `registration`: the URI of an external pre-registration, when there is one.
 - `addresses`: optional list of the global IDs of review comments (`doi:…@v1/RV1.c6`) whose resolution test this test ran (revision §4.2). The test's rules are then the comment's: `supported` its `withdrawn` rule, `not_supported` its `upheld` rule.
-- `flags`: optional list of weaknesses of the test, from the lab record (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs) · `reproduces_prompting_result` (a result the decision rule uses has the same quantity, conditions and value as a result of a run that suggested the hypothesis: the test may have repeated the exploration rather than tested the hypothesis on anything new).
+- `flags`: optional list of weaknesses of the test, from the lab record (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs) · `reproduces_prompting_result` (a result the decision rule uses has the same quantity, conditions and value as a result of a run that suggested the hypothesis: the test may have repeated the exploration rather than tested the hypothesis on anything new) · `sources_captured_after_plan` (a deciding run read a captured source recorded after the plan: the plan did not fix the material tested) · `coded_before_plan` (a deciding run read codings, of the codes the test counts, written before the plan: the material was coded before the test was fixed) · `codebook_changed_after_plan` (a code the test counts was redefined between the plan and the test).
 
 `planned_at_anchor` says how far `planned_at` can be trusted (lab record §7): from strongest, `platform` (receipt from the Claimset platform), `rfc3161` (trusted timestamp authority), `git_remote` (pushed commit), to `none`.
 
@@ -741,7 +748,7 @@ Common fields: `id`, `profile`, `description`, `artefacts` (list of artefact IDs
   - a number;
   - a category: the ID of a definition (an outcome the paper defines, such as `"upheld"`) or a short word or code (`"present"`, `"B"`);
   - a boolean (attested or not, significant or not);
-  - an **excerpt**, `{text, locator, language, gloss, translation}`: words from the data that are themselves the observation (an interview passage, a passage of a judgment, a linguistic example). `text` is the words as the source gives them; `locator` where they are (a transcript and line, a document and paragraph, a corpus and sentence ID); `language` a BCP 47 tag when not English; `gloss` and `translation` for linguistic examples (Leipzig glossing rules). Excerpts from people's data carry no personal data beyond what the participants consented to publish (`declarations.consent`).
+  - an **excerpt**, `{text, locator, language, gloss, translation}`: words from the data that are themselves the observation (an interview passage, a passage of a judgment, a linguistic example). `text` is the words as the source gives them; `locator` where they are: text (a transcript and line, a document and paragraph, a corpus and sentence ID) or, for words from a file the claimset lists as an artefact, `{artefact, start, end, lab_event}`: the artefact (a captured source, lab record §5.20), the characters of its text the words occupy (`start` inclusive, `end` exclusive, counted in Unicode code points from 0), and optionally the lab record event that recorded the passage (a coding, `CD3`) (rule 78); `language` a BCP 47 tag when not English; `gloss` and `translation` for linguistic examples (Leipzig glossing rules). Excerpts from people's data carry no personal data beyond what the participants consented to publish (`declarations.consent`).
 - `unit`: optional; a UCUM code (`ms`, `%`, `mg/L`, `Cel`, `1` for a dimensionless ratio) or, where UCUM has none, text. `interval`: optional `{level, lower, upper}`. `n`: optional, the number of cases the value rests on.
 - `conditions`: the observation's coordinates: an object whose keys are dimensions and whose values are where the observation lies on each, e.g. `{"D26": "D9", "D5": "D14", "horizon": 12}`. A key is the ID of a definition or text. A value is the ID of a definition, a number, text or a boolean. When a key is a group (§3.2, *Groups*), its value is one of the group's members; when it is a `variable` or `setting` with a unit, its value is a literal in that unit.
 - `read_from`: optional `{artefact, precision}`, when the value was read off a figure or a recording rather than taken from data or a table: `artefact` is the figure or recording, `precision` how exactly it could be read (a number in the observation's unit, or text). Values read off a figure are recorded only with it, so a reader knows they are approximate.
@@ -816,7 +823,7 @@ The keys of v0.23 to v0.29 map to these: `compared` → `studied`, `data` → `c
 `design` (`experiment` · `quasi_experiment` · `observational` · `survey` · `benchmark` · `other`), `estimand`, `estimate`, `interval` (`{level, lower, upper}`), `n`, `model`.
 
 **Profile `qual`**
-`data_sources` (list: `interview` · `focus_group` · `ethnography` · `observation` · `document` · `other`), `n_participants_or_cases`, `sampling`, `analytic_approach` (`thematic` · `grounded_theory` · `ipa` · `discourse` · `framework` · `case_study` · `other`), `reflexivity` (text). Excerpts are results (above).
+`data_sources` (list: `interview` · `focus_group` · `ethnography` · `observation` · `document` · `other`), `n_participants_or_cases`, `sampling`, `analytic_approach` (`thematic` · `grounded_theory` · `ipa` · `discourse` · `framework` · `case_study` · `content_analysis` (coding material against a codebook and counting the codes) · `other`), `reflexivity` (text). Excerpts are results (above).
 
 **Profile `simulation`**
 `model`, `parameters` (artefact ID), `runs`, `seeds`, `outputs`.
@@ -1291,6 +1298,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 76. Claimset identifiers. `paper.id`, where present, is a claimset identifier: `doi:` followed by a DOI prefix (`10.` and four to nine digits) and `/claimset.<year>.<number>`, or `entrylib:<year>.<number>`; `<year>` is four digits and `<number>` at least six. A `target` with `id_type: claimset` is a claimset identifier, optionally followed by `@v<n>` (n ≥ 1) and then optionally by `#` and a local ID.
 77. Package limits. A package (§2.5) keeps within the limits of §2.5: the number of files, the size of each file and of the payload, the form of every path, the manifest listing exactly the files of `data/`, and the file types. A zip is checked before it is unpacked: its entries' sizes and paths, and that it holds no links.
+78. Excerpt locators. A structured excerpt `locator` has only `artefact`, `start`, `end` and `lab_event`; `artefact` resolves to an artefact; `start` and `end` are integers with 0 ≤ `start` < `end`; `lab_event`, if present, is a lab record event ID (`CD3`, `AC2.CD3`). When the claimset is validated as part of a package and the artefact is a packaged text file, the excerpt's `text` is that file's characters `start` to `end`.
 
 ### 10.4 Warnings (file accepted, warning recorded)
 
@@ -1380,7 +1388,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.34",
+  "schema_version": "0.37",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -1479,7 +1487,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.17",
+  "schema_version": "0.37",
   "paper": {
     "id": "doi:10.0000/claimset.2026.000456",
     "title": "Example converted paper",

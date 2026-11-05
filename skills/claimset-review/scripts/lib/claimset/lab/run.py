@@ -201,3 +201,35 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
             r = dict(r, run=run_event["id"], source=RESULTS_FILE)
             results.append(lab.append("result", r, by=by))
     return {"run": run_event, "results": results, "exit_code": exit_code, "problems": problems}
+
+
+def count_run(lab, by, plan=None, counts=None, echo=False):
+    """A run of the built-in counter (§5.21.1): the counts of `plan` (its deciding run), or the exploratory
+    `counts` {name: spec}. Returns what run_command returns."""
+    import sys
+    from pathlib import Path
+    from .. import __version__
+    from . import count as _count
+    from .core import count_specs
+    st = lab.view(by)
+    if plan:
+        pv = st.plan_rule_version(plan) if st.get(plan) else None
+        if pv is None:
+            raise LabError("L12", f"no plan '{plan}'")
+        counts = count_specs(pv["body"].get("decision"))
+        if not counts:
+            raise LabError("schema", f"count: {pv['id']} has no count quantities; its deciding run is a script "
+                                     f"(`claimset lab run --plan {plan} -- …`)")
+    if not counts:
+        raise LabError("schema", "count: nothing to count")
+    counts = json.loads(json.dumps(counts))
+    for spec in counts.values():                 # the codes as the codings file names them: their first versions
+        spec["codes"] = [st.root(c) if st.get(c) else c for c in spec.get("codes") or []]
+    probs = [x for name, spec in counts.items() for x in _count.spec_problems(name, spec)]
+    if probs:
+        raise LabError("schema", "count: " + "; ".join(probs))
+    argv = [sys.executable, str(Path(_count.__file__).resolve()), "--counts",
+            json.dumps(counts, sort_keys=True, ensure_ascii=False)]
+    return run_command(lab, by, argv, plan=plan, exploratory=not plan,
+                       parameters={"counter": f"claimset {__version__}"}, echo=echo)
+
