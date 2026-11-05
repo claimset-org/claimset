@@ -53,15 +53,25 @@ class RevisionError(Exception):
     pass
 
 
-def record_folder(concept_id):
-    """The folder of a claimset in the registry (revision spec §2.4): its identifier with `doi:` removed and every
-    `:` and `/` replaced by `_`. `doi:10.0000/claimset.2026.000789` -> `10.0000_claimset.2026.000789`;
-    `entrylib:2026.000123` -> `entrylib_2026.000123`."""
+def record_name(concept_id):
+    """The name of a claimset's folder in the registry, and of its tags (revision spec §2.4): its identifier with
+    `doi:` removed and every `:` and `/` replaced by `_`. `doi:10.0000/claimset.2026.000789` ->
+    `10.0000_claimset.2026.000789`; `entrylib:2026.000123` -> `entrylib_2026.000123`."""
     from .validate import CLAIMSET_ID_RE
     if not isinstance(concept_id, str) or not CLAIMSET_ID_RE.match(concept_id):
         raise ValueError(f"not a claimset identifier (claimset §7): {concept_id!r}")
     s = concept_id[len("doi:"):] if concept_id.startswith("doi:") else concept_id
     return s.replace(":", "_").replace("/", "_")
+
+
+def record_folder(concept_id):
+    """The path of a claimset's folder in the registry (revision spec §2.4): `<year>/<block>/<name>`, where the
+    block is the number divided by 1000 (at least three digits). `entrylib:2026.001350` ->
+    `2026/001/entrylib_2026.001350`."""
+    name = record_name(concept_id)
+    year, number = concept_id.rsplit(".", 2)[-2:]
+    year = year[-4:]
+    return f"{year}/{int(number) // 1000:03d}/{name}"
 
 
 def doc_hash(doc):

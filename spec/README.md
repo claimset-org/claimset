@@ -4,7 +4,7 @@
 |---|---|
 | `claimset-v0.37.md` | The claimset format: papers as structured, self-contained claims |
 | `lab-record-v0.18.md` | The lab record: the append-only log of research from which claimsets are distilled |
-| `claimset-revision-v0.5.md` | Revision: reviews of a published claimset, the author's response, revised versions, disputes and scores |
+| `claimset-revision-v0.6.md` | Revision: reviews of a published claimset, the author's response, revised versions, disputes and scores |
 
 The previous version of each is kept here for reference; earlier drafts are in the project's design history.
 
