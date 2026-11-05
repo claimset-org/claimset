@@ -19,6 +19,9 @@ from pathlib import Path
 from .core import LabError, file_hash
 
 SOURCES_DIR = "sources"
+PRIVATE_DIR = "private"                          # lab/private/: kept out of git (§5.20, "Private sources")
+PRIVATE_IGNORE = ("# Kept out of git: the files of private sources and the pseudonym salt (lab record §5.20).\n"
+                  "# The record holds their hashes; copy this folder to another checkout to verify them there.\n*\n")
 TEXT_FILE = "text.txt"
 TEXT_FORMATS = ("text/plain", "text/markdown", "text/csv", "application/json")
 HTML_FORMATS = ("text/html", "application/xhtml+xml")
@@ -87,15 +90,56 @@ def fetch(url, dest_dir, timeout=30):
 
 
 SALT_FILE = "pseudonym-salt"
+PSEUDONYM_RE = re.compile(r"^a-[0-9a-f]{12}$")
+
+
+def private_root(lab):
+    """lab/private/, made with a .gitignore that keeps everything in it (itself included) out of git."""
+    d = lab.root / PRIVATE_DIR
+    d.mkdir(exist_ok=True)
+    ignore = d / ".gitignore"
+    if not ignore.exists():
+        ignore.write_text(PRIVATE_IGNORE, encoding="utf-8")
+    return d
+
+
+def is_private(body):
+    return isinstance(body, dict) and body.get("visibility") != "public"
+
+
+def source_dir(lab, source):
+    """The folder of a source's files: lab/private/sources/<id>/ for a private source, lab/sources/<id>/ for a
+    public one. A private source captured before v0.19 has its files in lab/sources/<id>/, committed."""
+    sid = str(source.get("id"))
+    if is_private(source.get("body")):
+        d = lab.root / PRIVATE_DIR / SOURCES_DIR / sid
+        old = lab.root / SOURCES_DIR / sid
+        return old if not d.is_dir() and old.is_dir() else d
+    return lab.root / SOURCES_DIR / sid
+
+
+def salt_path(lab):
+    """The study's pseudonym salt: lab/private/pseudonym-salt, kept out of git; a record begun before v0.19 may
+    have it committed as lab/pseudonym-salt, and keeps using it."""
+    old = lab.root / SALT_FILE
+    return old if old.exists() else lab.root / PRIVATE_DIR / SALT_FILE
 
 
 def pseudonym(lab, handle):
     """A stable pseudonym for an author's handle in this study (§5.20): `a-` and 12 hex digits of the SHA-256 of
-    the study's salt and the handle. The salt is kept in the lab (`pseudonym-salt`), so every checkout gives the
-    same pseudonym; it keeps handles out of the record's text, and is not a secret from someone who has the record
-    and can guess a handle."""
-    path = lab.root / SALT_FILE
+    the study's salt and the handle. The salt is kept out of git, in lab/private/, so the record cannot be used
+    to check a guessed handle against a pseudonym; a checkout without it cannot make pseudonyms that match the
+    ones already recorded, so it refuses until the salt is copied in."""
+    path = salt_path(lab)
     if not path.exists():
+        used = sorted({e["id"] for e in lab.read() if e.get("type") == "source" and isinstance(e.get("body"), dict)
+                       and PSEUDONYM_RE.match(str(e["body"].get("author") or ""))})
+        if used:
+            raise LabError("record", f"capture --author: this checkout has no pseudonym salt, and {used[0]} has an "
+                                     f"author pseudonym made with the study's salt; copy "
+                                     f"lab/private/{SALT_FILE} from the checkout that captured it (it is kept out "
+                                     f"of git), or give the author as written with --author-as-given")
+        private_root(lab)
         path.write_text(secrets.token_hex(16) + "\n", encoding="utf-8")
     salt = path.read_text(encoding="utf-8").strip()
     norm = " ".join(str(handle).split()).casefold()
@@ -106,13 +150,16 @@ def capture(lab, by, file=None, url=None, fetch_url=False, method=None, retrieve
             fmt=None, text=None, visibility=None, holder="third_party", licence=None, terms=None,
             archive_uri=None, venue=None, published_at=None, description=None, author=None,
             author_as_given=False):
-    """Record a source: copy (or fetch) the file into sources/<id>/, hash it, extract its text, write the event."""
+    """Record a source: copy (or fetch) the file, hash it, extract its text, write the event. The files go to
+    lab/sources/<id>/ for a public source, and to lab/private/sources/<id>/, kept out of git, for a private one."""
     if fetch_url == bool(file):
         raise LabError("schema", "capture: give a saved file, or --fetch with a URL")
     if fetch_url and not url:
         raise LabError("schema", "capture: --fetch needs the URL (--uri)")
-    root = lab.root / SOURCES_DIR
-    root.mkdir(exist_ok=True)
+    if visibility is None:
+        visibility = "private" if holder == "third_party" else "public"
+    root = (private_root(lab) / SOURCES_DIR) if visibility == "private" else lab.root / SOURCES_DIR
+    root.mkdir(parents=True, exist_ok=True)
     pending = root / f".pending-{uuid.uuid4().hex}"
     pending.mkdir()
     event = None
@@ -141,8 +188,6 @@ def capture(lab, by, file=None, url=None, fetch_url=False, method=None, retrieve
             (pending / TEXT_FILE).write_text(html_text(raw), encoding="utf-8")
         if (pending / TEXT_FILE).exists() and original.name != TEXT_FILE:
             files.append({"path": TEXT_FILE, "hash": file_hash(pending / TEXT_FILE), "role": "text"})
-        if visibility is None:
-            visibility = "private" if holder == "third_party" else "public"
         rights = {k: v for k, v in (("holder", holder), ("licence", licence), ("terms", terms)) if v}
         if author is not None and not str(author).strip():
             raise LabError("schema", "capture: --author must name the author")
@@ -170,9 +215,11 @@ def correct(lab, by, old_id, **changes):
     old = st.latest(old_id) if st.get(old_id) else None
     if old is None or old["type"] != "source":
         raise LabError("L11", f"capture --supersedes: {old_id} is not a source")
-    src_dir = lab.root / SOURCES_DIR / old["id"]
+    src_dir = source_dir(lab, old)
     if not src_dir.is_dir():
-        raise LabError("L24", f"capture --supersedes: the files of {old['id']} are missing ({src_dir})")
+        where = " (a private source's files are kept out of git: copy lab/private/ from the checkout that captured " \
+                "it)" if is_private(old["body"]) else ""
+        raise LabError("L24", f"capture --supersedes: the files of {old['id']} are missing ({src_dir}){where}")
     author = changes.pop("author", None)
     as_given = changes.pop("author_as_given", False)
     body = dict(old["body"])
@@ -184,7 +231,8 @@ def correct(lab, by, old_id, **changes):
     if body.get("visibility") == "public" and (body.get("rights") or {}).get("holder") == "third_party" and \
             not ((body.get("rights") or {}).get("licence") or (body.get("rights") or {}).get("terms")):
         raise LabError("L26", "capture: content written by others is published only under its own licence or terms")
-    root = lab.root / SOURCES_DIR
+    root = (private_root(lab) / SOURCES_DIR) if is_private(body) else lab.root / SOURCES_DIR
+    root.mkdir(parents=True, exist_ok=True)
     pending = root / f".pending-{uuid.uuid4().hex}"
     shutil.copytree(src_dir, pending)
     event = None
@@ -202,7 +250,10 @@ def text_of(lab, source):
     """The text of a source excerpts are checked against: its extracted text, or the original if it is text."""
     body = source["body"]
     files = {f.get("role"): f.get("path") for f in body.get("files") or [] if isinstance(f, dict)}
-    d = lab.root / SOURCES_DIR / source["id"]
+    d = source_dir(lab, source)
+    if not d.is_dir() and is_private(body):
+        raise LabError("L24", f"{source['id']} is private and its files are not in this checkout (they are kept "
+                              f"out of git): copy lab/private/ from the checkout that captured it")
     if files.get("text"):
         return (d / files["text"]).read_text(encoding="utf-8", errors="replace")
     if files.get("original") and (body.get("format") in TEXT_FORMATS or body.get("format") in HTML_FORMATS):
@@ -256,8 +307,10 @@ def verify_source_files(lab, events):
         files = e["body"].get("files")
         if not isinstance(files, list):
             continue
-        d = lab.root / SOURCES_DIR / str(e.get("id"))
+        d = source_dir(lab, e)
         recorded = {f.get("path"): f.get("hash") for f in files if isinstance(f, dict)}
+        if not d.is_dir() and is_private(e["body"]):
+            continue                              # kept out of git; source_notes says so
         if not d.is_dir():
             errors.append({"seq": e["seq"], "id": e["id"], "rule": "L24", "message": f"source folder {d} is missing"})
             continue
@@ -272,6 +325,40 @@ def verify_source_files(lab, events):
             errors.append({"seq": e["seq"], "id": e["id"], "rule": "L24",
                            "message": f"file {path} was added to the source folder after capture"})
     return errors
+
+
+def source_notes(lab, events):
+    """What verify says about private sources: those whose files are not in this checkout (and so could not be
+    checked), those committed before v0.19, and a committed pseudonym salt."""
+    from .core import is_withheld
+    absent, committed, authored = [], [], False
+    for e in events:
+        if not isinstance(e, dict) or e.get("type") != "source" or is_withheld(e) or not isinstance(e.get("body"), dict):
+            continue
+        authored = authored or bool(PSEUDONYM_RE.match(str(e["body"].get("author") or "")))
+        if not is_private(e["body"]):
+            continue
+        d = source_dir(lab, e)
+        if not d.is_dir():
+            absent.append(str(e.get("id")))
+        elif d.parent.parent == lab.root:
+            committed.append(str(e.get("id")))
+    notes = []
+    if absent:
+        notes.append(f"the files of private sources {', '.join(absent)} are not in this checkout (they are kept out "
+                     f"of git), so their hashes and the quotes from them were not checked: copy lab/private/ from "
+                     f"the checkout that captured them")
+    if committed:
+        notes.append(f"private sources {', '.join(committed)} have their files committed in lab/sources/ (captured "
+                     f"before lab record v0.19): the branch's history keeps them, so its remote must be as private "
+                     f"as they are")
+    if authored and (lab.root / SALT_FILE).exists():
+        notes.append(f"the pseudonym salt is committed (lab/{SALT_FILE}, from before lab record v0.19): anyone with "
+                     f"the record can check a guessed handle against the pseudonyms")
+    elif authored and not salt_path(lab).exists():
+        notes.append(f"this checkout has no pseudonym salt (lab/private/{SALT_FILE}): copy it from the checkout "
+                     f"that captured the sources before capturing more with --author")
+    return notes
 
 
 CODINGS_FILE = "codings.json"
@@ -292,6 +379,8 @@ def verify_codings(lab, events):
         src = st.get(e["body"].get("source"))
         if not isinstance(sel, dict) or src is None or is_withheld(src):
             continue
+        if is_private(src.get("body")) and not source_dir(lab, src).is_dir():
+            continue                              # kept out of git; source_notes says so
         try:
             text = text_of(lab, src)
         except (LabError, OSError):

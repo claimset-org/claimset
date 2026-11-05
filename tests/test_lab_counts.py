@@ -219,7 +219,7 @@ class TestTrialFixes(CountCase):
         self.assertEqual(new["supersedes"], old["id"])
         self.assertEqual(new["body"]["files"], old["body"]["files"])
         self.assertEqual(new["body"]["archive_uri"], "https://web.archive.org/web/2026/x")
-        self.assertTrue((self.lab.root / "sources" / new["id"]).is_dir())
+        self.assertTrue((self.lab.root / "private" / "sources" / new["id"]).is_dir())
         self.assertTrue(verify(self.lab)["ok"], verify(self.lab)["errors"])
 
     def test_export_of_coded_evidence(self):

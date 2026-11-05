@@ -45,7 +45,8 @@ class TestCapture(SourceCase):
         b = capture["body"]
         self.assertEqual((e["id"], b["method"], b["format"], b["visibility"], b["rights"]),
                          ("SR1", "saved", "text/html", "private", {"holder": "third_party"}))
-        folder = self.lab.root / "sources" / "SR1"
+        folder = self.lab.root / "private" / "sources" / "SR1"       # private: kept out of git (v0.19)
+        self.assertEqual(sources.source_dir(self.lab, e), folder)
         self.assertEqual(sorted(p.name for p in folder.iterdir()), ["text.txt", "thread.html"])
         text = (folder / "text.txt").read_text()
         self.assertIn("arrange a piano score for a woodwind quintet automatically.", text)
@@ -53,8 +54,7 @@ class TestCapture(SourceCase):
         self.assertTrue(verify(self.lab)["ok"], verify(self.lab)["errors"])
 
     def test_a_changed_or_added_file_breaks_L24(self):
-        self.capture()
-        folder = self.lab.root / "sources" / "SR1"
+        folder = sources.source_dir(self.lab, self.capture())
         (folder / "thread.html").write_text(PAGE + "edited", encoding="utf-8")
         (folder / "extra.txt").write_text("x", encoding="utf-8")
         errors = verify(self.lab)["errors"]
@@ -66,7 +66,8 @@ class TestCapture(SourceCase):
         with self.assertRaises(LabError) as cm:
             self.capture(visibility="public")
         self.assertEqual(cm.exception.rule, "L26")
-        self.assertFalse(any(p.name.startswith(".pending") for p in (self.lab.root / "sources").iterdir()))
+        for root in (self.lab.root / "sources", self.lab.root / "private" / "sources"):
+            self.assertFalse(root.exists() and any(p.name.startswith(".pending") for p in root.iterdir()))
         self.capture(visibility="public", terms="GitHub Terms of Service, section D.5")
         self.capture(holder="study", licence="CC-BY-4.0")              # the study's own material: public by default
         self.assertEqual(self.lab.read()[-1]["body"]["visibility"], "public")
@@ -112,6 +113,86 @@ class TestCapture(SourceCase):
         self.assertEqual(cm.exception.rule, "L25")
 
 
+class TestPrivateSources(SourceCase):
+    """Lab record v0.19 §5.20: a private source's files and the pseudonym salt are kept out of git, in
+    lab/private/; the record holds their hashes, and a checkout without them says what it could not check."""
+
+    def other_checkout(self):
+        """The lab as another checkout of the branch has it: everything but lab/private/."""
+        import shutil
+        from claimset.lab.core import Lab
+        dest = Path(self.tmp.name) / "clone" / "lab"
+        shutil.copytree(self.lab.root, dest, ignore=lambda d, names: ["private"] if Path(d) == self.lab.root else [])
+        return Lab(dest)
+
+    def test_private_files_and_the_salt_are_kept_out_of_git(self):
+        priv = self.capture(author="jojo")
+        pub = self.capture(holder="study", licence="CC-BY-4.0")
+        self.assertEqual(sources.source_dir(self.lab, priv), self.lab.root / "private" / "sources" / "SR1")
+        self.assertEqual(sources.source_dir(self.lab, pub), self.lab.root / "sources" / "SR2")
+        self.assertEqual((self.lab.root / "private" / ".gitignore").read_text().splitlines()[-1], "*")
+        self.assertTrue((self.lab.root / "private" / "pseudonym-salt").is_file())
+        self.assertFalse((self.lab.root / "pseudonym-salt").exists())
+        self.assertFalse((self.lab.root / "sources" / "SR1").exists())
+        rep = verify(self.lab)
+        self.assertTrue(rep["ok"], rep["errors"])
+        self.assertFalse([n for n in rep["notes"] if "private" in n or "salt" in n], rep["notes"])
+
+    def test_a_checkout_without_the_private_files_verifies_what_it_has(self):
+        src = self.capture(author="jojo")
+        sel = sources.quote(self.lab, src, "I need this too")
+        code = self.add("term", {"term": "support", "kind": "concept", "definition": "d", "code": {"include": "+1"}})
+        self.add("coding", {"source": src["id"], "codes": [code], "code_versions": {code: code},
+                            "quote": {k: sel[k] for k in ("exact", "prefix", "suffix", "start", "end")}})
+        other = self.other_checkout()
+        rep = verify(other)
+        self.assertTrue(rep["ok"], rep["errors"])                     # nothing there to break L24 or L25
+        note = " | ".join(rep["notes"])
+        self.assertIn("private sources SR1 are not in this checkout", note)
+        self.assertIn("no pseudonym salt", note)
+        with self.assertRaises(LabError) as cm:
+            sources.quote(other, src, "I need this too")
+        self.assertIn("copy lab/private/", cm.exception.message)
+        with self.assertRaises(LabError) as cm:                         # pseudonyms there would not match
+            sources.capture(other, self.agent, file=str(self.page), author="jojo")
+        self.assertIn("no pseudonym salt", cm.exception.message)
+        sources.capture(other, self.agent, file=str(self.page), author="MuseScore BVBA", author_as_given=True)
+        import shutil
+        shutil.copytree(self.lab.root / "private", other.root / "private", dirs_exist_ok=True)
+        again = sources.capture(other, self.agent, file=str(self.page), author="jojo")
+        self.assertEqual(again["body"]["author"], src["body"]["author"])
+        self.assertTrue(verify(other)["ok"], verify(other)["errors"])
+        self.assertFalse([n for n in verify(other)["notes"] if "private" in n or "salt" in n])
+
+    def test_a_changed_private_file_breaks_L24_where_it_is_present(self):
+        folder = sources.source_dir(self.lab, self.capture())
+        (folder / "text.txt").write_text("edited", encoding="utf-8")
+        self.assertEqual([e["rule"] for e in verify(self.lab)["errors"]], ["L24"])
+
+    def test_a_correction_keeps_a_private_source_private(self):
+        old = self.capture()
+        new = sources.correct(self.lab, self.agent, old["id"], archive_uri="https://web.archive.org/web/2026/x")
+        self.assertTrue((self.lab.root / "private" / "sources" / new["id"] / "thread.html").is_file())
+        with self.assertRaises(LabError) as cm:
+            sources.correct(self.other_checkout(), self.agent, old["id"], published_at="2014-12-01")
+        self.assertIn("copy lab/private/", cm.exception.message)
+
+    def test_records_begun_before_v0_19_keep_their_committed_files_and_salt(self):
+        import shutil
+        src = self.capture(author="jojo")
+        shutil.move(str(self.lab.root / "private" / "sources" / "SR1"), str(self.lab.root / "sources" / "SR1"))
+        shutil.move(str(self.lab.root / "private" / "pseudonym-salt"), str(self.lab.root / "pseudonym-salt"))
+        self.assertEqual(sources.source_dir(self.lab, src), self.lab.root / "sources" / "SR1")
+        self.assertIn("I need this too", sources.text_of(self.lab, src))
+        self.assertEqual(sources.capture(self.lab, self.agent, file=str(self.page), author="jojo")["body"]["author"],
+                         src["body"]["author"])
+        rep = verify(self.lab)
+        self.assertTrue(rep["ok"], rep["errors"])
+        note = " | ".join(rep["notes"])
+        self.assertIn("private sources SR1 have their files committed in lab/sources/", note)
+        self.assertIn("the pseudonym salt is committed", note)
+
+
 class TestSourcesAndPlans(SourceCase):
     def setUp(self):
         super().setUp()
@@ -126,7 +207,7 @@ class TestSourcesAndPlans(SourceCase):
                                               "supported": "n >= 1", "not_supported": "n < 1"}})
 
     def flags(self, plan, src):
-        path = self.lab.root / "sources" / src["id"] / "text.txt"
+        path = sources.source_dir(self.lab, src) / "text.txt"
         out = run_command(self.lab, self.agent, [sys.executable, str(self.script), str(path)], plan=plan,
                           data=[str(path)], echo=False, cwd=self.tmp.name)
         st = self.lab.state()

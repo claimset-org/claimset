@@ -193,9 +193,13 @@ def cmd_actor(args):
     st = lab.state()
     new_id = st.next_id("actor")
     by = _actor(args, required=False) or new_id
+    if args.words and by == new_id:
+        raise LabError("L28", "actor: --words records what a person told the agent registering them; give the "
+                              "agent's ID with --by (or $CLAIMSET_ACTOR)")
     body = {"kind": args.kind, "name": args.name, "orcid": args.orcid,
             "models": [_parse_model(m) for m in args.model] or None,
-            "record_source": args.record_source}
+            "record_source": args.record_source, "words": args.words, "given_at": args.given_at,
+            "channel": args.channel}
     event = lab.append("actor", _clean(body), by=by, supersedes=args.supersedes)
     _emit(args, event)
     return 0
@@ -834,6 +838,10 @@ def add_parser(subparsers):
                    help="'provider|name|version[|identifier]'; repeat for several models")
     p.add_argument("--orcid")
     p.add_argument("--record-source", choices=["harness", "user_reported", "self_reported"])
+    p.add_argument("--words", help="an agent registering a person: the person's reply giving their name (and ORCID "
+                                   "iD), verbatim")
+    p.add_argument("--given-at", dest="given_at", metavar="TIME", help="when they gave it, UTC")
+    p.add_argument("--channel", help="how they gave it (chat, email, in person)")
 
     p = cmd("question", cmd_question, "record a research question")
     p.add_argument("text")
@@ -915,8 +923,9 @@ def add_parser(subparsers):
     p.add_argument("--title")
     p.add_argument("--format", metavar="MEDIA_TYPE", help="e.g. text/html (default: from the file name)")
     p.add_argument("--text", metavar="FILE", help="its text, for formats the tool cannot read (PDF, images)")
-    p.add_argument("--private", action="store_true", help="keep it in the record, out of the published package "
-                                                          "(default for content written by others)")
+    p.add_argument("--private", action="store_true", help="keep its files out of git and the published package; the "
+                                                          "record keeps their hashes (default for content written by "
+                                                          "others)")
     p.add_argument("--public", action="store_true", help="publish the file with the package")
     p.add_argument("--own", action="store_true", help="the study's own material, not content written by others")
     p.add_argument("--licence", metavar="SPDX", help="the source's licence, if it has one")
