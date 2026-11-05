@@ -223,6 +223,10 @@ class State:
             return None
         return pv, runs[:n]
 
+    def same_hypothesis(self, a, b):
+        """Whether two hypothesis IDs are versions of one hypothesis."""
+        return isinstance(a, str) and isinstance(b, str) and self.root(a) == self.root(b)
+
     def names(self, plan_version, hypothesis_id):
         hyps = plan_version["body"].get("hypotheses")
         h = self.root(hypothesis_id)
@@ -739,7 +743,10 @@ def plan_warnings(state, body):
                            f"decide a hypothesis about something it does not study or measure (add them to the "
                            f"setup, or revise the hypothesis)")
     rule = body.get("decision") if isinstance(body.get("decision"), dict) else {}
-    params = rule.get("parameters") if isinstance(rule.get("parameters"), dict) else {}
+    params = dict(rule.get("parameters")) if isinstance(rule.get("parameters"), dict) else {}
+    for own in (rule.get("rules") or {}).values() if isinstance(rule.get("rules"), dict) else ():
+        if isinstance(own, dict) and isinstance(own.get("parameters"), dict):
+            params.update(own["parameters"])
     if not body.get("exclusions"):
         hits = [k for k in params if EXCLUSION_WORDS & set(re.split(r"[_\-\s]+", str(k).lower()))]
         if hits:
@@ -824,8 +831,10 @@ def _check_verdict(state, body, target, to, evidence):
         if r["id"] not in cited:
             raise LabError("L17", f"status: cite the deciding run {r['id']} of {named}, or its results")
     rule = pv["body"].get("decision")
-    if not isinstance(rule, dict) or _decision.problems(rule, pv["body"].get("runs", 1)):
+    if not isinstance(rule, dict) or _decision.problems(rule, pv["body"].get("runs", 1),
+                                                        pv["body"].get("hypotheses"), state.same_hypothesis):
         return  # the plan itself breaks L15, which is reported on the plan
+    rule = _decision.effective(rule, target, state.same_hypothesis)
     if _decision.computed(rule):
         if state.has_withheld:
             return  # the verdict may rest on withheld results (§8)
@@ -947,7 +956,7 @@ def check_plan(state, body, by, eid):
             runs = body.get("runs", 1)
             if not isinstance(runs, int) or isinstance(runs, bool) or runs < 1:
                 raise LabError("L15", "plan: runs must be a positive integer")
-            probs = _decision.problems(body["decision"], runs)
+            probs = _decision.problems(body["decision"], runs, hyps, state.same_hypothesis)
             if probs:
                 raise LabError("L15", "plan: " + "; ".join(probs))
         else:

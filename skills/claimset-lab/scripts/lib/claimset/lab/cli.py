@@ -306,6 +306,9 @@ def _resolution_test(comment, reviews):
     return test
 
 
+RULE_FOR_RE = re.compile(r"^\s*(H\d+)\s*:\s*(.+)$", re.S)
+
+
 def _decision_from_args(args):
     """The decision rule from --decision FILE, overridden by the individual options."""
     d = {}
@@ -327,10 +330,13 @@ def _decision_from_args(args):
         name, spec = q.split("=", 1)
         spec = _json_or_text(spec)
         d.setdefault("quantities", {})[name] = spec if isinstance(spec, dict) else {"quantity": str(spec)}
-    if args.supported is not None:
-        d["supported"] = args.supported
-    if args.not_supported is not None:
-        d["not_supported"] = args.not_supported
+    for outcome, given in (("supported", args.supported), ("not_supported", args.not_supported)):
+        for text in given or []:
+            m = RULE_FOR_RE.match(text)
+            if m:                       # "H1: expression": that hypothesis's rule (v0.16)
+                d.setdefault("rules", {}).setdefault(m.group(1), {})[outcome] = m.group(2).strip()
+            else:
+                d[outcome] = text
     return d or None
 
 
@@ -393,35 +399,49 @@ def cmd_verdict(args):
         raise LabError("schema", f"{args.plan} has no decision rule")
     rule = pv["body"]["decision"]
     runs = st.plan_runs.get(st.root(args.plan), [])
+    hyps = [h for h in pv["body"].get("hypotheses") or [] if isinstance(h, str)]
     out = {"plan": pv["id"], "framework": rule.get("framework"), "decided": bool(d),
            "deciding_runs": [r["id"] for r in d[1]] if d else [r["id"] for r in runs],
-           "runs_needed": pv["body"].get("runs", 1), "supported": rule.get("supported"),
-           "not_supported": rule.get("not_supported")}
+           "runs_needed": pv["body"].get("runs", 1)}
+
+    def one(eff):
+        x = {"framework": eff.get("framework"), "supported": eff.get("supported"),
+             "not_supported": eff.get("not_supported")}
+        if d and _decision.computed(eff):
+            x.update(_decision.verdict(eff, [[e["body"] for e in st.results_of.get(r["id"], [])] for r in d[1]]))
+        elif d:
+            x["verdict"] = None
+            x["note"] = "text rules: judge which rule the evidence meets and record it with --rule"
+        return x
+    if _decision.per_hypothesis(rule):
+        out["hypotheses"] = {h: one(_decision.effective(rule, h, st.same_hypothesis)) for h in hyps}
+    else:
+        out.update(one(rule))
     if d:
         out["flags"] = plan_flags(st, d[0], d[1])
         out["warnings"] = [f"exclusion '{x}': no deciding run reports how many units it excluded (a result whose "
                            f"quantity contains \"excluded\" or the exclusion's name)"
                            for x in uncounted_exclusions(st, d[0], d[1])]
-        if _decision.computed(rule):
-            out.update(_decision.verdict(rule, [[x["body"] for x in st.results_of.get(r["id"], [])] for r in d[1]]))
-        else:
-            out["verdict"] = None
-            out["note"] = "text rules: judge which rule the evidence meets and record it with --rule"
     if args.json:
         print(json.dumps(out, ensure_ascii=False, indent=2))
         return 0
-    print(f"{out['plan']} ({out['framework']}): supported if {out['supported']}; "
-          f"not_supported if {out['not_supported']}; otherwise inconclusive")
+    parts = list(out["hypotheses"].items()) if "hypotheses" in out else [(None, out)]
+    for h, x in parts:
+        head = f"{out['plan']} {h}" if h else out["plan"]
+        print(f"{head} ({x['framework']}): supported if {x['supported']}; "
+              f"not_supported if {x['not_supported']}; otherwise inconclusive")
     if not d:
         print(f"Not decided yet: {len(runs)} of {out['runs_needed']} deciding runs "
               f"({', '.join(out['deciding_runs']) or 'none'}).")
         return 0
     print(f"Deciding runs: {', '.join(out['deciding_runs'])}")
-    for k, v in (out.get("values") or {}).items():
-        print(f"  {k} = {v}")
-    for p in out.get("problems") or []:
-        print(f"  problem: {p}")
-    print(f"Verdict: {out['verdict']}" if out.get("verdict") else out["note"])
+    for h, x in parts:
+        lead = f"{h}: " if h else ""
+        for k, v in (x.get("values") or {}).items():
+            print(f"  {lead}{k} = {v}")
+        for p in x.get("problems") or []:
+            print(f"  {lead}problem: {p}")
+        print(f"{lead}Verdict: {x['verdict']}" if x.get("verdict") else f"{lead}{x['note']}")
     for f in out.get("flags") or []:
         print(f"  flag: {f.replace('_', ' ')}")
     for w in out.get("warnings") or []:
@@ -803,9 +823,12 @@ def add_parser(subparsers):
     p.add_argument("--quantity", action="append", default=[], metavar="NAME=QUANTITY",
                    help="a result the rules use: name=\"quantity text\", or name='{\"quantity\": …, "
                         "\"conditions\": {…}, \"field\": \"interval.lower\"}'; repeat for several")
-    p.add_argument("--supported", help="rule for supported: an expression over quantities and parameters, "
-                                       "or text for formal and qualitative plans")
-    p.add_argument("--not-supported", dest="not_supported", help="rule for not_supported (refuted)")
+    p.add_argument("--supported", action="append", metavar="RULE",
+                   help="rule for supported: an expression over quantities and parameters, or text for formal and "
+                        "qualitative plans; prefix it with a hypothesis ID (\"H1: s < 0.1\") to give each "
+                        "hypothesis of the plan its own rule, and repeat")
+    p.add_argument("--not-supported", dest="not_supported", action="append", metavar="RULE",
+                   help="rule for not_supported (refuted); \"H1: …\" as for --supported")
     p.add_argument("--runs", type=int, help="how many successful confirmatory runs decide the plan (default 1)")
     p.add_argument("--decision", metavar="FILE", help="the whole decision rule as a JSON file")
     p.add_argument("--holdout", action="append", default=[], metavar="FILE",
