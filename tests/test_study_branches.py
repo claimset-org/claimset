@@ -276,16 +276,29 @@ class TestCleanCheckout(StudyRepo):
         self.assertTrue(verify(lab, remote=True)["ok"], verify(lab, remote=True)["errors"])
 
     def test_capture_leaves_the_checkout_clean(self):
-        """Lab record v0.16 §5.20: a captured source's files are committed with its event."""
+        """Lab record v0.19 §5.20: a public source's files are committed with its event; a private source's
+        files and the pseudonym salt are kept out of git, and the record holds their hashes."""
         self.new_study()
         os.environ["CLAIMSET_ACTOR"] = "AC1"
         page = Path(self.tmp.name) / "thread.html"
         page.write_text("<p>Please add an Arrange for command.</p>", encoding="utf-8")
-        code, _, err = self.cli("lab", "capture", str(page), "--uri", "https://musescore.org/en/node/42911")
+        own = Path(self.tmp.name) / "notes.txt"
+        own.write_text("The study's own notes.", encoding="utf-8")
+        code, _, err = self.cli("lab", "capture", str(page), "--uri", "https://musescore.org/en/node/42911",
+                                "--author", "jojo")
         self.assertEqual(code, 0, err)
-        self.assertEqual(self.status(), "")
-        tracked = git("ls-files", "lab/sources", cwd=self.top / "claimset" / "alpha").split()
-        self.assertEqual(sorted(tracked), ["lab/sources/SR1/text.txt", "lab/sources/SR1/thread.html"])
+        code, _, err = self.cli("lab", "capture", str(own), "--own", "--licence", "CC-BY-4.0")
+        self.assertEqual(code, 0, err)
+        study = self.top / "claimset" / "alpha"
+        self.assertEqual(git("status", "--porcelain", cwd=study), "")
+        self.assertEqual(self.status(), "!! lab/private/")                 # ignored, not a change
+        tracked = git("ls-files", "lab", cwd=study).split()
+        self.assertEqual([t for t in tracked if "sources" in t or "private" in t or "salt" in t],
+                         ["lab/sources/SR2/notes.txt"])
+        self.assertTrue((study / "lab" / "private" / "sources" / "SR1" / "thread.html").is_file())
+        self.assertTrue((study / "lab" / "private" / "pseudonym-salt").is_file())
+        page_hash = git("show", "HEAD:lab/lab.jsonl", cwd=study)
+        self.assertIn('"role":"original"', page_hash.replace(" ", ""))
 
     def test_the_receipt_of_each_push_is_in_the_next_commit(self):
         lab = self.new_study()

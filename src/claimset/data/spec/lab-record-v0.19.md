@@ -1,8 +1,17 @@
-# Claimset Lab Record — Specification v0.18 (draft)
+# Claimset Lab Record — Specification v0.19 (draft)
 
-Status: working draft · Date: 2026-11-05 · Supersedes v0.17 · Companion to the claimset specification (`spec/claimset-v0.37.md`) and the revision specification (`spec/claimset-revision-v0.5.md`)
+Status: working draft · Date: 2026-11-05 · Supersedes v0.18 · Companion to the claimset specification (`spec/claimset-v0.37.md`) and the revision specification (`spec/claimset-revision-v0.5.md`)
 
-## Changes since v0.17
+## Changes since v0.18
+
+A private source's files, and the salt of the study's pseudonyms, were committed on the study branch: anyone who could read the branch could read every page captured as private, and could check a guessed handle against the pseudonyms. Private meant only "left out of the package".
+
+- §3, §5.20, *Private sources*: a private source's files are kept in `lab/private/sources/<id>/`, which the lab keeps out of git (`lab/private/.gitignore`); the record holds their hashes and everything else the event records. The pseudonym salt is kept in `lab/private/pseudonym-salt`, also out of git. A public source's files are committed in `lab/sources/<id>/`, as before.
+- §5.20: a checkout without `lab/private/` (another clone of the branch) cannot read a private source's text, and refuses `capture --author` once the record has pseudonyms, since its pseudonyms would not match; copying `lab/private/` from the checkout that captured the sources restores both.
+- §6: L24 and L25 are checked for a private source wherever its files are present; where they are absent, `verify` says which sources it could not check.
+- Records begun before v0.19 keep the private files and the salt they committed (the branch's history is never rewritten); `verify` notes them. Sources they capture from now on are kept out of git.
+
+## Changes in v0.18 (since v0.17)
 
 A qualitative test's rules were text, judged by the writer: "supported if at least 5 independent threads from different years ask for automatic arranging" could be written but not computed, and nothing showed whether the threads had been coded before the test was fixed. A one-day desk scan also had to keep a git remote it did not need.
 
@@ -209,7 +218,8 @@ claimset/                      ignored by the code branches
       anchors.jsonl            timestamp anchors of the log (§7); on a study branch, receipts of earlier pushes
       config.json              the study branch and its remote (§7.1)
       runs/<run id>/           per-run outputs: stdout, stderr, results.json, other files
-      sources/<source id>/     captured sources: the original file and its text (§5.20)
+      sources/<source id>/     captured public sources: the original file and its text (§5.20)
+      private/                 kept out of git: private sources' files, the pseudonym salt (§5.20)
     <paper>.claimset.json      a paper drawn from the study (claimset §2.4)
     <paper>.claimset.txt       its reading view
 claimset-code/<study>/         on the code branches: code only this study uses (prototypes, benchmarks)
@@ -610,24 +620,29 @@ A term is recorded once and corrected with `--supersedes` when what it means cha
 
 ### 5.20 `source` (prefix `SR`), written by the tool
 
-`{uri, title, method, retrieved_at, format, files, visibility, rights, archive_uri, venue, published_at, description}`: outside material kept as data: a web page, a forum thread, an issue, a transcript, a document. `claimset lab capture FILE` copies the file into `sources/<id>/`, hashes it and writes the event; `claimset lab capture --fetch --uri URL` has the tool fetch a public page itself.
+`{uri, title, method, retrieved_at, format, files, visibility, rights, archive_uri, venue, published_at, description}`: outside material kept as data: a web page, a forum thread, an issue, a transcript, a document. `claimset lab capture FILE` copies the file into `sources/<id>/` (a public source) or `private/sources/<id>/` (a private one), hashes it and writes the event; `claimset lab capture --fetch --uri URL` has the tool fetch a public page itself.
 
 - `uri`: where the source was found. Required when `method` is `fetched`; a transcript or a document with no address has none.
 - `method`: how the file was obtained. `saved`: the researcher saved it by hand (the default; it records what the researcher saw, including a page that needed a sign-in or was read after a cookie banner); `browser`: captured from a browser by a tool (an extension, print to file); `fetched`: fetched by the lab tool. Fetching is for public pages and repeatable re-captures; it records a different method because the tool, not the researcher, saw the page.
 - `retrieved_at`: when the source was retrieved, a UTC time or a date: the researcher's account for `saved` and `browser`, the tool's time for `fetched`. The event's `at` is when it was recorded; both are kept.
 - `format`: the original file's media type (`text/html`, `application/pdf`, `text/plain`).
-- `files`: `{path, hash, role}` for the files in `sources/<id>/`: exactly one `original` (the file as saved or fetched) and, when the tool can read the format or the researcher gives one (`--text`), its `text`: the visible text of an HTML page (script, style and head left out; a line per block), or a text the researcher made of a PDF or image. Excerpts are checked against the text (L25).
-- `visibility`: `private` (kept in the record and its repository, left out of the published package: its metadata and hash are published, and short excerpts with their locators) or `public` (published with the package). Content written by others is `private` unless the researcher says otherwise.
+- `files`: `{path, hash, role}` for the files of the source's folder: exactly one `original` (the file as saved or fetched) and, when the tool can read the format or the researcher gives one (`--text`), its `text`: the visible text of an HTML page (script, style and head left out; a line per block), or a text the researcher made of a PDF or image. Excerpts are checked against the text (L25).
+- `visibility`: `private` (its files are kept out of git and out of the published package; the record holds their hashes, and its metadata and hashes are published, with short excerpts and their locators) or `public` (published with the package). Content written by others is `private` unless the researcher says otherwise.
 - `rights`: `{holder, licence, terms}`: `holder` is `study` (the study's own material) or `third_party` (written by others: posts, issues, pages, documents); `licence` is the source's SPDX licence, if it has one; `terms`, if it has none, the terms under which it is shared (a site's terms of service, a permission). The paper's licence never applies to content written by others. A `public` third-party source has a `licence` or `terms` that permit publishing it (L26).
 - `archive_uri`: an archived copy of exactly this page (a web archive snapshot): a witness, independent of the study, that the page said this at that time. The record's hash shows only that the file has not changed since it was captured.
-- `author`: who wrote it. `capture --author HANDLE` records a pseudonym, `a-` and 12 hexadecimal digits of the SHA-256 of the study's salt (the file `pseudonym-salt` in the lab, made on first use) and the handle (whitespace collapsed, case folded), so the same author has the same pseudonym across the study's sources and checkouts and no handle appears in the record. The pseudonym keeps names out of the record's text; it is not a secret from someone who has the record and can guess a handle. `--author-as-given` records an organisation or a public author as written.
+- `author`: who wrote it. `capture --author HANDLE` records a pseudonym, `a-` and 12 hexadecimal digits of the SHA-256 of the study's salt (the file `private/pseudonym-salt` in the lab, made on first use and kept out of git) and the handle (whitespace collapsed, case folded), so the same author has the same pseudonym across the study's sources and no handle appears in the record. Because the salt is not in the record, someone who has the record cannot check a guessed handle against a pseudonym. `--author-as-given` records an organisation or a public author as written.
 - `venue`, `published_at`, `description`: where and when the source was written or published, and anything else a reader needs.
 
 **Correcting a source.** What was recorded about a source (an archived copy found later, the date it was published, its author, whether it may be published) is corrected with `claimset lab capture --supersedes SR1 --archive-uri …` and no file: the correction has the same files, copied into its own folder, and the fields given. A file captured by mistake is not corrected; capture the right one as a new source and leave the wrong one uncoded.
 
-**Private is not secret.** A private source's files, and the salt of its pseudonyms, are committed on the study branch with the rest of the record, so they are as private as the repository the branch is pushed to: keep a study whose sources are private on a private remote, or in desk mode. Private means only that the files are left out of the published package.
+**Private sources.** A private source's files are kept in `lab/private/sources/<id>/`; the folder `lab/private/` holds a `.gitignore` that keeps everything in it out of git, so the files are never committed, pushed or published. The record holds their hashes, so a copy given to a reviewer or an auditor can be checked against it, and everything else its event says. The pseudonym salt is kept in `lab/private/` too.
 
-A source is captured once, when it is first read for the study; a later capture of the same page is a new source, so a page that changed shows as two sources with different hashes. Runs read sources by their files (`run --data lab/sources/SR1/text.txt`), so the hashes tie each run to the material it read.
+- **Another checkout** of the study branch (a clone, a collaborator's machine) has the record without `lab/private/`. There, `verify` checks everything else and says which private sources it could not check; `claimset lab quote` and `capture --supersedes` refuse for those sources; and `capture --author` refuses once the record has pseudonyms, since a new salt would give the same author another pseudonym. Copying `lab/private/` from the checkout that captured the sources, by a channel as private as they are, restores all of it, and `verify` then checks their hashes and quotes (L24, L25).
+- **Keep a copy.** `lab/private/` exists only where it was made: back it up with the study's other private data. If it is lost, the record still shows what was captured and its hashes, but the quotes can no longer be checked and new pseudonyms will not match.
+- **What is still in the record.** Codings quote passages (§5.21), and a run's `codings.json` repeats them, so short excerpts of a private source are in the record; a source's `uri`, `title` and other metadata are too. Withhold events that must not be published (§8).
+- **Records begun before v0.19** committed private sources' files in `lab/sources/<id>/` and the salt in `lab/pseudonym-salt`. They stay there (the branch's history is never rewritten), the tool keeps reading them, and `verify` notes them: such a branch's remote must be as private as its sources. Sources captured from now on are kept out of git; the committed salt stays in use, so pseudonyms stay stable.
+
+A source is captured once, when it is first read for the study; a later capture of the same page is a new source, so a page that changed shows as two sources with different hashes. Runs read sources by their files (`run --data lab/private/sources/SR1/text.txt`, or `lab/sources/SR1/text.txt` for a public source), so the hashes tie each run to the material it read.
 
 **Quoting.** `claimset lab quote SR1 "the words"` checks that the words are in the source's text (ignoring differences in whitespace) and prints their locator as a W3C Web Annotation text-quote selector, `{exact, prefix, suffix}` with the words' character positions in the text (`start`, `end`). An excerpt a claim gives (claimset §3.4, excerpts) carries that locator, so a reader with access to the source can find it, and a reader without access knows it was checked.
 
@@ -699,7 +714,7 @@ L20. A record with a study branch is written only in the checkout of that branch
 L21. A hypothesis's `about` and a plan's `setup` name only `term` events; every term mark in a hypothesis's statement (`[[TM3:…]]`) names a term; every term `about` names is marked in the statement; a list in `about.object` names only terms of kind `variable`.
 L22. An approval's `by` is a human actor, or an agent actor with `on_behalf_of` naming a human actor and non-empty `words`; an approval by a human has no `on_behalf_of`.
 L23. A confirmatory run is not made under a plan with `requires_approval` unless an approval of that plan was written after its current version (the version the run names in `plan_version`).
-L24. Each source's folder `sources/<id>/` holds exactly the files its event records, with the recorded hashes (§5.20).
+L24. Each source's folder (`sources/<id>/`, or `private/sources/<id>/` for a private source) holds exactly the files its event records, with the recorded hashes (§5.20). A private source's folder is kept out of git, so it is checked where it is present; where it is absent, `verify` says so.
 L25. An excerpt quoted from a source is in that source's text (§5.20); a coding's `quote` is in its source's text at its recorded position (§5.21).
 L26. A source whose `rights.holder` is `third_party` is `public` only with a `licence` or `terms` (§5.20).
 L27. A coding names a captured source and, unless it is withdrawn, at least one code: a term with a `code` part (§5.19, §5.21); its `code_versions` name versions of those codes. The codes a plan's counts name are codes of the codebook (§5.21.1).
@@ -757,7 +772,7 @@ Tools before v0.15 read the heads from the working tree after the commit, so a r
 
 ## 8. Publication and redaction
 
-By default the whole lab record is published with the claimset, as an artefact of kind `lab_record`, together with run outputs. Private sources (§5.20) are not: their events (metadata and hashes) are published, their files are not.
+By default the whole lab record is published with the claimset, as an artefact of kind `lab_record`, together with run outputs. Private sources (§5.20) are not: their events (metadata and hashes) are published, their files are not, and are never committed.
 
 Individual events can be withheld. A withheld event keeps its header and replaces its body with:
 

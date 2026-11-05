@@ -915,8 +915,9 @@ def add_parser(subparsers):
     p.add_argument("--title")
     p.add_argument("--format", metavar="MEDIA_TYPE", help="e.g. text/html (default: from the file name)")
     p.add_argument("--text", metavar="FILE", help="its text, for formats the tool cannot read (PDF, images)")
-    p.add_argument("--private", action="store_true", help="keep it in the record, out of the published package "
-                                                          "(default for content written by others)")
+    p.add_argument("--private", action="store_true", help="keep its files out of git and the published package; the "
+                                                          "record keeps their hashes (default for content written by "
+                                                          "others)")
     p.add_argument("--public", action="store_true", help="publish the file with the package")
     p.add_argument("--own", action="store_true", help="the study's own material, not content written by others")
     p.add_argument("--licence", metavar="SPDX", help="the source's licence, if it has one")

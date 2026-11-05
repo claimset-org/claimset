@@ -686,7 +686,8 @@ class _Exporter:
                 text += " " + b["description"]
             art = {"id": aid, "kind": "data", "version": original.get("hash"), "description": text}
             if b.get("visibility") == "public":
-                path = self.lab.root / "sources" / cur["id"] / str(original.get("path"))
+                from .sources import source_dir
+                path = source_dir(self.lab, cur) / str(original.get("path"))
                 art["uri"] = _repo_path(path) or f"{self.lab.root.name}/sources/{cur['id']}/{original.get('path')}"
                 art["availability"] = {"level": "public"}
             else:

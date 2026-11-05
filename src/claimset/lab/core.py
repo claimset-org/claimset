@@ -1945,6 +1945,9 @@ def verify(lab, check_files=True, remote=False):
         st.apply(e)
     rep["errors"] += verify_layout(lab, st)
     rep["notes"] += layout_notes(lab, st)
+    if check_files:
+        from .sources import source_notes
+        rep["notes"] += source_notes(lab, events)
     for root in st.plan_roots:
         d = st.deciding_runs(root)
         if d:
