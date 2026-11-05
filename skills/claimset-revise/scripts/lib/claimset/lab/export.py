@@ -745,6 +745,12 @@ class _Exporter:
             kind = cur["body"].get("kind")
             d = {"id": did, "term": cur["body"].get("term"), "kind": RENAMED_KINDS.get(kind, kind),
                  "definition": cur["body"].get("definition")}
+            code = cur["body"].get("code")
+            if isinstance(code, dict):          # a code of the codebook: its criteria are part of what it means
+                d["definition"] = (f"{d['definition'].rstrip()} Coded when: {code.get('include', '').rstrip('.')}."
+                                   + (f" Not coded when: {code['exclude'].rstrip('.')}." if code.get("exclude") else ""))
+            if cur["body"].get("broader"):
+                d["_broader"] = list(cur["body"]["broader"])
             if cur["body"].get("source"):
                 d["source"] = cur["body"]["source"]
                 self.todo(f"definitions.{did}.source", f"{did} ({d['term']}) is borrowed: list its source "
@@ -755,6 +761,18 @@ class _Exporter:
 
         def swap(v):
             return dmap.get(v.strip(), v) if isinstance(v, str) and TERM_ID_RE.match(v.strip()) else v
+
+        for d in definitions:
+            if "_broader" in d:
+                d["broader"] = [dmap[b] for b in d.pop("_broader") if b in dmap]
+                if not d["broader"]:
+                    del d["broader"]
+        n_codings = sum(1 for e in self.roots if e["type"] == "coding")
+        if n_codings:
+            self.todo("evidence", f"the record has {n_codings} codings of captured sources: counts from them come "
+                                  f"from the runs that read them; an excerpt a claim gives is a result whose value "
+                                  f"is the coding's quote, with the source and position as its locator "
+                                  f"(e.g. SR1:120-168)")
 
         def marks(text):
             return TERM_MARK_RE.sub(lambda m: m.group(0).replace(m.group(1), dmap.get(m.group(1), m.group(1)), 1),

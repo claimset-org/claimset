@@ -214,3 +214,87 @@ def verify_source_files(lab, events):
             errors.append({"seq": e["seq"], "id": e["id"], "rule": "L24",
                            "message": f"file {path} was added to the source folder after capture"})
     return errors
+
+
+CODINGS_FILE = "codings.json"
+
+
+def verify_codings(lab, events):
+    """Rule L25: every coding's quote is in its source's text, at the recorded place."""
+    from .core import State, is_withheld
+    st = State()
+    for e in events:
+        if isinstance(e, dict):
+            st.apply(e)
+    errors = []
+    for e in events:
+        if not isinstance(e, dict) or e.get("type") != "coding" or is_withheld(e) or not isinstance(e.get("body"), dict):
+            continue
+        sel = e["body"].get("quote")
+        src = st.get(e["body"].get("source"))
+        if not isinstance(sel, dict) or src is None or is_withheld(src):
+            continue
+        try:
+            text = text_of(lab, src)
+        except (LabError, OSError):
+            errors.append({"seq": e["seq"], "id": e["id"], "rule": "L25",
+                           "message": f"the text of {src['id']} cannot be read, so the quote cannot be checked"})
+            continue
+        start, end = sel.get("start"), sel.get("end")
+        if not (isinstance(start, int) and isinstance(end, int) and text[start:end] == sel.get("exact")):
+            errors.append({"seq": e["seq"], "id": e["id"], "rule": "L25",
+                           "message": f"the quote is not in {src['id']}'s text at {start}-{end}"})
+    return errors
+
+
+def current_codings(st):
+    """The codings in force in a view of the record: the latest version of each, without withdrawn or withheld
+    ones, in record order."""
+    from .core import is_withheld
+    out = []
+    for e in st.events:
+        if e.get("type") != "coding" or st.root(e["id"]) != e["id"]:
+            continue
+        cur = st.latest(e["id"])
+        if cur is None or is_withheld(cur) or cur["body"].get("withdrawn") or not cur["body"].get("codes"):
+            continue
+        out.append(cur)
+    return out
+
+
+def codings_snapshot(st):
+    """What a run reads in $CLAIMSET_CODINGS (§5.21): the codebook, the sources coded and the codings in force,
+    as the run's writer sees them. None if the view has no coding."""
+    from .core import is_withheld
+    codings = current_codings(st)
+    if not codings:
+        return None
+    codes, sources = {}, {}
+    for c in codings:
+        for t in c["body"]["codes"]:
+            term = st.latest(t)
+            root = st.root(t)
+            if root not in codes and term is not None and not is_withheld(term):
+                tb = term["body"]
+                codes[root] = {"id": root, "version": term["id"], "term": tb.get("term"),
+                               "definition": tb.get("definition"), "code": tb.get("code"),
+                               "broader": [st.root(b) for b in tb.get("broader") or []]}
+        s = st.get(c["body"]["source"])
+        if s is not None and not is_withheld(s) and s["id"] not in sources:
+            b = s["body"]
+            sources[s["id"]] = {k: b.get(k) for k in ("uri", "title", "venue", "published_at", "retrieved_at")
+                                if b.get(k) is not None}
+            sources[s["id"]]["id"] = s["id"]
+    rows = []
+    for c in codings:
+        b = c["body"]
+        row = {"id": c["id"], "root": st.root(c["id"]), "source": b["source"],
+               "codes": [st.root(t) for t in b["codes"]], "code_versions": b.get("code_versions"),
+               "coder": c.get("by"), "at": c.get("at")}
+        for k in ("unit", "pass", "memo"):
+            if b.get(k) is not None:
+                row[k] = b[k]
+        if isinstance(b.get("quote"), dict):
+            row["quote"] = {k: b["quote"][k] for k in ("exact", "start", "end") if k in b["quote"]}
+        rows.append(row)
+    return {"codes": list(codes.values()), "sources": list(sources.values()), "codings": rows}

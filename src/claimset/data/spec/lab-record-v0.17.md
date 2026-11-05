@@ -1,8 +1,19 @@
-# Claimset Lab Record — Specification v0.16 (draft)
+# Claimset Lab Record — Specification v0.17 (draft)
 
-Status: working draft · Date: 2026-11-05 · Supersedes v0.15 · Companion to the claimset specification (`spec/claimset-v0.37.md`) and the revision specification (`spec/claimset-revision-v0.5.md`)
+Status: working draft · Date: 2026-11-05 · Supersedes v0.16 · Companion to the claimset specification (`spec/claimset-v0.37.md`) and the revision specification (`spec/claimset-revision-v0.5.md`)
 
-## Changes since v0.15
+## Changes since v0.16
+
+Coding was work done outside the record: a theme count ("forums mention X often") was an impression, not a number from recorded codes. With sources captured (v0.16), coding becomes recorded work, and counts come from code that reads it.
+
+- §5.19: a term of kind `concept` can be a **code** of the codebook: `code: {include, exclude, examples}` says what a passage must show to get it and what does not count. Terms gain `broader` (the broader codes or themes a code belongs to). Corrections of a code are the codebook's versions.
+- §5.21: a new event, `coding` (prefix `CD`), written by `claimset lab code SR1 --codes TM4 --excerpt "…"`: codes applied to a captured source, or to a passage of it (`quote`, checked against the source's text), by its writer, in a `pass`, with a `unit` and a `memo`, and the version of each code applied. Recoding and withdrawing are corrections.
+- §5.9: a run receives the codings in force, as its writer sees them, in `codings.json` (`$CLAIMSET_CODINGS`), recorded in the run's `codings` with its hash: counts and agreement between coders come from scripts over recorded codes.
+- §6: L25 is checked by `verify` for every coding's quote; new rule L27 (a coding names a captured source and codes of the codebook).
+- §9: a code's definition carries its criteria and its broader terms; the completion list says how excerpts from codings are given.
+- §10, §11 updated.
+
+## Changes in v0.16 (since v0.15)
 
 A plan could name several hypotheses but had one pair of rules, so every hypothesis it named got the verdict of that pair. Hypotheses that one computation decides by different rules ("the share is below 0.10" for one, "this theme's total exceeds every other's" for another) needed a plan each, with the same computation run once per plan: the duplicate-run note, the evidence warning about identical results (claimset W18) and a false `holdout_used_elsewhere` flag on each plan followed.
 
@@ -161,7 +172,7 @@ Version 0.1 targeted computational research (simulation, analysis of existing da
 
 1. **Append only.** Events are never edited or deleted. A correction is a new event that names the event it supersedes.
 2. **Recorded by the tool.** Events are written by the lab tool, which assigns sequence numbers, times and hashes. Agents do not write the log by hand.
-3. **Results come from code; quotes come from sources.** Numbers enter the record only from files written by the code that produced them, never typed by an agent. Words quoted from outside material are checked against a captured source (§5.20), never retyped from memory or from a summary.
+3. **Results come from code; quotes come from sources.** Numbers enter the record only from files written by the code that produced them, never typed by an agent; counts of coded material come from runs that read the recorded codings (§5.21). Words quoted from outside material are checked against a captured source (§5.20), never retyped from memory or from a summary.
 4. **Plan before run, or say it was exploratory.** A run is confirmatory only if a plan written earlier covers it; every other run is labelled exploratory. Exploration is legitimate; it is just labelled. It is recorded where its results inform decisions (a run whose output is looked at to choose a direction, a setting or a hypothesis), not step by step, so the record's account of exploration is a lower bound. The rules are strict only on the path from a plan to a claim.
 5. **Every outcome is recorded.** Failed runs, crashed runs, null results, refuted and abandoned hypotheses are all events.
 6. **Exploration cannot confirm itself.** Evidence that suggested a hypothesis cannot also be the evidence that supports it.
@@ -489,7 +500,7 @@ An agent never approves on its own judgement. It does not treat silence, a gener
 
 ### 5.9 `run` (prefix `RN`), written by the tool
 
-`{plan, plan_version, label, command, code_version, dirty, parameters, seeds, data, environment, started_at, ended_at, exit_status, exit_code, outputs}`
+`{plan, plan_version, label, command, code_version, dirty, parameters, seeds, data, codings, environment, started_at, ended_at, exit_status, exit_code, outputs}`
 
 - `plan`: plan ID or `null`.
 - `plan_version`: the ID of the version of that plan in force for the run's writer when the run was made (the latest correction it could see). The version named by the first deciding run decides the plan (§5.7.2); this holds also for runs merged from agent logs, whose writer may not have seen corrections made meanwhile in the main log.
@@ -498,6 +509,7 @@ An agent never approves on its own judgement. It does not treat silence, a gener
 - `code_version`: commit hash of the working directory's repository, or `null` if it is not a git repository; `dirty`: true if it had uncommitted changes outside the lab directory. A run is made from the code checkout, never from the study's folder. The commit of the study branch that records the run takes `code_version` as a further parent, so the code stays reachable from the record (§7.1).
 - `parameters`: optional object of named settings given to the tool; `seeds`: optional list of random seeds given to the tool.
 - `data`: list of `{path, hash}` for input files declared to the tool.
+- `codings`: `{path, hash, count}`, written by the tool when the record has codings: the file of the codings in force that the run read (`codings.json`, also among its `outputs`), its hash and how many codings it holds (§5.21).
 - `environment`: `{software: {python, platform}, hardware: {machine, cpus}}`, as recorded by the tool.
 - `started_at`, `ended_at`: UTC times as in `at`.
 - `exit_status`: `success` (exit code 0) · `failed` (non-zero exit code) · `crashed` (killed by a signal, or the command could not be started) · `cancelled` (interrupted by the user).
@@ -507,7 +519,7 @@ An agent never approves on its own judgement. It does not treat silence, a gener
 #### 5.9.1 How the tool runs a command
 
 1. It checks rule L5 before starting. A run is confirmatory only when it names a confirmatory plan; otherwise, or when asked, it is exploratory.
-2. It creates a pending run directory under `runs/` and starts the command with two environment variables: `CLAIMSET_RUN_DIR` (the directory, for any output files) and `CLAIMSET_RESULTS` (the path of `results.json` inside it).
+2. It creates a pending run directory under `runs/` and starts the command with two environment variables: `CLAIMSET_RUN_DIR` (the directory, for any output files) and `CLAIMSET_RESULTS` (the path of `results.json` inside it). When the record has codings, it first writes them to `codings.json` in that directory and names it in a third, `CLAIMSET_CODINGS` (§5.21).
 3. It writes the command's standard output and standard error to `stdout.txt` and `stderr.txt` in that directory, and shows them as the command runs.
 4. When the command ends, however it ends, it hashes every file in the directory, writes the `run` event, and renames the directory to `runs/<run id>/`.
 5. If `results.json` exists, it writes one `result` event per entry (§5.10.1).
@@ -568,11 +580,13 @@ Papers split a study's results between them; the split must not decide what is r
 
 ### 5.19 `term` (prefix `TM`)
 
-`{term, kind, definition, source}`: a term the study names: what it studies or compares, the cases, the procedure, what it measures, the concepts and theories it uses or finds (claimset §3.2).
+`{term, kind, definition, source, code, broader}`: a term the study names: what it studies or compares, the cases, the procedure, what it measures, the concepts and theories it uses or finds (claimset §3.2).
 - `term`: the term as the study writes it. Required.
 - `kind`: `method` · `intervention` · `population` · `data` · `setting` · `design` · `variable` · `concept` · `theory` · `other`, as in claimset §3.2 (`measure` in records written under v0.12 is read as `variable`). Required.
 - `definition`: what the term means in this study, with what the study specifies (settings, subset, horizon, aggregation). For the study's own method or model, every equation that defines it, as the code implements it (claimset §3.2). Required.
 - `source`: optional: where a borrowed term is defined (a DOI, an arXiv ID, a citation).
+- `code`: optional, for a term of kind `concept` only: the term is a code of the study's codebook. `{include, exclude, examples}`: `include` (required) is what a passage must show to get the code; `exclude`, what does not count though it may look alike; `examples`, typical passages. The criteria are part of what the code means: changing them is a correction of the term, and the codings made before it name the version they applied (§5.21).
+- `broader`: optional list of term IDs: the more general terms this one is a kind of (a code's theme, a variant's method), as in claimset §3.2.
 
 A term is recorded once and corrected with `--supersedes` when what it means changes; the correction keeps its place, so hypotheses and plans that named it keep naming it, and the record shows when its meaning changed. A term changed after a plan that names it in its setup was written is a change to the plan's test, and is recorded as a deviation if the runs used the new meaning.
 
@@ -593,6 +607,23 @@ A term is recorded once and corrected with `--supersedes` when what it means cha
 A source is captured once, when it is first read for the study; a later capture of the same page is a new source, so a page that changed shows as two sources with different hashes. Runs read sources by their files (`run --data lab/sources/SR1/text.txt`), so the hashes tie each run to the material it read.
 
 **Quoting.** `claimset lab quote SR1 "the words"` checks that the words are in the source's text (ignoring differences in whitespace) and prints their locator as a W3C Web Annotation text-quote selector, `{exact, prefix, suffix}` with the words' character positions in the text (`start`, `end`). An excerpt a claim gives (claimset §3.4, excerpts) carries that locator, so a reader with access to the source can find it, and a reader without access knows it was checked.
+
+### 5.21 `coding` (prefix `CD`)
+
+`{source, codes, code_versions, quote, unit, pass, memo, withdrawn}`: codes of the codebook applied to a captured source (§5.20), or to a passage of it, by the event's writer. Written by `claimset lab code SR1 --codes TM4 TM7 [--excerpt "the words"] [--unit post] [--pass 1] [--memo "…"]`.
+
+- `source`: the source coded. Required.
+- `codes`: the codes applied, as term IDs of terms with a `code` part (L27). Required, at least one, each once.
+- `code_versions`: `{code: version}`: the version of each code's term in force when the coding was written, recorded by the tool, so codings made under an earlier definition of a code can be told apart.
+- `quote`: optional: the passage coded, as `claimset lab quote` gives it, `{exact, prefix, suffix, start, end}` (a W3C Web Annotation text-quote selector with the passage's character positions in the source's text). The tool finds the words in the source's text when the coding is written, refuses words it does not find or finds more than once, and `verify` checks the quote is still there (L25). Without `quote`, the codes apply to the whole source ("this thread asks for arranging").
+- `unit`: optional: what was coded (`thread`, `post`, `issue`, `answer`, `paragraph`), so counts can say what they count.
+- `pass`: optional: the coding pass or round (`1`, `2`, `"second coder"`). Two coders coding the same sources write their own codings; the coder is the event's `by`. Agreement between them is computed by a run from the codings (below).
+- `memo`: optional: the coder's reasoning.
+- `withdrawn`: `true` in a correction that removes the codes from the passage (`codes` is then empty or absent).
+
+A coding is corrected with `--supersedes` when a coder changes their mind (other codes, a different passage) or withdraws it; the record keeps every earlier coding. A coder who works in their own agent log (§3.5) writes codings there until the merge; the log keeps them apart from others' codings in the record, but does not hide the main log from them, so blind second coding is the coders' arrangement, not the tool's.
+
+**Counts come from code.** A theme count, a share of sources with a code, or agreement between coders is a result like any other: computed by a run from the codings, never typed (§2, principle 3). When the record has codings, the tool writes the codings in force, as the run's writer sees them (the latest version of each, without withdrawn or withheld ones), to `codings.json` in the run's directory before the command starts, names it in `$CLAIMSET_CODINGS`, and records it in the run's `codings` (§5.9). The file holds `{codes, sources, codings}`: each code with its term, definition, criteria and broader terms; each source coded with its `uri`, `title`, `venue`, `published_at` and `retrieved_at`; each coding with its `source`, `codes` (root IDs), `code_versions`, `coder`, `at`, `unit`, `pass`, `memo` and the `quote`'s `exact`, `start` and `end`.
 
 ## 6. Rules
 
@@ -620,8 +651,9 @@ L21. A hypothesis's `about` and a plan's `setup` name only `term` events; every 
 L22. An approval's `by` is a human actor, or an agent actor with `on_behalf_of` naming a human actor and non-empty `words`; an approval by a human has no `on_behalf_of`.
 L23. A confirmatory run is not made under a plan with `requires_approval` unless an approval of that plan was written after its current version (the version the run names in `plan_version`).
 L24. Each source's folder `sources/<id>/` holds exactly the files its event records, with the recorded hashes (§5.20).
-L25. An excerpt quoted from a source is in that source's text (§5.20).
+L25. An excerpt quoted from a source is in that source's text (§5.20); a coding's `quote` is in its source's text at its recorded position (§5.21).
 L26. A source whose `rights.holder` is `third_party` is `public` only with a `licence` or `terms` (§5.20).
+L27. A coding names a captured source and, unless it is withdrawn, at least one code: a term with a `code` part (§5.19, §5.21); its `code_versions` name versions of those codes.
 
 The tool enforces L1–L5 and L8–L23 mechanically, and refuses L6 and L7 violations. L15–L17 apply to records begun under v0.5 or later, and to records whose `init` is withheld. Where a check depends on withheld content (a withheld run, result or plan), `verify` does not report it as a violation; withholding lowers verifiability instead (§8).
 
@@ -703,7 +735,7 @@ Hypotheses without a final status are counted as open; they are not forced close
 | `actor`, agent | contributor of type `agent` with its models (each model defined once in `models`, `accessed` the date of the earliest event by an agent using it), `name`, `record_source`, `run_period` (dates of its first and last events) and `tools: [code_execution]` if it ran commands. Position `author` if it wrote any event other than `actor` and `check`; otherwise `contributor`, with AI task `review` |
 | `actor`, human or organisation | contributor with `name` and `orcid`, position `contributor`. Who is supervisor and guarantor is decided by people (completion list) |
 | a verdict on a planned test (§5.7.4) | a claim per decided plan and hypothesis it names, in the order of the hypotheses and then the plans: `statement` and `about` from the hypothesis as it stood when the plan was written, `hypothesis: {lab_event, outcome}` (`lab_event` is that version's ID, `outcome` the verdict), defaults `type: descriptive`, `role: supporting`, `novelty: no_prior_found`, `provenance: author_stated` |
-| `term` | a definition (`D1`, `D2`, … in record order, each correction chain once, its latest version) with `term`, `kind`, `definition` and `source` (as text: the completion list asks for it to become an entry of `references`). Term marks and term IDs in statements, `about` and `setup` are replaced by the definition IDs |
+| `term` | a definition (`D1`, `D2`, … in record order, each correction chain once, its latest version) with `term`, `kind`, `definition` and `source` (as text: the completion list asks for it to become an entry of `references`). Term marks and term IDs in statements, `about` and `setup` are replaced by the definition IDs; a code's definition ends with its criteria ("Coded when: …. Not coded when: …."), and its `broader` terms become the definition's `broader` |
 | `hypothesis` named by no decided plan, with final status `supported`, `not_supported` or `inconclusive` | an exploratory claim, the same way, from the latest version of the hypothesis and its final status |
 | `hypothesis` otherwise | not a claim; counted in `paper.exploration` |
 | the runs behind a verdict or final status | one evidence object per claim, from the runs the status names as evidence, directly or through their results: `lab_runs`, `results` (one per `result` event, as observations: its `quantity` as `variable` (the term's definition ID when a term of kind `variable` has that name), `value`, `unit`, `interval`, `conditions`), `execution` (`code_version` when the runs share one), `setup` (the setups of the plans the runs name, merged by role), default `profile: quant`, `design: other`, `availability: public`. The claim's support is `empirical_quant` pointing to the evidence and its results |
@@ -741,6 +773,8 @@ The reference tool is part of the `claimset` package. Indicative commands:
 | `claimset lab actor` | registers an actor |
 | `claimset lab question` / `hypothesis` / `assume` / `note` | writes the corresponding event |
 | `claimset lab term MASE --kind measure --definition "…" [--source …]` | records a term (§5.19) |
+| `claimset lab term "arrange for ensemble" --kind concept --definition "…" --include "…" [--exclude "…"] [--example "…"] [--broader TM3]` | records a code of the codebook (§5.19) |
+| `claimset lab code SR1 --codes TM4 [TM7 …] [--excerpt "the words"] [--unit post] [--pass 1] [--memo "…"]` | records a coding (§5.21); `--supersedes CD3` recodes, `--supersedes CD3 --withdraw` withdraws |
 | `claimset lab hypothesis "[[TM1:M]] has lower [[TM3:MASE]] than [[TM2:N]]." --question Q1 --subject TM1 --relation "has lower error than" --object TM3 --comparator TM2 --condition TM4` | a hypothesis with its atom (§5.4) |
 | `claimset lab status H3 supported --evidence RS12 RS13 --why "…" [--plan PL2] [--rule supported]` | status change, with L6, L7 and L17 checked |
 | `claimset lab verdict PL2` | the verdict a decided plan's rule gives, with the value bound to each quantity (§5.7.3) |
@@ -772,6 +806,6 @@ The reference tool is part of the `claimset` package. Indicative commands:
 
 1. Anchoring service: platform receipts, RFC 3161 providers, or both.
 2. Storage of large run outputs (content-addressed storage, external archives).
-3. Event types for laboratory and qualitative research. Terms (§5.19) record what a qualitative study's setup is and sources (§5.20) what it reads; coding (codes applied to passages of sources, by a coder, in a pass) and counts and rules computed from coded data are the next step, and data-collection sessions (interviews, observations) are still open.
+3. Event types for laboratory and qualitative research. Terms (§5.19) record what a qualitative study's setup is and sources (§5.20) what it reads; codings (§5.21) record what was coded and counts come from runs that read them; decision rules that count coded units directly (with what makes two units independent), flags for a codebook changed or sources coded after a plan, and data-collection sessions (interviews, observations) are still open.
 4. Very long explorations (thousands of runs): summarised export without losing the counts.
 5. Whether abandoned hypotheses with substantial evidence should be exportable as claims.

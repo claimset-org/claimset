@@ -25,14 +25,14 @@ PREFIX = {
     "actor": "AC", "question": "Q", "hypothesis": "H", "status": "ST", "assumption": "AS",
     "plan": "PL", "approval": "AP", "run": "RN", "result": "RS", "decision": "DC",
     "deviation": "DV", "check": "CK", "artefact": "AR", "note": "NT", "merge": "MG",
-    "paper": "PA", "relocation": "MV", "term": "TM", "source": "SR",
+    "paper": "PA", "relocation": "MV", "term": "TM", "source": "SR", "coding": "CD",
 }
 INIT_ID = "INIT"
 
 #: Event types whose bodies this version of the tool can write and fully check.
 IMPLEMENTED = {"init", "actor", "question", "hypothesis", "status", "assumption",
                "decision", "check", "artefact", "note", "plan", "approval", "run", "result",
-               "deviation", "merge", "paper", "relocation", "term", "source"}
+               "deviation", "merge", "paper", "relocation", "term", "source", "coding"}
 
 #: Event types that are written only to the main log, never to an agent log (§3.5).
 MAIN_ONLY = {"init", "actor", "merge", "paper", "relocation"}
@@ -507,10 +507,83 @@ def check_question(state, body, by, eid):
 def check_term(state, body, by, eid):
     _req(body, "term", "term")
     _req(body, "definition", "term")
-    _enum(body, "kind", "term_kind", "term")
+    kind = _enum(body, "kind", "term_kind", "term")
     src = body.get("source")
     if src is not None and (not isinstance(src, str) or not src.strip()):
         raise LabError("schema", "term: source must be non-empty text (a reference, identifier or citation)")
+    code = body.get("code")
+    if code is not None:
+        if kind != "concept":
+            raise LabError("schema", "term: a code (a term with a code part) is a concept")
+        if not isinstance(code, dict) or not isinstance(code.get("include"), str) or not code["include"].strip():
+            raise LabError("schema", "term: code needs include: what a passage must show to get this code")
+        extra = set(code) - {"include", "exclude", "examples"}
+        if extra:
+            raise LabError("schema", f"term: code has only include, exclude and examples, not {sorted(extra)}")
+        if code.get("exclude") is not None and (not isinstance(code["exclude"], str) or not code["exclude"].strip()):
+            raise LabError("schema", "term: code.exclude must be non-empty text")
+        ex = code.get("examples")
+        if ex is not None and not (isinstance(ex, list) and all(isinstance(x, str) and x.strip() for x in ex)):
+            raise LabError("schema", "term: code.examples must be a list of texts")
+    broader = body.get("broader")
+    if broader is not None:
+        if not isinstance(broader, list) or not broader:
+            raise LabError("schema", "term: broader must be a list of term IDs")
+        for t in broader:
+            e = state.get(t) if isinstance(t, str) else None
+            if e is None or e["type"] != "term":
+                raise LabError("L21", f"term: broader names {t!r}, which is not a term recorded earlier")
+            if eid is not None and state.root(t) == state.root(eid):
+                raise LabError("schema", "term: a term is not broader than itself")
+
+
+def is_code(state, term_id):
+    """Whether a term ID names a code: a term whose latest version has a code part (§5.19)."""
+    e = state.latest(term_id) if isinstance(term_id, str) and state.get(term_id) else None
+    return e is not None and e["type"] == "term" and not is_withheld(e) and isinstance(e["body"].get("code"), dict)
+
+
+SELECTOR_KEYS = ("exact", "prefix", "suffix", "start", "end")
+
+
+def check_coding(state, body, by, eid):
+    """A coding (§5.21): codes applied to a captured source, or to a passage of it, by its writer (L27)."""
+    sid = _ref(state, _req(body, "source", "coding"), "coding", "source", {"source"})
+    codes = body.get("codes", [] if body.get("withdrawn") is True else None)
+    if not isinstance(codes, list) or not all(isinstance(c, str) for c in codes):
+        raise LabError("schema", "coding: codes must be a list of term IDs")
+    if not codes and body.get("withdrawn") is not True:
+        raise LabError("schema", "coding: name at least one code (a correction with no codes says withdrawn: true)")
+    for c in codes:
+        if state.get(c) is None or not is_code(state, c):
+            raise LabError("L27", f"coding: {c} is not a code: record it as a term of kind concept with "
+                                  f"--include (and --exclude) first")
+    if len(set(state.root(c) for c in codes)) != len(codes):
+        raise LabError("schema", "coding: a code is named once")
+    versions = body.get("code_versions")
+    if versions is not None:
+        if not isinstance(versions, dict) or set(versions) != set(codes):
+            raise LabError("schema", "coding: code_versions has one entry per code: the version applied")
+        for c, v in versions.items():
+            if not isinstance(v, str) or state.get(v) is None or state.root(v) != state.root(c):
+                raise LabError("L12", f"coding: {v!r} is not a version of {c}")
+    sel = body.get("quote")
+    if sel is not None:
+        src = state.get(sid)
+        if not isinstance(sel, dict) or not isinstance(sel.get("exact"), str) or not sel["exact"].strip() \
+                or not all(isinstance(sel.get(k), int) and not isinstance(sel.get(k), bool) for k in ("start", "end")) \
+                or not 0 <= sel["start"] < sel["end"] or set(sel) - set(SELECTOR_KEYS):
+            raise LabError("schema", "coding: quote is {exact, prefix, suffix, start, end}, as `claimset lab quote` "
+                                     "gives it")
+        if src is not None and not is_withheld(src) and \
+                not any(isinstance(f, dict) and f.get("role") == "text" for f in src["body"].get("files") or []) \
+                and src["body"].get("format") not in ("text/plain", "text/markdown", "text/csv", "application/json",
+                                                       "text/html", "application/xhtml+xml"):
+            raise LabError("L25", f"coding: {sid} has no text to quote from")
+    for f in ("unit", "pass", "memo"):
+        v = body.get(f)
+        if v is not None and (not isinstance(v, (str, int)) or isinstance(v, bool) or (isinstance(v, str) and not v.strip())):
+            raise LabError("schema", f"coding: {f} must be non-empty text or a number")
 
 
 def _term_marks(state, text, etype):
@@ -1095,6 +1168,10 @@ def check_run(state, body, by, eid):
     cmd = body.get("command")
     if not isinstance(cmd, list) or not cmd or not all(isinstance(c, str) for c in cmd):
         raise LabError("schema", "run: command must be a non-empty list of strings")
+    cod = body.get("codings")
+    if cod is not None and not (isinstance(cod, dict) and isinstance(cod.get("path"), str)
+                                and HASH_RE.match(str(cod.get("hash", ""))) and isinstance(cod.get("count"), int)):
+        raise LabError("schema", "run: codings is {path, hash, count}, written by the tool")
     for f in ("outputs", "data"):
         for o in body.get(f) or []:
             if not isinstance(o, dict) or not o.get("path") or not HASH_RE.match(str(o.get("hash", ""))):
@@ -1166,7 +1243,7 @@ BODY_CHECKS = {
     "decision": check_decision, "check": check_check, "artefact": check_artefact, "note": check_note,
     "plan": check_plan, "approval": check_approval, "run": check_run, "result": check_result,
     "deviation": check_deviation, "merge": check_merge, "paper": check_paper, "relocation": check_relocation,
-    "term": check_term, "source": check_source,
+    "term": check_term, "source": check_source, "coding": check_coding,
 }
 
 
@@ -1742,8 +1819,9 @@ def verify(lab, check_files=True, remote=False):
     if check_files:
         rep["errors"] += verify_run_files(lab, events)
     if check_files:
-        from .sources import verify_source_files
+        from .sources import verify_codings, verify_source_files
         rep["errors"] += verify_source_files(lab, events)
+        rep["errors"] += verify_codings(lab, events)
     rep["errors"] += verify_anchors(lab, events)
     rep["errors"] += verify_confirmatory_anchoring(lab, events)
     rep["errors"] += verify_agents(lab, events, check_files)
