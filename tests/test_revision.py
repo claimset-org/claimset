@@ -684,15 +684,24 @@ class TestRecordFolder(unittest.TestCase):
     """Revision spec §2.4: registry folder names."""
 
     def test_names(self):
+        from claimset.revision import record_name
+        self.assertEqual(record_name("doi:10.0000/claimset.2026.000789"), "10.0000_claimset.2026.000789")
+        self.assertEqual(record_name("entrylib:2026.000123"), "entrylib_2026.000123")
+
+    def test_paths_group_by_year_and_thousands(self):
         from claimset.revision import record_folder
-        self.assertEqual(record_folder("doi:10.0000/claimset.2026.000789"), "10.0000_claimset.2026.000789")
-        self.assertEqual(record_folder("entrylib:2026.000123"), "entrylib_2026.000123")
+        self.assertEqual(record_folder("entrylib:2026.000123"), "2026/000/entrylib_2026.000123")
+        self.assertEqual(record_folder("entrylib:2026.000999"), "2026/000/entrylib_2026.000999")
+        self.assertEqual(record_folder("entrylib:2026.001350"), "2026/001/entrylib_2026.001350")
+        self.assertEqual(record_folder("entrylib:2027.1234567"), "2027/1234/entrylib_2027.1234567")
+        self.assertEqual(record_folder("doi:10.0000/claimset.2026.000789"), "2026/000/10.0000_claimset.2026.000789")
 
     def test_refuses_what_is_not_an_identifier(self):
-        from claimset.revision import record_folder
+        from claimset.revision import record_folder, record_name
         for bad in ("entrylib:2026.000123@v2", "doi:10.1016/j.x", "../etc", None):
-            with self.assertRaises(ValueError):
-                record_folder(bad)
+            for fn in (record_folder, record_name):
+                with self.assertRaises(ValueError):
+                    fn(bad)
 
 
 if __name__ == "__main__":
