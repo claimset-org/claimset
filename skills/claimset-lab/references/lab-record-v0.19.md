@@ -11,6 +11,12 @@ A private source's files, and the salt of the study's pseudonyms, were committed
 - §6: L24 and L25 are checked for a private source wherever its files are present; where they are absent, `verify` says which sources it could not check.
 - Records begun before v0.19 keep the private files and the salt they committed (the branch's history is never rewritten); `verify` notes them. Sources they capture from now on are kept out of git.
 
+The lab skill had the agent type the human's registration, which the record then showed as written by the human: the one place the log said a person wrote what they did not.
+
+- §5.2, *Registration*: an agent registers itself first. A person registers themselves, or an agent registers them with their reply quoted verbatim (`words`, and optionally `given_at` and `channel`), as an agent records an approval (§5.8); the event is the agent's.
+- §6: new rule L28. An agent's registration of a person without their words is refused; `words` are given only by an agent quoting a person.
+- `verify` notes a record with no human actor (an agent working alone), and, in records begun before v0.19, people who registered themselves and then the agent, as the skill then had the agent type both.
+
 ## Changes in v0.18 (since v0.17)
 
 A qualitative test's rules were text, judged by the writer: "supported if at least 5 independent threads from different years ask for automatic arranging" could be written but not computed, and nothing showed whether the threads had been coded before the test was fixed. A one-day desk scan also had to keep a git remote it did not need.
@@ -349,7 +355,16 @@ Locally, the log is tamper-evident. With anchoring, tampering is always detected
 
 Registers a person or agent who will write events. Mirrors claimset contributors.
 
-`{kind: agent | human | organisation, name, orcid, models: [{provider, name, version, identifier}], record_source: harness | user_reported | self_reported}`
+`{kind: agent | human | organisation, name, orcid, models: [{provider, name, version, identifier}], record_source: harness | user_reported | self_reported, words, given_at, channel}`
+
+**Registration.** An actor is registered by itself (the event's `by` is its own ID) or by an actor already registered (L8). Every event's `by` is the actor who wrote it, so:
+
+- **An agent registers itself first**, before anyone else: `claimset lab actor --kind agent --name … --model …`. That is the only registration it writes as itself.
+- **A person** registers themselves (`claimset lab actor --kind human --name …`, run by them), or an agent registers them: `claimset lab actor --kind human --name … --orcid … --words "…" --by <agent>`. The event is the agent's, and `words` is the person's reply giving their name (and ORCID iD), verbatim; `given_at` (when they gave it, UTC) and `channel` (chat, email, in person) are optional. An agent correcting a person's registration quotes them too (L28).
+- **No person present.** An agent works alone and registers only itself; `verify` notes that the record has no human actor. A person is registered later the same way, and their ID is used only from then on. Approvals (§5.8) and the guarantor export asks for need one.
+- `words` is given only when an agent records what a person told it; an actor registering itself, or a person registering someone, writes as themselves and gives none.
+
+The tool cannot prove who typed a command: once a person's ID exists, nothing in the record stops an agent from writing with it. The rule makes the honest path the normal one and puts the person's words in the record; the protections of §4.5 keep the log from being rewritten afterwards, but do not stop a false `by` when an event is written. A person who wants their events to be beyond doubt writes them themselves. Records begun before v0.19 had no rule L28: their registrations stay valid, and `verify` notes people who registered themselves and then the agent, as the lab skill then had the agent type both.
 
 ### 5.3 `question` (prefix `Q`)
 
@@ -718,6 +733,7 @@ L24. Each source's folder (`sources/<id>/`, or `private/sources/<id>/` for a pri
 L25. An excerpt quoted from a source is in that source's text (§5.20); a coding's `quote` is in its source's text at its recorded position (§5.21).
 L26. A source whose `rights.holder` is `third_party` is `public` only with a `licence` or `terms` (§5.20).
 L27. A coding names a captured source and, unless it is withdrawn, at least one code: a term with a `code` part (§5.19, §5.21); its `code_versions` name versions of those codes. The codes a plan's counts name are codes of the codebook (§5.21.1).
+L28. In records begun under v0.19 or later: an `actor` event of kind `human` written by an agent actor (its `by` is an agent, not the actor registered) has non-empty `words`, the person's own reply; `words` appear only in such events (§5.2).
 
 The tool enforces L1–L5 and L8–L23 mechanically, and refuses L6 and L7 violations. L15–L17 apply to records begun under v0.5 or later, and to records whose `init` is withheld. Where a check depends on withheld content (a withheld run, result or plan), `verify` does not report it as a violation; withholding lowers verifiability instead (§8).
 
@@ -837,7 +853,7 @@ The reference tool is part of the `claimset` package. Indicative commands:
 | `claimset studies` | the studies of the repository: events, open hypotheses, pending plans, commits not pushed |
 | `claimset lab paper NAME --questions Q1 Q2` | records a paper and the questions it reports (§5.17) |
 | `claimset lab move [--to DIR] [--study NAME] [--also OLD=NEW …]` | moves the lab (default `claimset/<study>/lab`) and other files, and records the relocation (§3.4) |
-| `claimset lab actor` | registers an actor |
+| `claimset lab actor --kind agent\|human\|organisation --name … [--orcid …] [--model …] [--words "…" [--given-at T] [--channel …]]` | registers an actor: an agent itself, a person themselves, or an agent a person with their words (§5.2) |
 | `claimset lab question` / `hypothesis` / `assume` / `note` | writes the corresponding event |
 | `claimset lab term MASE --kind measure --definition "…" [--source …]` | records a term (§5.19) |
 | `claimset lab term "arrange for ensemble" --kind concept --definition "…" --include "…" [--exclude "…"] [--example "…"] [--broader TM3]` | records a code of the codebook (§5.19) |

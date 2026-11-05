@@ -498,6 +498,63 @@ def check_actor(state, body, by, eid):
                 raise LabError("schema", "actor: each model needs provider, name and version")
     if body.get("orcid") and not ORCID_RE.match(str(body["orcid"])):
         raise LabError("schema", "actor: orcid must look like 0000-0002-1825-0097")
+    _check_given(body, "actor")
+    check_registration(state, body, by, eid)
+
+
+REGISTRATION_VERSION = (0, 19)
+
+
+def _check_given(body, what):
+    """`words`, `given_at` and `channel`: what a person said, when and how, as an agent records it."""
+    if body.get("words") is not None and (not isinstance(body["words"], str) or not body["words"].strip()):
+        raise LabError("schema", f"{what}: words must be the person's reply, as non-empty text")
+    for f in ("given_at", "channel"):
+        if body.get(f) is not None and (not isinstance(body[f], str) or not body[f].strip()):
+            raise LabError("schema", f"{what}: {f} must be non-empty text")
+    if body.get("given_at") is not None and not re.match(r"^\d{4}-\d{2}-\d{2}(T[0-9:.]+Z?)?$", body["given_at"]):
+        raise LabError("schema", f"{what}: given_at is an ISO 8601 date or time (UTC), e.g. 2026-10-29T11:30:00Z")
+
+
+def check_registration(state, body, by, eid):
+    """Rule L28 (records begun under v0.19 or later): an actor is registered by itself, or by an actor already
+    registered; an agent registering (or correcting) a person quotes the person's own words."""
+    if state.spec_version is not None and state.spec_version < REGISTRATION_VERSION:
+        return
+    if by == eid:
+        if body.get("words") is not None:
+            raise LabError("L28", "actor: words record what a person told the agent registering them; an actor "
+                                  "registering itself gives none")
+        return
+    writer = state.latest(by)
+    kind = None if writer is None or is_withheld(writer) else writer["body"].get("kind")
+    if body.get("kind") == "human" and kind == "agent":
+        if not body.get("words"):
+            raise LabError("L28", "actor: an agent registers a person only with the person's own words: their reply "
+                                  "giving their name (and ORCID iD), verbatim (--words \"…\"); or the person runs "
+                                  "`claimset lab actor --kind human` themselves")
+    elif body.get("words") is not None and kind != "agent":
+        raise LabError("L28", "actor: words record what a person told the agent writing the event; a person "
+                              "registering someone writes as themselves")
+
+
+def actor_notes(state, events):
+    """What verify says about the record's actors: no person registered yet, and (in records begun before v0.19)
+    people who registered themselves before the agent that the lab skill then had type both registrations."""
+    actors = [e for e in events if isinstance(e, dict) and e.get("type") == "actor" and not e.get("supersedes")]
+    kinds = {e["id"]: (None if is_withheld(e) else (e.get("body") or {}).get("kind")) for e in actors}
+    notes = []
+    if actors and "human" not in kinds.values() and None not in kinds.values():
+        notes.append("the record has no human actor: an agent works alone until the person responsible is "
+                     "registered (they run `claimset lab actor --kind human`, or the agent registers them with "
+                     "their words); approvals and export's guarantor need one")
+    if state.spec_version is not None and state.spec_version < REGISTRATION_VERSION:
+        typed = sorted({e["by"] for e in actors if kinds.get(e["id"]) == "agent" and kinds.get(e.get("by")) == "human"
+                        and any(a["id"] == e["by"] and a.get("by") == a["id"] for a in actors)})
+        if typed:
+            notes.append(f"human actors {', '.join(typed)} registered themselves and then the agent, as the lab skill "
+                         f"before v0.19 had the agent type both; the record cannot tell who typed them")
+    return notes
 
 
 def check_question(state, body, by, eid):
@@ -1235,11 +1292,7 @@ def check_approval(state, body, by, eid):
         raise LabError("L22", f"approval: {behalf} is not a human actor; approvals are given by people")
     if not isinstance(body.get("words"), str) or not body["words"].strip():
         raise LabError("L22", "approval: give the human's words, as they gave them (--words)")
-    for f in ("given_at", "channel"):
-        if body.get(f) is not None and (not isinstance(body[f], str) or not body[f].strip()):
-            raise LabError("schema", f"approval: {f} must be non-empty text")
-    if body.get("given_at") is not None and not re.match(r"^\d{4}-\d{2}-\d{2}(T[0-9:.]+Z?)?$", body["given_at"]):
-        raise LabError("schema", "approval: given_at is an ISO 8601 date or time (UTC), e.g. 2026-10-29T11:30:00Z")
+    _check_given(body, "approval")
 
 
 def plan_approved(state, plan_version_id):
@@ -1945,6 +1998,7 @@ def verify(lab, check_files=True, remote=False):
         st.apply(e)
     rep["errors"] += verify_layout(lab, st)
     rep["notes"] += layout_notes(lab, st)
+    rep["notes"] += actor_notes(st, events)
     if check_files:
         from .sources import source_notes
         rep["notes"] += source_notes(lab, events)

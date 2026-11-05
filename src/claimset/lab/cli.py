@@ -193,9 +193,13 @@ def cmd_actor(args):
     st = lab.state()
     new_id = st.next_id("actor")
     by = _actor(args, required=False) or new_id
+    if args.words and by == new_id:
+        raise LabError("L28", "actor: --words records what a person told the agent registering them; give the "
+                              "agent's ID with --by (or $CLAIMSET_ACTOR)")
     body = {"kind": args.kind, "name": args.name, "orcid": args.orcid,
             "models": [_parse_model(m) for m in args.model] or None,
-            "record_source": args.record_source}
+            "record_source": args.record_source, "words": args.words, "given_at": args.given_at,
+            "channel": args.channel}
     event = lab.append("actor", _clean(body), by=by, supersedes=args.supersedes)
     _emit(args, event)
     return 0
@@ -834,6 +838,10 @@ def add_parser(subparsers):
                    help="'provider|name|version[|identifier]'; repeat for several models")
     p.add_argument("--orcid")
     p.add_argument("--record-source", choices=["harness", "user_reported", "self_reported"])
+    p.add_argument("--words", help="an agent registering a person: the person's reply giving their name (and ORCID "
+                                   "iD), verbatim")
+    p.add_argument("--given-at", dest="given_at", metavar="TIME", help="when they gave it, UTC")
+    p.add_argument("--channel", help="how they gave it (chat, email, in person)")
 
     p = cmd("question", cmd_question, "record a research question")
     p.add_argument("text")
