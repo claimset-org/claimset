@@ -31,6 +31,20 @@ def _text(event):
         return f"{b.get('run')} vs {b.get('plan')}: {b.get('text', '')}"
     if event["type"] == "merge":
         return f"{b.get('events_merged')} events from {', '.join(b.get('agents') or [])}"
+    if event["type"] == "term":
+        crit = f"; coded when: {b['code'].get('include')}" if isinstance(b.get("code"), dict) else ""
+        return f"{b.get('term')} [{b.get('kind')}]{crit}"
+    if event["type"] == "source":
+        bits = [b.get("title") or b.get("uri") or (b.get("files") or [{}])[0].get("path", "")]
+        bits += [x for x in (b.get("venue"), b.get("published_at"), b.get("visibility")) if x]
+        return " · ".join(str(x) for x in bits if x)
+    if event["type"] == "coding":
+        if b.get("withdrawn"):
+            return f"{b.get('source')}: withdrawn"
+        if b.get("none_apply"):
+            return f"{b.get('source')}: no code applies"
+        quote = f' "{b["quote"].get("exact")}"' if isinstance(b.get("quote"), dict) else " (whole source)"
+        return f"{b.get('source')} {', '.join(b.get('codes') or [])}:{quote}"
     return ""
 
 

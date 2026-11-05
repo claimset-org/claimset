@@ -46,7 +46,8 @@ ENUM = {
     "anchor": {"platform", "rfc3161", "git_remote", "none"},
     "framework": {"frequentist", "equivalence", "bayesian", "deterministic", "formal", "qualitative"},
     "verdict": {"computed", "judged"},
-    "test_flag": {"code_changed_after_plan", "holdout_used_elsewhere", "reproduces_prompting_result"},
+    "test_flag": {"code_changed_after_plan", "holdout_used_elsewhere", "reproduces_prompting_result",
+                  "sources_captured_after_plan", "coded_before_plan", "codebook_changed_after_plan"},
     "assumption_category": {"theoretical", "statistical", "methodological", "data", "axiom",
                             "theorem_condition", "paradigmatic"},
     "check": {"tested", "sensitivity_analysed", "unchecked", "untestable"},
@@ -54,7 +55,8 @@ ENUM = {
     "data_origin": {"primary", "secondary"},
     "design": {"experiment", "quasi_experiment", "observational", "survey", "benchmark", "other"},
     "data_sources": {"interview", "focus_group", "ethnography", "observation", "document", "other"},
-    "analytic_approach": {"thematic", "grounded_theory", "ipa", "discourse", "framework", "case_study", "other"},
+    "analytic_approach": {"thematic", "grounded_theory", "ipa", "discourse", "framework", "case_study",
+                          "content_analysis", "other"},
     "design_model_role": {"subject", "instrument", "annotator", "generator", "baseline"},
     "reasoning": {"deductive", "inductive", "abductive", "analogical", "interpretive"},
     "artefact_kind": {"code", "data", "protocol", "proof", "model", "software", "figure", "table",
@@ -494,6 +496,8 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
                     r.err("49", f"{w}.field", f"'{fld}' does not begin with the ID of an object in the file")
 
     # ---------- References (rule 51) ----------
+    captured = {a.get("reference") for a in coll["artefacts"] if isinstance(a, dict)
+                and isinstance(a.get("version"), str) and a["version"].startswith("sha256:")}
     for b in coll["references"]:
         if not isinstance(b, dict):
             continue
@@ -503,7 +507,11 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
         if b.get("id_type") not in ENUM["id_type"] | ENUM["rel_id_type"]:
             r.err("51", f"{bw}.id_type", f"'{b.get('id_type')}' is not an identifier type for cited works")
         if b.get("id_type") == "url" and not b.get("archive_uri"):
-            r.err("51", bw, "url targets require archive_uri")
+            if b.get("id") in captured:     # a captured copy, held with its hash (v0.37, amended)
+                r.warn("W32", bw, "no archived copy of the page: the claimset holds a captured copy (the artefact "
+                                  "naming this reference, by its hash); give archive_uri if the page can be archived")
+            else:
+                r.err("51", bw, "url targets require archive_uri")
         if b.get("id_type") == "reference" and not converted:
             r.warn("W14", f"{bw}.id_type", "a printed reference without identifier: give the cited work's identifier (doi, arxiv, …)")
     if coll["references"]:
@@ -1426,15 +1434,34 @@ def value_ok(v):
     if isinstance(v, str):
         return bool(v.strip())
     if isinstance(v, dict):
+        loc = v.get("locator")
         return (set(v) <= EXCERPT_FIELDS and isinstance(v.get("text"), str) and v["text"].strip() != ""
-                and isinstance(v.get("locator"), str) and v["locator"].strip() != ""
-                and all(isinstance(v[k], str) for k in v))
+                and (isinstance(loc, str) and loc.strip() != "" or isinstance(loc, dict))
+                and all(isinstance(v[k], str) for k in v if k != "locator"))
     return False
 
 
 def _coord_ok(k, v):
     return isinstance(k, str) and k.strip() and (isinstance(v, bool) or _is_number(v)
                                                  or (isinstance(v, str) and v.strip()))
+
+
+LOCATOR_FIELDS = {"artefact", "start", "end", "lab_event"}
+LAB_EVENT_RE = re.compile(r"^(AC\d+\.)?[A-Z]{2}\d+$")
+
+
+def check_locator(r, w, loc, ref):
+    """Rule 78: a structured excerpt locator {artefact, start, end, lab_event}."""
+    extra = sorted(set(loc) - LOCATOR_FIELDS)
+    if extra:
+        r.err("78", w, f"a structured locator has only artefact, start, end and lab_event, not {', '.join(extra)}")
+    ref("78", f"{w}.artefact", loc.get("artefact"), "artefacts")
+    start, end = loc.get("start"), loc.get("end")
+    if not (isinstance(start, int) and not isinstance(start, bool) and isinstance(end, int)
+            and not isinstance(end, bool) and 0 <= start < end):
+        r.err("78", w, "start and end are the excerpt's character positions in the artefact's text, 0 <= start < end")
+    if "lab_event" in loc and not (isinstance(loc["lab_event"], str) and LAB_EVENT_RE.match(loc["lab_event"])):
+        r.err("78", f"{w}.lab_event", "a lab record event ID (CD3, AC2.CD3)")
 
 
 def check_result(r, rw, rs, ref):
@@ -1446,6 +1473,8 @@ def check_result(r, rw, rs, ref):
         r.err("66", rw, "missing variable: what is observed (a definition ID or text)")
     if not value_ok(rs.get("value")):
         r.err("66", f"{rw}.value", "a number, a category, a boolean, or an excerpt {text, locator}")
+    elif isinstance(rs.get("value"), dict) and isinstance(rs["value"].get("locator"), dict):
+        check_locator(r, f"{rw}.value.locator", rs["value"]["locator"], ref)
     if "unit" in rs and rs["unit"] is not None and not (isinstance(rs["unit"], str) and rs["unit"].strip()):
         r.err("66", f"{rw}.unit", "a UCUM code or text")
     if "n" in rs and not (isinstance(rs["n"], int) and not isinstance(rs["n"], bool) and rs["n"] >= 0):
@@ -2041,6 +2070,24 @@ def validate_package(path):
             r.err("70", aw, f"{u} is not in the manifest with its checksum")
         if a.get("version") != f"sha256:{digest}":
             r.err("70", f"artefacts:{a.get('id')}.version", f"sha256:{digest}, the checksum of {u}")
+    texts = {}
+    for a in as_list(doc.get("artefacts")):
+        a = as_dict(a)
+        u = a.get("uri")
+        f = root / f"data/{u}" if is_relative_uri(u) else None
+        if f is not None and f.is_file() and f.suffix.lower() in (".txt", ".md", ".csv"):
+            texts[a.get("id")] = f
+    for e in as_list(doc.get("evidence")):
+        for rs in as_list(as_dict(e).get("results")):
+            v = as_dict(rs).get("value")
+            loc = v.get("locator") if isinstance(v, dict) else None
+            if not isinstance(loc, dict) or loc.get("artefact") not in texts:
+                continue
+            text = texts[loc["artefact"]].read_text(encoding="utf-8", errors="replace")
+            start, end = loc.get("start"), loc.get("end")
+            if isinstance(start, int) and isinstance(end, int) and text[start:end] != v.get("text"):
+                r.err("78", f"evidence:{as_dict(e).get('id')}.results:{as_dict(rs).get('id')}.value",
+                      f"the excerpt is not the characters {start} to {end} of {loc['artefact']}'s file")
     if tmp is not None:
         tmp.cleanup()
     return r, doc

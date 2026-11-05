@@ -440,5 +440,71 @@ class TestConcurrentWriters(StudyRepo):
         self.assertEqual(rep["warnings"], [])
 
 
+class TestDeskMode(StudyRepo):
+    """Lab record v0.18 §7.1: desk mode keeps the hash chain and plan-before-test, commits every command on the
+    study branch, pushes nothing, and says so in the export."""
+
+    def desk_study(self):
+        code, out, err = self.cli("setup", "--study", "desk", "--title", "Forum scan", "--desk")
+        self.assertEqual(code, 0, err)
+        code, out, err = self.cli("lab", "actor", "--kind", "human", "--name", "R", "--study", "desk")
+        self.assertEqual(code, 0, err)
+        os.environ["CLAIMSET_ACTOR"] = "AC1"
+        return Lab(self.top / "claimset" / "desk" / "lab")
+
+    def on_remote(self):
+        return subprocess.run(["git", "ls-remote", "--heads", str(self.remote), "claimset/desk"],
+                              capture_output=True, text=True).stdout.strip()
+
+    def test_commits_without_pushing_and_allows_confirmatory_runs(self):
+        from claimset.lab.export import export
+        from claimset.lab.run import run_command
+        lab = self.desk_study()
+        self.assertEqual(self.cli("lab", "note", "A note.", "--study", "desk")[0], 0)
+        study = self.top / "claimset" / "desk"
+        self.assertEqual(git("status", "--porcelain", "--ignored", cwd=study), "")
+        self.assertEqual(self.on_remote(), "")                                     # nothing pushed
+        self.assertGreaterEqual(int(git("rev-list", "--count", "HEAD", cwd=study)), 3)
+        before = len(lab.read())
+        h = lab.append("hypothesis", {"statement": "X.", "question": lab.append("question", {"text": "Q?"},
+                                                                                  by="AC1")["id"],
+                                      "origin": "a_priori"}, by="AC1")["id"]
+        pl = lab.append("plan", {"kind": "confirmatory", "hypotheses": [h], "design": "d", "analysis": "a",
+                                 "decision": {"framework": "qualitative", "supported": "s", "not_supported": "n"}},
+                        by="AC1")["id"]
+        record.save(lab, before)
+        (self.top / "noop.py").write_text("pass\n")
+        out = run_command(lab, "AC1", [sys.executable, "noop.py"], plan=pl, echo=False, cwd=self.top)
+        self.assertEqual(out["run"]["body"]["label"], "confirmatory")             # no anchor is required
+        record.save(lab, before)
+        self.assertEqual(git("status", "--porcelain", "--ignored", cwd=study), "")
+        lab.append("status", {"target": h, "to": "inconclusive", "rationale": "r", "plan": pl, "rule": "neither",
+                              "evidence": [out["run"]["id"]]}, by="AC1")
+        draft = export(lab)["draft"]
+        claim = next(c for c in draft["claims"] if c.get("hypothesis", {}).get("lab_event") == h)
+        self.assertEqual(claim["planned_at_anchor"], "none")
+        art = next(a for a in draft["artefacts"] if a["kind"] == "lab_record")
+        self.assertIn("desk mode", art["description"])
+        self.assertTrue(verify(lab)["ok"], verify(lab)["errors"])
+        code, _, err = self.cli("lab", "anchor", "--study", "desk")
+        self.assertNotEqual(code, 0)
+        self.assertIn("desk mode", err)
+        code, out, _ = self.cli("studies")
+        self.assertIn("desk mode: committed, not pushed or anchored", out)
+
+    def test_a_remote_given_later_starts_anchoring(self):
+        lab = self.desk_study()
+        self.assertEqual(self.cli("lab", "note", "A note.", "--study", "desk")[0], 0)
+        code, out, err = self.cli("setup", "--study", "desk")                     # no --remote: stays in desk mode
+        self.assertEqual((code, self.on_remote()), (0, ""), err)
+        code, out, err = self.cli("setup", "--study", "desk", "--remote", "origin")
+        self.assertEqual(code, 0, err)
+        self.assertIn("now pushed to origin", out)
+        self.assertNotEqual(self.on_remote(), "")
+        self.assertFalse(record.desk(lab))
+        self.assertEqual(self.cli("lab", "note", "Anchored now.", "--study", "desk")[0], 0)
+        self.assertTrue(verify(lab, remote=True)["ok"], verify(lab, remote=True)["errors"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -55,8 +55,12 @@ def _val(v):
             out += f" (gloss: {v['gloss']})"
         if v.get("translation"):
             out += f" ('{v['translation']}')"
-        if v.get("locator"):
-            out += f" ({v['locator']})"
+        loc = v.get("locator")
+        if isinstance(loc, dict):
+            where = f"{loc.get('artefact')}, characters {loc.get('start')}–{loc.get('end')}"
+            out += f" ({where}{', ' + loc['lab_event'] if loc.get('lab_event') else ''})"
+        elif loc:
+            out += f" ({loc})"
         return out
     return "" if v is None else _s(v)
 

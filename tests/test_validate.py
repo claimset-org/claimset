@@ -2033,3 +2033,84 @@ class TestRulesV036(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestExcerptLocators(Base):
+    """Rule 78 (v0.37, amended): structured excerpt locators; the lab record's v0.16-v0.18 test flags."""
+
+    THREAD = "Feature request\nIt would be great if MuseScore could arrange a piano score for a woodwind quintet.\n"
+
+    def doc(self, locator, uri="sources/SR1.txt"):
+        d = load("submission-native.json")
+        d["artefacts"].append({"id": "A3", "kind": "data", "description": "A captured forum thread.", "uri": uri,
+                               "availability": {"level": "public"}, "licence": "CC-BY-4.0"})
+        start = self.THREAD.index("arrange")
+        text = self.THREAD[start:start + len("arrange a piano score for a woodwind quintet")]
+        d["evidence"][0]["results"] = [{"id": "R1", "variable": "arrange for ensemble",
+                                        "value": {"text": text, "locator": locator}}]
+        return d, start, start + len(text)
+
+    def test_structured_locator_passes(self):
+        d, s, e = self.doc(None)
+        d["evidence"][0]["results"][0]["value"]["locator"] = {"artefact": "A3", "start": s, "end": e,
+                                                              "lab_event": "CD3"}
+        self.assertValid(d)
+        d["evidence"][0]["results"][0]["value"]["locator"] = "thread 42911, second post"     # text, as before
+        self.assertValid(d)
+
+    def test_broken_locators_fail_78(self):
+        for loc in ({"artefact": "A9", "start": 0, "end": 5}, {"artefact": "A3", "start": 5, "end": 5},
+                    {"artefact": "A3", "start": -1, "end": 5}, {"artefact": "A3", "start": 0, "end": 5, "line": 2},
+                    {"artefact": "A3", "start": 0, "end": 5, "lab_event": "coding 3"}):
+            d, _, _ = self.doc(loc)
+            self.assertRule(d, "78")
+
+    def test_packaged_text_is_checked(self):
+        import tempfile
+        from claimset.package import build
+        from claimset.validate import validate_path
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "study"
+            (root / "sources").mkdir(parents=True)
+            (root / "sources" / "SR1.txt").write_text(self.THREAD, encoding="utf-8")
+            for shift, ok in ((0, True), (1, False)):
+                d, s, e = self.doc({"artefact": "A3", "start": 0, "end": 1})
+                d["evidence"][0]["results"][0]["value"]["locator"] = {"artefact": "A3", "start": s + shift,
+                                                                      "end": e + shift}
+                src = root / "paper.claimset.json"
+                src.write_text(json.dumps(d), encoding="utf-8")
+                out = Path(tmp) / f"bag{shift}"
+                build(src, out)
+                rules = {x["rule"] for x in validate_path(str(out)).errors}
+                self.assertEqual("78" in rules, not ok, rules)
+
+    def test_qualitative_test_flags_are_valid(self):
+        d = load("submission-from-lab.json")
+        claim = next(c for c in d["claims"] if c.get("test"))
+        for flag in ("sources_captured_after_plan", "coded_before_plan", "codebook_changed_after_plan"):
+            claim["test"]["flags"] = [flag]
+            self.assertNotIn("47", self.rules(d)[0], flag)
+        claim["test"]["flags"] = ["read_the_answers_first"]
+        self.assertRule(d, "47")
+
+
+class TestCapturedCopies(Base):
+    """Rule 51 (v0.37, amended) and warning 32: a captured copy stands in for a missing archive."""
+
+    def doc(self, version):
+        d = load("submission-native.json")
+        d.setdefault("references", []).append({"id": "B9", "target": "https://forum.example/t/1", "id_type": "url"})
+        art = {"id": "A3", "kind": "data", "description": "A captured forum thread.", "reference": "B9",
+               "availability": {"level": "author_only", "reason": "legal", "content_hash": "sha256:" + "a" * 64}}
+        if version:
+            art["version"] = version
+        d["artefacts"].append(art)
+        return d
+
+    def test_captured_copy_passes_with_a_warning(self):
+        d = self.doc("sha256:" + "a" * 64)
+        self.assertNotIn("51", self.rules(d)[0])
+        self.assertWarning(d, "W32")
+
+    def test_no_copy_and_no_archive_fails_51(self):
+        self.assertRule(self.doc(None), "51")

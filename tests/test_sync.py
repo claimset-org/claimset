@@ -40,3 +40,19 @@ class TestPackageVersion(unittest.TestCase):
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
         self.assertEqual(re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1), __version__)
         self.assertTrue(__version__.startswith(SPEC_VERSION + "."), __version__)
+
+
+class TestSkillReferences(unittest.TestCase):
+    """Every file a SKILL.md names under references/ exists in that skill (a skill that names an old
+    specification sends its reader to a file that is not there)."""
+
+    def test_referenced_files_exist(self):
+        import re
+        root = Path(__file__).resolve().parent.parent / "skills"
+        missing = []
+        for skill in sorted(root.glob("*/SKILL.md")):
+            for ref in set(re.findall(r"references/[A-Za-z0-9_.-]+\.md", skill.read_text(encoding="utf-8"))):
+                if not (skill.parent / ref).is_file():
+                    missing.append(f"{skill.parent.name}: {ref}")
+        self.assertEqual(missing, [])
+

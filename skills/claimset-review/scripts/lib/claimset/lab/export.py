@@ -7,12 +7,14 @@ completion list: a claimset never contains instructions.
 """
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
 from .. import LAB_SPEC_VERSION, SPEC_VERSION, __version__
 from .anchor import covers, read_anchors
 from . import decision as _decision
+from . import record as _record
 from .core import (RENAMED_KINDS, SETUP_ROLES, TERM_ID_RE, TERM_MARK_RE, LabError, State, agent_base, file_hash, final_statuses,
                    is_withheld, plan_flags, verify)
 
@@ -20,6 +22,31 @@ FINAL = {"supported", "not_supported", "inconclusive", "revised", "abandoned"}
 OUTCOMES = ("supported", "not_supported", "inconclusive")
 ARTEFACT_KINDS = {"code", "data", "protocol", "proof", "model", "software", "figure", "table", "prompt",
                   "trace", "manuscript", "other"}
+
+
+BLOB_PATTERNS = (
+    (("github.com",), "{repo}/blob/{commit}/{path}"),
+    (("gitlab.com",), "{repo}/-/blob/{commit}/{path}"),
+    (("codeberg.org", "gitea.com"), "{repo}/src/commit/{commit}/{path}"),
+    (("bitbucket.org",), "{repo}/src/{commit}/{path}"),
+)
+
+
+def _blob_pattern(repo):
+    """The URL pattern of a file at a commit on a repository's host, or None if the host is not known. Hosts are
+    matched by name: a self-hosted GitLab whose name contains "gitlab", or a Gitea or Forgejo whose name contains
+    "gitea" or "forgejo", are recognised too."""
+    if not isinstance(repo, str) or not repo.startswith("https://"):
+        return None
+    host = repo[len("https://"):].split("/", 1)[0].lower()
+    for hosts, pattern in BLOB_PATTERNS:
+        if host in hosts:
+            return pattern
+    if "gitlab" in host:
+        return "{repo}/-/blob/{commit}/{path}"
+    if "gitea" in host or "forgejo" in host:
+        return "{repo}/src/commit/{commit}/{path}"
+    return None
 
 
 def _repo_path(path):
@@ -280,10 +307,37 @@ class _Exporter:
                                   f"so their code version is not exactly the recorded commit.")
         if execution:
             ev["execution"] = execution
+        coded = self.coded_sources(visible)
+        if coded is not None:                   # runs that read the codings: a content analysis of documents
+            ev["profile"] = "qual"
+            ev.pop("design", None)
+            ev.update(data_sources=["document"], analytic_approach="content_analysis",
+                      n_participants_or_cases=len(coded))
+            ev["_sources"] = coded
+            self.todo(f"evidence.{eid}", f"{eid} counts coded sources (exported as qual, content_analysis, documents): "
+                                         f"confirm, give its sampling, and make its description self-contained")
+        else:
+            self.todo(f"evidence.{eid}", f"choose the profile and design of {eid} (exported as quant, design other) "
+                                         f"and make its description self-contained")
         self.evidence.append(ev)
-        self.todo(f"evidence.{eid}", f"choose the profile and design of {eid} (exported as quant, design other) and "
-                                     f"make its description self-contained")
         return eid, refs
+
+    def coded_sources(self, runs):
+        """The sources whose codings the runs read (from their codings.json), or None if none read codings."""
+        out, any_coded = [], False
+        for r in runs:
+            if not isinstance(r["body"].get("codings"), dict):
+                continue
+            any_coded = True
+            path = self.lab.root / "runs" / r["id"] / str(r["body"]["codings"].get("path"))
+            try:
+                snap = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            for c in snap.get("codings") or []:
+                if c.get("source") not in out:
+                    out.append(c.get("source"))
+        return out if any_coded else None
 
     def hypothesis_at(self, hypothesis_id, pos):
         """The latest version of a hypothesis written before position `pos` (not withheld), or None."""
@@ -329,7 +383,8 @@ class _Exporter:
                                                f"exported as evidence")
         if cited_runs:
             eid, refs = self.make_evidence(cited_runs)
-            support = {"kind": "empirical_quant", "evidence": eid}
+            profile = next((e.get("profile") for e in self.evidence if e["id"] == eid), "quant")
+            support = {"kind": "empirical_qual" if profile == "qual" else "empirical_quant", "evidence": eid}
             cited = [refs[x] for x in cited_results if x in refs]
             if cited or refs:
                 support["results"] = cited or list(refs.values())
@@ -452,9 +507,11 @@ class _Exporter:
                 self.add_deviation_limitation(claim, r, pv, dv)
 
     def pinned_lab_uri(self, repo, rel):
-        """A URI of exactly this version of the log: the git anchor commit of its last event, for a repository
-        on GitHub. None if the last event is not anchored by a git commit, or the host is not known."""
-        if not repo or not repo.startswith("https://github.com/"):
+        """A URI of exactly this version of the log: the git anchor commit of its last event, on the repository's
+        host (GitHub, GitLab, Codeberg and other Gitea or Forgejo hosts, Bitbucket). None if the last event is not
+        anchored by a git commit, or the host is not known."""
+        pattern = _blob_pattern(repo)
+        if pattern is None:
             return None
         lines = [l for l in self.lab.log_path.read_text(encoding="utf-8").splitlines() if l.strip()]
         if not lines:
@@ -463,7 +520,7 @@ class _Exporter:
         for a in reversed(read_anchors(self.lab)):
             commit = (a.get("receipt") or {}).get("commit") if isinstance(a, dict) else None
             if a.get("service") == "git_remote" and a.get("seq") == head and isinstance(commit, str) and commit:
-                return f"{repo.rstrip('/')}/blob/{commit}/{rel}"
+                return pattern.format(repo=repo.rstrip("/").removesuffix(".git"), commit=commit, path=rel)
         return None
 
     def export_checks(self):
@@ -568,7 +625,10 @@ class _Exporter:
                "description": "Lab record of the study: questions, hypotheses, plans, runs, results and decisions, "
                               "as an append-only, hash-chained event log (Claimset lab record specification "
                               f"v{init.get('lab_spec_version') or LAB_SPEC_VERSION}, begun "
-                              f"{str(init.get('started_at') or '')[:10]}; exported with claimset {__version__})."}
+                              f"{str(init.get('started_at') or '')[:10]}; exported with claimset {__version__})."
+                              + (" Kept in desk mode, without a remote: the hash chain fixes the order of events, "
+                                 "their times are the recording tool's clock, and nothing is anchored."
+                                 if _record.desk(self.lab) else "")}
         withheld = [{"event": e["id"], "reason": e["body"].get("reason"), "comment": e["body"].get("comment")}
                     for e in self.st.events if is_withheld(e)]
         if withheld:
@@ -616,6 +676,10 @@ class _Exporter:
             when = f" on {str(b['retrieved_at'])[:10]}" if b.get("retrieved_at") else ""
             text = (f"{b.get('title') or 'Captured source'} ({b.get('format')}), {how}{when}; recorded in the lab "
                     f"record as {cur['id']} on {str(cur.get('at', ''))[:10]}.")
+            facts = [f"{k}: {b[k]}" for k, label in (("venue", "venue"), ("published_at", "published"),
+                                                    ("author", "author")) if b.get(k)]
+            if facts:                           # what counts distinct by venue, year or author read
+                text += " " + "; ".join(f.replace("published_at:", "published:") for f in facts) + "."
             if third:
                 text += " Written by others" + (f"; shared under: {rights['terms']}." if rights.get("terms") else ".")
             if b.get("description"):
@@ -646,6 +710,84 @@ class _Exporter:
                 self.references.append(ref)
                 art["reference"] = bid
             self.artefacts.append(art)
+        art_of = {sr: aid for aid, sr in self.mapping.items() if isinstance(sr, str) and sr.startswith("SR")}
+        self.exported_quotes = set()
+        for ev in self.evidence:
+            srcs = ev.pop("_sources", None)
+            if srcs is None:
+                continue
+            arts = [art_of[s] for s in srcs if s in art_of]
+            if arts:
+                ev["artefacts"] = list(dict.fromkeys(list(ev.get("artefacts") or []) + arts))
+            self.coded_evidence(ev, srcs, art_of)
+        self.excerpt_todo()
+
+    def coded_evidence(self, ev, srcs, art_of):
+        """Evidence from runs that read codings: the quoted passages of its sources as excerpts, how the coding
+        was done as a limitation, and what did the counting (§9)."""
+        from .sources import current_codings
+        dmap = getattr(self, "dmap", {})
+        codings = [c for c in current_codings(self.st) if c["body"].get("source") in srcs]
+        results = ev.setdefault("results", [])
+        for c in codings:
+            q = c["body"].get("quote")
+            if not isinstance(q, dict) or c["body"]["source"] not in art_of:
+                continue
+            code = self.st.root(c["body"]["codes"][0])
+            results.append({"id": f"R{len(results) + 1}", "variable": dmap.get(code, code),
+                            "value": {"text": q.get("exact"),
+                                      "locator": {"artefact": art_of[c["body"]["source"]], "start": q.get("start"),
+                                                  "end": q.get("end"), "lab_event": c["id"]}}})
+            self.exported_quotes.add(c["id"])
+        if not results:
+            ev.pop("results", None)
+        coders = {c.get("by") for c in codings}
+        passes = {str(c["body"].get("pass")) for c in codings if c["body"].get("pass") is not None}
+        if codings and len(coders) == 1 and len(passes) <= 1:
+            lid = f"L{len(self.limitations) + 1}"
+            affects = [cl["id"] for cl in self.claims
+                       if any(s.get("evidence") == ev["id"] for s in cl.get("support") or [])]
+            self.limitations.append({
+                "id": lid, "category": "measurement", "affects": affects, "impact": "could_bias_magnitude",
+                "mitigation": "none",
+                "statement": f"The {len(srcs)} sources of {ev['id']} were coded by one coder in one pass; agreement "
+                             f"between coders was not assessed."})
+            for cl in self.claims:
+                if cl["id"] in affects:
+                    cl.setdefault("limitations", []).append(lid)
+            self.todo(f"limitations.{lid}", f"review {lid}: exported because one coder coded the sources in one pass")
+        counters = [self.st.get(r) for r in ev.get("lab_runs") or []]
+        versions = sorted({(r["body"].get("parameters") or {}).get("counter") for r in counters
+                           if r and (r["body"].get("parameters") or {}).get("counter")})
+        if versions:
+            ex = ev.setdefault("execution", {})
+            note = (f"Counted by the counter of the lab record tool ({', '.join(versions)}, claimset/lab/count.py) "
+                    f"from the codings in force, recorded with the run (codings.json); the code version is the "
+                    f"study's code checkout, not the counter's.")
+            ex["notes"] = f"{ex['notes']} {note}" if ex.get("notes") else note
+
+    def excerpt_todo(self):
+        """Codings with a quote, as the excerpts a claim can give (claimset §3.4, rule 78)."""
+        from .sources import current_codings
+        art_of = {sr: aid for aid, sr in self.mapping.items() if isinstance(sr, str) and sr.startswith("SR")}
+        quoted = [c for c in current_codings(self.st) if isinstance(c["body"].get("quote"), dict)
+                  and c["id"] not in getattr(self, "exported_quotes", set())]
+        if getattr(self, "exported_quotes", None):
+            self.todo("evidence", f"{len(self.exported_quotes)} quoted codings are exported as excerpts of the evidence "
+                                  f"whose runs read them; keep those the claims rely on and remove the rest")
+        if not quoted:
+            return
+        lines = []
+        for c in quoted[:10]:
+            q = c["body"]["quote"]
+            loc = {"artefact": art_of.get(c["body"]["source"]), "start": q.get("start"), "end": q.get("end"),
+                   "lab_event": c["id"]}
+            lines.append(json.dumps({"text": q.get("exact"), "locator": loc}, ensure_ascii=False))
+        more = f" (and {len(quoted) - 10} more)" if len(quoted) > 10 else ""
+        self.todo("evidence", f"the record has {len(quoted)} quoted codings{more}: counts from codings come from the "
+                              f"runs that read them; an excerpt a claim gives is a result of a qual evidence object "
+                              f"whose value is the coding's quote with a structured locator, e.g. "
+                              + "; ".join(lines))
 
     def hypothesis_counts(self, hyps):
         counts = {k: 0 for k in ("supported", "not_supported", "inconclusive", "revised", "abandoned", "open")}
@@ -761,18 +903,13 @@ class _Exporter:
 
         def swap(v):
             return dmap.get(v.strip(), v) if isinstance(v, str) and TERM_ID_RE.match(v.strip()) else v
+        self.dmap = dmap
 
         for d in definitions:
             if "_broader" in d:
                 d["broader"] = [dmap[b] for b in d.pop("_broader") if b in dmap]
                 if not d["broader"]:
                     del d["broader"]
-        n_codings = sum(1 for e in self.roots if e["type"] == "coding")
-        if n_codings:
-            self.todo("evidence", f"the record has {n_codings} codings of captured sources: counts from them come "
-                                  f"from the runs that read them; an excerpt a claim gives is a result whose value "
-                                  f"is the coding's quote, with the source and position as its locator "
-                                  f"(e.g. SR1:120-168)")
 
         def marks(text):
             return TERM_MARK_RE.sub(lambda m: m.group(0).replace(m.group(1), dmap.get(m.group(1), m.group(1)), 1),
@@ -780,6 +917,9 @@ class _Exporter:
 
         for c in self.claims:
             c["statement"] = marks(c.get("statement"))
+            for q in ((c.get("test") or {}).get("quantities") or {}).values():
+                if isinstance(q, dict) and isinstance(q.get("count"), dict):
+                    q["count"] = dict(q["count"], codes=[swap(x) for x in q["count"].get("codes") or []])
             ab = c.get("about")
             if isinstance(ab, dict):
                 c["about"] = {"subject": swap(ab.get("subject")), "relation": ab.get("relation"),
@@ -794,6 +934,10 @@ class _Exporter:
         by_name = {d["term"].strip().lower(): d["id"] for d in definitions
                    if isinstance(d.get("term"), str) and d.get("kind") == "variable"}
         for ev in self.evidence:
+            if isinstance(ev.get("description"), str):     # term IDs written in a plan's design or analysis
+                ev["description"] = re.sub(r"\b(?:AC\d+\.)?TM\d+\b", lambda m: dmap.get(m.group(0), m.group(0)),
+                                           TERM_MARK_RE.sub(lambda m: m.group(0).replace(
+                                               m.group(1), dmap.get(m.group(1), m.group(1)), 1), ev["description"]))
             for res in ev.get("results") or []:
                 var = res.get("variable")
                 if isinstance(var, str) and var.strip().lower() in by_name:
