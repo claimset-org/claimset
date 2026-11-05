@@ -1,8 +1,27 @@
-# Claimset Lab Record — Specification v0.14 (draft)
+# Claimset Lab Record — Specification v0.16 (draft)
 
-Status: working draft · Date: 2026-10-29 · Supersedes v0.13 · Companion to the claimset specification (`spec/claimset-v0.34.md`) and the revision specification (`spec/claimset-revision-v0.2.md`)
+Status: working draft · Date: 2026-11-05 · Supersedes v0.15 · Companion to the claimset specification (`spec/claimset-v0.37.md`) and the revision specification (`spec/claimset-revision-v0.5.md`)
 
-## Changes since v0.13
+## Changes since v0.15
+
+A plan could name several hypotheses but had one pair of rules, so every hypothesis it named got the verdict of that pair. Hypotheses that one computation decides by different rules ("the share is below 0.10" for one, "this theme's total exceeds every other's" for another) needed a plan each, with the same computation run once per plan: the duplicate-run note, the evidence warning about identical results (claimset W18) and a false `holdout_used_elsewhere` flag on each plan followed.
+
+- §5.7.1, *Rules for each hypothesis*: a decision rule may give each hypothesis of the plan its own pair of rules, `rules: {"H1": {supported, not_supported}, "H2": {…}}`, over the quantities the plan shares, with an optional `framework` and `parameters` of its own. One deciding run gives a verdict per hypothesis. A rule with one pair, as before, decides every hypothesis the plan names.
+- L15: with `rules`, there is one entry for each hypothesis the plan names and none for another, and no shared pair; each entry, with the shared parts, is a complete rule (§6).
+- L17: the verdict on a hypothesis is the one its own rules give (§6).
+- §9: a claim's `test` carries the rules of its hypothesis and only the quantities they use. The `lab_record` artefact's description names the specification version the record was begun under, the date it was begun and the version of the tool that exported it, from the record itself.
+- §10: `--supported` and `--not-supported` take a hypothesis prefix (`--supported "H1: s < threshold"`) and can be repeated.
+
+## Changes in v0.15 (since v0.14)
+
+On a study branch the tool committed and pushed the record after every command, then wrote the push's receipt into `anchors.jsonl`. A commit cannot hold the receipt of its own push, so the receipt stayed in the checkout, uncommitted: every command left the study checkout dirty, and tools that require a clean checkout (a hook that stops on uncommitted changes) failed after every command.
+
+- §7.1, *Receipts on a study branch*: the receipt of a push is kept in the checkout's git directory, outside the working tree, and the next commit carries it into `anchors.jsonl`: the receipt of push n is in commit n+1. The receipt of the newest pushed commit, which no commit holds yet, is the one kept locally, or, in a checkout that did not push it, is derived from the remote-tracking branch. A command that succeeds leaves the study checkout clean.
+- L14 applies to every receipt, committed, kept locally or derived (§6).
+- A receipt names the heads of the logs as they are in the commit it names, read from that commit, not from the working tree, where another writer may have appended events the commit does not hold (§7.1). Receipts that earlier tools made in that race name an event their commit lacks; `verify --remote` reports such a receipt as a warning when a later commit of the branch holds the event with the same header hash, not as an L14 error (§6, §7.1).
+- Records kept by earlier tools have the receipt of their last push uncommitted in `anchors.jsonl`; the next command commits it (*Records from before v0.15*, §7.1). `anchors.jsonl` keeps its format, and the receipts already in it keep their meaning.
+
+## Changes in v0.14 (since v0.13)
 
 The research is done by agents and decided by people (claimset principle 10). An approval was written only by the human, by running the tool themselves; that asked a supervisor to work the tool to give a decision they had already given in words. The decision stays the human's; the agent records it.
 
@@ -152,7 +171,7 @@ claimset/                      ignored by the code branches
     lab/                       the lab record
       lab.jsonl                the main event log, one event per line
       agents/<actor>.jsonl     per-agent logs while agents work concurrently (§3.5)
-      anchors.jsonl            timestamp anchors of the log (§7)
+      anchors.jsonl            timestamp anchors of the log (§7); on a study branch, receipts of earlier pushes
       config.json              the study branch and its remote (§7.1)
       runs/<run id>/           per-run outputs: stdout, stderr, results.json, other files
     <paper>.claimset.json      a paper drawn from the study (claimset §2.4)
@@ -378,6 +397,29 @@ Everything that decides the outcome is fixed in the plan, before any run: the fr
 | `bayesian` | `prior`, `threshold` (e.g. a Bayes factor or posterior probability that decides), `sample` |
 | `deterministic`, `formal`, `qualitative` | none |
 
+**Rules for each hypothesis.** One computation can decide several hypotheses by different rules: a share below a threshold for one, an ordering of totals for another. The plan then gives each hypothesis its own pair of rules, keyed by its ID:
+
+```json
+"decision": {
+  "framework": "deterministic",
+  "parameters": {"threshold": 0.10, "sample": "all 654 held-out issues; one run"},
+  "quantities": {
+    "s": {"quantity": "share of issues in theme", "conditions": {"theme": "arranging"}},
+    "n": {"quantity": "total reactions on issues in theme", "conditions": {"theme": "notation"}},
+    "ui": {"quantity": "total reactions on issues in theme", "conditions": {"theme": "input_ui"}}
+  },
+  "rules": {
+    "H1": {"supported": "s < threshold", "not_supported": "s >= threshold"},
+    "H2": {"supported": "n > ui", "not_supported": "n <= ui"}
+  }
+}
+```
+
+- `rules` has one entry for each hypothesis the plan names (by the ID the plan names it by) and none for another. An entry has `supported` and `not_supported`, and optionally `framework` and `parameters`: its own framework, and parameters added to the shared ones (overriding a shared parameter of the same name). With `rules`, the decision has no shared `supported` or `not_supported`.
+- The rule that decides a hypothesis is the shared part (`framework`, `parameters`, `quantities`) with its entry: it must be complete as a rule with one pair is (L15). The quantities are shared, so all rules are expressions, or, without quantities, all are text.
+- The deciding runs are the plan's, once for all its hypotheses, and each hypothesis gets the verdict its own rules give (§5.7.3, §5.7.4).
+- A decision without `rules` gives one pair that decides every hypothesis the plan names, as before.
+
 **Why both rules.** Failing to reject a null hypothesis is not evidence against the hypothesis. A negative result is conclusive only if the plan said in advance what would refute the hypothesis: an equivalence bound, a significant effect in the opposite direction, a posterior threshold, a counterexample. Without that, the outcome is `inconclusive`.
 
 #### 5.7.2 Deciding runs
@@ -538,10 +580,10 @@ L10. Agent logs follow L1–L9 and L11–L12 on their own, starting from their b
 L11. A `supersedes` reference names an earlier event of the same type that has not already been superseded.
 L12. Every `id` has the prefix of its `type` and is unique in the log; every reference in a body names an event with a lower `seq`.
 L13. The files of a run directory match the hashes in the run's `outputs`. Run directories are never changed after the run.
-L14. Every entry in `anchors.jsonl` names a `seq` present in the log, and its `head_hash` equals the header hash of the event at that `seq`; the same holds for each agent log the entry names. A mismatch means the log was rewritten after it was anchored.
-L15. A confirmatory plan has a complete decision rule (§5.7.1): a framework, the parameters it requires, and both rules; when quantities are given, every quantity is well formed (with `run` when there are several deciding runs) and every rule is a valid expression whose names are defined (§5.7.3); `runs` is a positive integer.
+L14. Every anchor receipt (committed in `anchors.jsonl`, kept in the checkout's git directory, or derived from the remote-tracking branch, §7.1) names a `seq` present in the log, and its `head_hash` equals the header hash of the event at that `seq`; the same holds for each agent log the entry names. A mismatch means the log was rewritten after it was anchored. Exception, for receipts made by tools before v0.15 while several writers appended to one lab (§7.1, *Heads of a receipt*): when a receipt names a `seq` that the log in its commit does not hold, and a later commit of the same branch holds that `seq` with the same header hash, `verify --remote` reports a warning that names the race instead of an L14 error. A named event that no later commit holds, or holds with another header hash, is an L14 error.
+L15. A confirmatory plan has a complete decision rule (§5.7.1): a framework, the parameters it requires, and both rules; when quantities are given, every quantity is well formed (with `run` when there are several deciding runs) and every rule is a valid expression whose names are defined (§5.7.3); `runs` is a positive integer. A rule with `rules` has one entry for each hypothesis the plan names and none for another, no shared `supported` or `not_supported`, entries with only `framework`, `parameters`, `supported` and `not_supported`, and each entry with the shared parts is complete in this sense.
 L16. A confirmatory run is not made under a plan that already has its deciding runs (§5.7.2), or, in an agent log, under a plan written outside that log (§3.5).
-L17. A status that names a plan, or that cites a decided plan's deciding runs or their results for a hypothesis the plan names, is a verdict: the plan is decided and names the hypothesis, the deciding runs or their results are cited, and the outcome is the one the plan's rule gives (§5.5).
+L17. A status that names a plan, or that cites a decided plan's deciding runs or their results for a hypothesis the plan names, is a verdict: the plan is decided and names the hypothesis, the deciding runs or their results are cited, and the outcome is the one the plan's rule gives (§5.5); under `rules`, the rule of that hypothesis (§5.7.1).
 L18. A paper has a valid name, unique among the record's papers, and names at least one question; no question is named by two papers (each correction chain counted once, its latest version in force).
 L19. A lab inside `claimset/<name>/lab` belongs to the study `<name>`: its study (from `init` or the latest relocation that names one) is `<name>`, and records begun under v0.6 or later name a study.
 L20. A record with a study branch is written only in the checkout of that branch; a lab in `claimset/<study>/lab` inside a git repository is written only on its study branch (adopted, §3.4).
@@ -573,13 +615,27 @@ The anchor level of a plan becomes `planned_at_anchor` in the exported claimset.
 
 **On a study branch** (§3) anchoring is part of keeping the record: after every command that changes it, the tool commits the study's folder (the logs, run outputs, papers) to the study branch and pushes it. Each push is an anchor (`service: git_remote`, with the pushed commit as the receipt), so every event is anchored when it is written. The commit after a run takes the run's `code_version` as a further parent: pushing the study branch pushes the code the run used, and keeps it reachable whatever happens to its own branch. The record's own history is the first-parent history of the branch. Offline, the commits stay local and are pushed with the next command; until then `verify` and `claimset studies` report them as not pushed, and a confirmatory run is refused until its plan is pushed (L5). Configuration in `lab/config.json`: `{"record": {"remote": "origin", "branch": "claimset/<study>"}}`.
 
+**Receipts on a study branch.** The receipt of a push names the commit pushed, so that commit cannot hold it, and writing it into the checkout after the push would leave the checkout with an uncommitted change after every command. So:
+
+- After a push, the tool keeps its receipt (`{seq, head_hash, service: "git_remote", receipt: {remote, branch, commit}, at, agents}`) in the checkout's git directory (`claimset-anchors-pending.jsonl` in the directory `git rev-parse --absolute-git-dir` names), which no commit and no `git status` sees.
+- The next commit appends the kept receipts to `anchors.jsonl` and commits them with whatever else changed: the receipt of push n is in commit n+1. Receipts alone are not a change: a command that records nothing makes no commit, and pushing a commit already received adds no receipt.
+- The receipt of the newest pushed commit is in no commit yet. In the checkout that pushed it, it is the receipt kept locally. In another checkout (a fresh clone, an agent's copy) it is derived: the remote-tracking branch `refs/remotes/<remote>/<branch>` names a commit the remote has; when that commit is in the checkout's history and no receipt names it, its receipt is made from the logs in that commit (the last event's `seq` and header hash, and each agent log's), with the commit's date as `at` and `"derived": true`. The next commit made in that checkout commits the derived receipt like a kept one.
+- Every reader of the anchors (coverage of events and plans, L5, L14, `verify --remote`, export's `planned_at_anchor` and the pinned version of the exported lab record) reads the committed receipts, then the kept ones, then the derived one. A receipt is never trusted for more than it is: `verify --remote` checks every commit a receipt names against the remote branch.
+- A command that succeeds leaves the study checkout clean: nothing it wrote is uncommitted.
+
+**Heads of a receipt.** A receipt says what the commit it names holds, so its `seq` and `head_hash`, and each agent log's in `agents`, are read from that commit (the last event of each log in it, as `git show <commit>:lab/agents/<actor>.jsonl` gives it), never from the working tree. When several writers share one lab (a human and agents with their own agent logs, §3.5), another writer may append between the commit and the push; its event is in the working tree but not in the commit, and is received with the commit that holds it.
+
+Tools before v0.15 read the heads from the working tree after the commit, so a receipt made in that race can name an event its commit lacks. Records are append-only and such a receipt is not rewritten. `verify --remote` recognises it: when the event a receipt names is absent from the receipt's commit but a later commit of the same branch holds it at that `seq` with the same header hash, the event existed when the receipt was written and was committed afterwards, and nothing was removed. It is reported as a warning naming the race, the receipt's commit and the later commit; the record verifies. Any other mismatch remains an L14 error.
+
+**Records from before v0.15.** Earlier tools wrote the receipt of each push into `anchors.jsonl` after the push, so a study checkout holds that line uncommitted. Before any command that writes, the tool commits it on its own (`claimset lab: commit anchor receipts (lab record v0.15)`), and the command's push sends it to the remote; `claimset lab anchor` does the same when there is nothing else to record. Receipts already committed are read as before.
+
 **Without a study branch** (records outside the study layout, or before v0.7), the head is recorded by pushing the lab's logs to a dedicated anchor branch of a git remote, as follows. The branch is `claimset-lab/<study>` unless the configuration names another (`claimset-lab` for a record without a study). A relocation keeps the branch the record was anchored on: the tool writes it into the configuration. Anchor commits hold the logs at their paths when they were made; remote verification looks for the main log at its current path and, in commits made before a relocation, at the paths it had before. When such a record is adopted onto a study branch, its earlier receipts keep naming the anchor branch they were pushed to, and are checked there.
 
 - **Configuration** is kept in `lab/config.json`: `{"anchor": {"service": "git_remote", "remote": "origin", "branch": "claimset-lab", "every": "plan"}}`. `every` is `plan` (default) or `event`.
 - **What is committed:** `lab.jsonl`, `anchors.jsonl` and the files in `agents/`, at their paths in the repository. The commit is made on the anchor branch without touching the researcher's working tree or current branch. Run outputs are not committed; they are covered by the hashes in the log.
 - **Order:** before committing, the tool checks that each log already on the remote branch (main and agent logs) is a prefix of the local one. If it is not, the local log has been rewritten since the last anchor; the tool refuses to anchor and reports it.
 - **Pushing** never forces. A rejected push means the remote branch has changed in a way the tool did not make, and is reported.
-- **Receipt:** `{remote, branch, commit}` recorded in the `anchors.jsonl` entry, which itself is committed with the next anchor.
+- **Receipt:** `{remote, branch, commit}` recorded in the `anchors.jsonl` entry, which itself is committed with the next anchor. (This mode writes the receipt into `anchors.jsonl` in the working tree, which is the researcher's own checkout, not a study checkout.)
 - **Protection of the branch:** to make the remote copy append-only, protect the branch on the host so that force-pushes and deletion are refused, and give the agent credentials that can push but cannot change branch protection. This turns detection into prevention.
 - **Several working copies:** when agents work in their own clones (§3.5), each copy anchors to the same branch. The commit starts from the branch as it is on the remote: a local log that extends its anchored copy replaces it; a log that is behind (another copy has added to it) is kept as anchored; a log that differs is refused. `anchors.jsonl` on the branch holds the receipts of all copies. In the repository, `lab/.gitattributes` (written by `init`) marks `anchors.jsonl` with `merge=union`, so merging the copies' branches combines their receipts without conflicts; agent logs never conflict because each has its own file.
 - **Checking:** `verify --remote` fetches the branch and checks that each local log agrees with its copy there (a local log that is behind is reported as a note, not an error), that each anchor's commit is on the branch its receipt names, and that it holds every anchored log as it was at that anchor.
@@ -619,12 +675,12 @@ Hypotheses without a final status are counted as open; they are not forced close
 | `hypothesis` named by no decided plan, with final status `supported`, `not_supported` or `inconclusive` | an exploratory claim, the same way, from the latest version of the hypothesis and its final status |
 | `hypothesis` otherwise | not a claim; counted in `paper.exploration` |
 | the runs behind a verdict or final status | one evidence object per claim, from the runs the status names as evidence, directly or through their results: `lab_runs`, `results` (one per `result` event, as observations: its `quantity` as `variable` (the term's definition ID when a term of kind `variable` has that name), `value`, `unit`, `interval`, `conditions`), `execution` (`code_version` when the runs share one), `setup` (the setups of the plans the runs name, merged by role), default `profile: quant`, `design: other`, `availability: public`. The claim's support is `empirical_quant` pointing to the evidence and its results |
-| `plan` | `planning`, `planned_at`, `planned_at_anchor` and `test` on the claims of its verdicts (below). `test` is the plan's decision rule as written before the run: `framework`, `parameters`, `quantities`, `supported`, `not_supported`, `verdict` (`computed` when the rule has quantities, otherwise `judged`), `runs`, `lab_plan` (the plan's ID), `flags` (§5.7.5) and `addresses` (§5.7.7) |
+| `plan` | `planning`, `planned_at`, `planned_at_anchor` and `test` on the claims of its verdicts (below). `test` is the plan's decision rule as written before the run: `framework`, `parameters`, `quantities`, `supported`, `not_supported` (under `rules`, the hypothesis's own rules, framework and parameters, and only the quantities its rules use), `verdict` (`computed` when the rule has quantities, otherwise `judged`), `runs`, `lab_plan` (the plan's ID), `flags` (§5.7.5) and `addresses` (§5.7.7) |
 | `deviation` | `planning: confirmatory_with_deviations`, and a limitation on the affected claim: `category: analytic_flexibility`, `impact: could_bias_magnitude`, `mitigation: none`, statement naming the run, the plan, what differed and why |
 | `assumption` | assumption claim (without novelty) with `assumption_category` and `check`; `check_evidence` when it names a run or result used in an evidence object |
 | `check` | a `checks` entry on the claim whose hypothesis, final status, or evidence run or result it targets. A check by an actor exported as an author is not exported (claimset rule 39) and is named in the completion list |
 | `artefact` | artefact with `kind`, `uri` (the path or URI), `version` (the hash), `licence`, `description` |
-| the whole record | artefact of kind `lab_record`: `uri` (for a repository on GitHub whose last event is anchored by a git commit, the log in that commit; otherwise the repository URI from `init` followed by the log's path, and the completion list asks for a fixed URI, or the path alone), `version` (the hash of `lab.jsonl`), `availability: public`, `withheld_events`; referenced from `paper.exploration.lab_record` |
+| the whole record | artefact of kind `lab_record`: `uri` (for a repository on GitHub whose last event is anchored by a git commit, the log in that commit; otherwise the repository URI from `init` followed by the log's path, and the completion list asks for a fixed URI, or the path alone), `version` (the hash of `lab.jsonl`), `availability: public`, `withheld_events`, and a `description` that names, from the record and the tool, the version of this specification the record was begun under (`init.lab_spec_version`), the date it was begun and the version of the tool that exported it; referenced from `paper.exploration.lab_record` |
 
 **Papers.** With paper events, export makes one paper at a time: `--paper NAME`, or the only paper. It exports the hypotheses of the paper's questions only. `paper.study` is the study's name; the exploration summary counts the paper's questions and hypotheses and its tests, and `covers` gives the questions it reports, the whole lab's counts (`lab`) and the other papers with their questions (`other_papers`), so readers see what the paper does not report (claimset §3.1.1). Runs are not tied to questions and are counted for the whole lab. Assumptions are exported from the whole record, and the completion list asks for those no claim of the paper rests on to be removed. The draft is written to `claimset/<study>/<paper>.claimset.json` unless another file is named.
 
@@ -656,6 +712,7 @@ The reference tool is part of the `claimset` package. Indicative commands:
 | `claimset lab status H3 supported --evidence RS12 RS13 --why "…" [--plan PL2] [--rule supported]` | status change, with L6, L7 and L17 checked |
 | `claimset lab verdict PL2` | the verdict a decided plan's rule gives, with the value bound to each quantity (§5.7.3) |
 | `claimset lab plan --kind confirmatory --hypotheses H1 --design … --analysis … --framework frequentist --parameter alpha=0.05 … --quantity p="…" --supported "p < alpha" --not-supported "…" [--runs N] [--decision FILE] [--new-data "…"] [--exclusion name="rule"] [--studied TM1 TM2 --cases TM4 --procedure TM5 --lens TM3]` | writes a plan with its decision rule (§5.7.1) and anchors it; warns as in §5.7.6 |
+| `claimset lab plan --kind confirmatory --hypotheses H1 H2 … --quantity s="…" --quantity n="…" --supported "H1: s < threshold" --not-supported "H1: s >= threshold" --supported "H2: n > ui" --not-supported "H2: n <= ui"` | a plan whose hypotheses have rules of their own (§5.7.1): a rule prefixed with a hypothesis ID is that hypothesis's; repeat for each |
 | `claimset lab plan --kind confirmatory --hypotheses H9 --comment doi:…@v1/RV1.c6 --review RV1.json --analysis "…"` | writes a plan that runs a review comment's resolution test: the decision rule is the comment's current test and `addresses` names the comment (§5.7.7); `--design` defaults to the test's procedure |
 | `claimset lab approve PL2 --by AC1` | approval by the human, who runs the command |
 | `claimset lab approve PL2 --by AC2 --on-behalf-of AC1 --words "Yes, go ahead with PL2." [--given-at …] [--channel conversation]` | approval recorded by an agent on the human's behalf, with their words (§5.8) |

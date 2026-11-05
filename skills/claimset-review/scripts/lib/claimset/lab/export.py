@@ -10,7 +10,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from .. import SPEC_VERSION
+from .. import LAB_SPEC_VERSION, SPEC_VERSION, __version__
 from .anchor import covers, read_anchors
 from . import decision as _decision
 from .core import (RENAMED_KINDS, SETUP_ROLES, TERM_ID_RE, TERM_MARK_RE, LabError, State, agent_base, file_hash, final_statuses,
@@ -389,9 +389,14 @@ class _Exporter:
                 usable = sorted((a for a in self.anchors if isinstance(a, dict) and covers(a, pv)
                                  and isinstance(a.get("at"), str) and a["at"] <= started), key=lambda a: a["at"])
                 claim["planned_at_anchor"] = usable[0].get("service", "none") if usable else "none"
-                rule = pv["body"].get("decision") or {}
+                whole = pv["body"].get("decision") or {}
+                rule = _decision.effective(whole, h["id"], st.same_hypothesis)
                 claim["test"] = {k: rule[k] for k in ("framework", "parameters", "quantities", "supported",
                                                       "not_supported") if rule.get(k) is not None}
+                if _decision.per_hypothesis(whole) and isinstance(claim["test"].get("quantities"), dict):
+                    used = _decision.names_used(rule)   # this hypothesis's quantities, not its neighbours'
+                    claim["test"]["quantities"] = {k: v for k, v in claim["test"]["quantities"].items()
+                                                   if k in used}
                 claim["test"].update({"verdict": "computed" if _decision.computed(rule) else "judged",
                                       "runs": pv["body"].get("runs", 1), "lab_plan": pv["id"]})
                 flags = plan_flags(st, pv, runs)
@@ -560,7 +565,9 @@ class _Exporter:
                "uri": pinned or (f"{repo.rstrip('/')}/{rel}" if repo else rel),
                "version": file_hash(self.lab.log_path), "availability": {"level": "public"},
                "description": "Lab record of the study: questions, hypotheses, plans, runs, results and decisions, "
-                              "as an append-only, hash-chained event log (Claimset lab record specification v0.5)."}
+                              "as an append-only, hash-chained event log (Claimset lab record specification "
+                              f"v{init.get('lab_spec_version') or LAB_SPEC_VERSION}, begun "
+                              f"{str(init.get('started_at') or '')[:10]}; exported with claimset {__version__})."}
         withheld = [{"event": e["id"], "reason": e["body"].get("reason"), "comment": e["body"].get("comment")}
                     for e in self.st.events if is_withheld(e)]
         if withheld:
@@ -577,7 +584,12 @@ class _Exporter:
                       f"and export again, or give a URI of this version ({art['version']})")
         for x in self.artefacts:
             if "licence" not in x:
-                self.todo(f"artefacts.{x['id']}.licence", f"give the licence of {x['id']}")
+                self.todo(f"artefacts.{x['id']}.licence",
+                          f"give the licence of {x['id']} itself, which is not necessarily the paper's: the study's "
+                          f"own code and data take the licence their owners choose; content written by others "
+                          f"(downloaded issues, posts, pages) keeps its authors' terms and cannot take the paper's "
+                          f"licence; say whose it is and under what terms it is shared, or leave it out of the "
+                          f"package")
         return lab_aid
 
     def hypothesis_counts(self, hyps):
