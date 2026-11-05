@@ -489,6 +489,8 @@ class TestDeskMode(StudyRepo):
         code, _, err = self.cli("lab", "anchor", "--study", "desk")
         self.assertNotEqual(code, 0)
         self.assertIn("desk mode", err)
+        code, out, _ = self.cli("studies")
+        self.assertIn("desk mode: committed, not pushed or anchored", out)
 
     def test_a_remote_given_later_starts_anchoring(self):
         lab = self.desk_study()

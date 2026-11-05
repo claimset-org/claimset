@@ -163,6 +163,41 @@ def capture(lab, by, file=None, url=None, fetch_url=False, method=None, retrieve
         raise
 
 
+def correct(lab, by, old_id, **changes):
+    """A correction of a captured source's description (an archived copy found later, a date, the author): the
+    same files, copied into the correction's folder, with the given fields changed (§5.20)."""
+    st = lab.view(by)
+    old = st.latest(old_id) if st.get(old_id) else None
+    if old is None or old["type"] != "source":
+        raise LabError("L11", f"capture --supersedes: {old_id} is not a source")
+    src_dir = lab.root / SOURCES_DIR / old["id"]
+    if not src_dir.is_dir():
+        raise LabError("L24", f"capture --supersedes: the files of {old['id']} are missing ({src_dir})")
+    author = changes.pop("author", None)
+    as_given = changes.pop("author_as_given", False)
+    body = dict(old["body"])
+    for k, v in changes.items():
+        if v is not None:
+            body[k] = v
+    if author is not None:
+        body["author"] = " ".join(str(author).split()) if as_given else pseudonym(lab, author)
+    if body.get("visibility") == "public" and (body.get("rights") or {}).get("holder") == "third_party" and \
+            not ((body.get("rights") or {}).get("licence") or (body.get("rights") or {}).get("terms")):
+        raise LabError("L26", "capture: content written by others is published only under its own licence or terms")
+    root = lab.root / SOURCES_DIR
+    pending = root / f".pending-{uuid.uuid4().hex}"
+    shutil.copytree(src_dir, pending)
+    event = None
+    try:
+        event = lab.append("source", body, by=by, supersedes=old["id"])
+        pending.rename(root / event["id"])
+        return event
+    except BaseException:
+        if event is None and pending.exists():
+            shutil.rmtree(pending, ignore_errors=True)
+        raise
+
+
 def text_of(lab, source):
     """The text of a source excerpts are checked against: its extracted text, or the original if it is text."""
     body = source["body"]
@@ -279,7 +314,8 @@ def current_codings(st):
         if e.get("type") != "coding" or st.root(e["id"]) != e["id"]:
             continue
         cur = st.latest(e["id"])
-        if cur is None or is_withheld(cur) or cur["body"].get("withdrawn") or not cur["body"].get("codes"):
+        if cur is None or is_withheld(cur) or cur["body"].get("withdrawn") or \
+                not (cur["body"].get("codes") or cur["body"].get("none_apply")):
             continue
         out.append(cur)
     return out
@@ -317,6 +353,8 @@ def codings_snapshot(st):
         for k in ("unit", "pass", "memo"):
             if b.get(k) is not None:
                 row[k] = b[k]
+        if b.get("none_apply"):
+            row["none_apply"] = True
         if isinstance(b.get("quote"), dict):
             row["quote"] = {k: b["quote"][k] for k in ("exact", "start", "end") if k in b["quote"]}
         rows.append(row)

@@ -15,6 +15,7 @@ Amended on 2026-11-05, for qualitative research kept in a lab record (lab record
 
 - §3.3.3, `test.flags`: the lab record's flags `sources_captured_after_plan`, `coded_before_plan` and `codebook_changed_after_plan` are valid flags; a claim exported with them failed rule 47.
 - §3.4, *Excerpts*: an excerpt's `locator` can be structured, `{artefact, start, end, lab_event}`: the artefact holding the source (a captured source exported from a lab record) and the excerpt's character positions in its text, so a reader can find the passage and a validator can check it against the packaged file. New rule 78.
+- §3.13, rule 51: a `url` reference may lack `archive_uri` when an artefact naming it holds a captured copy with its hash (a page behind a sign-in cannot be archived); new warning 32.
 - §3.4, qual profile: `analytic_approach` gains `content_analysis`: coding material against a codebook and counting the codes, as a lab record's counts do.
 - Appendices A and C give `schema_version` 0.37 (they still said 0.34 and 0.17).
 
@@ -1019,7 +1020,7 @@ Each model used anywhere in the paper is defined once.
 Each work the paper cites is listed once, in the top-level `references`, and cited by its ID from support entries, relations, definitions and artefacts. `{id, target, id_type, archive_uri}`
 - `id`: `B1`, `B2`, ….
 - `target` and `id_type`: as for cited support (§4): an identifier (`doi`, `arxiv`, …), a global claim ID of a claimset (`id_type: claimset`), a paper or claim of the same repository not yet published (`id_type: claimset_local`, §2.4), or the reference as printed in the paper's reference list (`id_type: reference`).
-- `archive_uri`: required for `url` targets.
+- `archive_uri`: required for `url` targets, unless the claimset holds a captured copy of the page: an artefact that names the entry in `reference` and whose `version` is the copy's hash (a captured source, lab record §5.20; private copies keep their hash in the record). Give one whenever the page can be archived (warning 32).
 Only works that a support entry, relation, definition or artefact points to are listed.
 
 ### 3.14 Open questions
@@ -1231,7 +1232,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 ### 10.11 Rules added in v0.16 (errors: file rejected)
 
-51. `references`: each entry has an `id` (`B1`, `B2`, …) unique in the file, a `target` and an `id_type` from the list for cited support, and `archive_uri` when `id_type` is `url`. Every `reference` in a support entry or relation, and every definition `source` that looks like a reference ID, resolves to an entry; every entry is pointed to at least once (by a support entry, relation, definition or artefact; artefacts since v0.18).
+51. `references`: each entry has an `id` (`B1`, `B2`, …) unique in the file, a `target` and an `id_type` from the list for cited support, and `archive_uri` when `id_type` is `url`, unless an artefact that names the entry in `reference` holds a captured copy of the page (its `version` is the copy's `sha256:` hash; warning 32). Every `reference` in a support entry or relation, and every definition `source` that looks like a reference ID, resolves to an entry; every entry is pointed to at least once (by a support entry, relation, definition or artefact; artefacts since v0.18).
 52. Each entry of `converted_from.corrections` whose `field` names a claim field corresponds to that field's provenance being `inferred` (through `field_provenance`, or the claim's `provenance`).
 
 ### 10.12 Rules added in v0.17 (errors: file rejected)
@@ -1333,6 +1334,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 29. A native paper has no `declarations`, or its declarations leave out `funding` or `competing_interests`: ask the guarantor and record what they declare (an empty funding list and "None declared." are declarations).
 30. A `data_plot` figure without `shows` or `underlying_data`; a `specimen` from which no observation is read (`read_from`); or a result whose `variable` or a table column whose variable is text equal, ignoring case, to the `term` of a definition in the file (give the ID).
 31. A converted paper lies in a `claimset/` folder and its file is not named `<name>.claimset.json` with the name made from its source's identifier (§2.4). The message gives the name.
+32. A `url` reference has no `archive_uri`, and an artefact naming it holds a captured copy (a page behind a sign-in, or not yet archived): the copy, with its hash, stands in for the archive; give `archive_uri` if the page can be archived.
 
 ## 11. Platform dependencies
 

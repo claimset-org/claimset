@@ -496,6 +496,8 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
                     r.err("49", f"{w}.field", f"'{fld}' does not begin with the ID of an object in the file")
 
     # ---------- References (rule 51) ----------
+    captured = {a.get("reference") for a in coll["artefacts"] if isinstance(a, dict)
+                and isinstance(a.get("version"), str) and a["version"].startswith("sha256:")}
     for b in coll["references"]:
         if not isinstance(b, dict):
             continue
@@ -505,7 +507,11 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
         if b.get("id_type") not in ENUM["id_type"] | ENUM["rel_id_type"]:
             r.err("51", f"{bw}.id_type", f"'{b.get('id_type')}' is not an identifier type for cited works")
         if b.get("id_type") == "url" and not b.get("archive_uri"):
-            r.err("51", bw, "url targets require archive_uri")
+            if b.get("id") in captured:     # a captured copy, held with its hash (v0.37, amended)
+                r.warn("W32", bw, "no archived copy of the page: the claimset holds a captured copy (the artefact "
+                                  "naming this reference, by its hash); give archive_uri if the page can be archived")
+            else:
+                r.err("51", bw, "url targets require archive_uri")
         if b.get("id_type") == "reference" and not converted:
             r.warn("W14", f"{bw}.id_type", "a printed reference without identifier: give the cited work's identifier (doi, arxiv, …)")
     if coll["references"]:

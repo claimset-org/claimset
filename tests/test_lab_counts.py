@@ -194,3 +194,73 @@ class TestCountCli(TestCli):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTrialFixes(CountCase):
+    """What a first qualitative study needed: sources read and given no code, archives found later, excerpts and
+    source facts in the export, a limitation for single coding, a captured copy standing in for an archive."""
+
+    def test_none_apply_keeps_the_denominator(self):
+        self.code_all()
+        f = Path(self.tmp.name) / "other.txt"
+        f.write_text("A thread about playback speed.\n", encoding="utf-8")
+        other = sources.capture(self.lab, self.agent, file=str(f), url="https://musescore.org/node/99",
+                                published_at="2020-05-05", author="fay")
+        self.add("coding", {"source": other["id"], "codes": [], "none_apply": True, "unit": "thread"})
+        with self.assertRaises(LabError):
+            self.add("coding", {"source": other["id"], "codes": [self.arr], "none_apply": True})
+        snap = sources.codings_snapshot(self.lab.state())
+        self.assertEqual(len({c["source"] for c in snap["codings"]}), 7)
+        self.assertEqual(counter.count(snap, {"codes": [self.arr]})["value"], 5)    # not counted for any code
+
+    def test_a_source_is_corrected_with_the_same_files(self):
+        old = self.src[0]
+        new = sources.correct(self.lab, self.agent, old["id"], archive_uri="https://web.archive.org/web/2026/x")
+        self.assertEqual(new["supersedes"], old["id"])
+        self.assertEqual(new["body"]["files"], old["body"]["files"])
+        self.assertEqual(new["body"]["archive_uri"], "https://web.archive.org/web/2026/x")
+        self.assertTrue((self.lab.root / "sources" / new["id"]).is_dir())
+        self.assertTrue(verify(self.lab)["ok"], verify(self.lab)["errors"])
+
+    def test_export_of_coded_evidence(self):
+        self.code_all()
+        # quote one passage
+        sel = sources.quote(self.lab, self.src[1], "arrange a score for string quartet")
+        self.add("coding", {"source": self.src[1]["id"], "codes": [self.arr], "code_versions": {self.arr: self.arr},
+                            "quote": {k: sel[k] for k in ("exact", "prefix", "suffix", "start", "end")}})
+        pl = self.plan()
+        out = count_run(self.lab, self.agent, plan=pl)
+        h = self.lab.state().get(pl)["body"]["hypotheses"][0]
+        self.add("status", {"target": h, "to": "supported", "rationale": "counted", "plan": pl,
+                            "evidence": [r["id"] for r in out["results"]]})
+        ex = export(self.lab)
+        draft, mapping = ex["draft"], ex["mapping"]
+        claim = next(c for c in draft["claims"] if c.get("hypothesis", {}).get("lab_event") == h)
+        ev = next(e for e in draft["evidence"] if e["id"] == claim["support"][0]["evidence"])
+        excerpts = [r for r in ev["results"] if isinstance(r.get("value"), dict)]
+        self.assertEqual(len(excerpts), 1)
+        loc = excerpts[0]["value"]["locator"]
+        self.assertEqual((mapping[loc["artefact"]], excerpts[0]["value"]["text"]),
+                         (self.src[1]["id"], "arrange a score for string quartet"))
+        counts = [r for r in ev["results"] if r["variable"].startswith("count:")]
+        self.assertTrue(all(r["conditions"]["code"].startswith("D") for r in counts if "code" in r["conditions"]))
+        self.assertIn("Counted by the counter of the lab record tool", ev["execution"]["notes"])
+        lim = next(l for l in draft["limitations"] if "one coder in one pass" in l["statement"])
+        self.assertIn(claim["id"], lim["affects"])
+        art = next(a for a in draft["artefacts"] if mapping.get(a["id"]) == self.src[0]["id"])
+        self.assertIn("published: 2014-03-02", art["description"])
+        self.assertIn("venue: musescore.org", art["description"])
+        from claimset.validate import validate
+        rep = validate(draft)
+        rules = {e["rule"] for e in rep.errors}
+        self.assertNotIn("51", rules)                               # captured copies stand in for archives
+        self.assertIn("W32", {w["rule"] for w in rep.warnings})
+        self.assertFalse(rules & {"10", "47", "66", "78"}, rep.errors)
+
+    def test_list_lines(self):
+        from claimset.lab.summary import list_line
+        self.code_all()
+        lines = [list_line(e) for e in self.lab.read()]
+        self.assertTrue(any("arrange for ensemble [concept]; coded when:" in l for l in lines))
+        self.assertTrue(any("musescore.org · 2014-03-02 · private" in l for l in lines))
+        self.assertTrue(any(f"{self.src[0]['id']} {self.arr}: (whole source)" in l for l in lines))

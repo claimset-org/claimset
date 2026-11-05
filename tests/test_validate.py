@@ -2092,3 +2092,25 @@ class TestExcerptLocators(Base):
             self.assertNotIn("47", self.rules(d)[0], flag)
         claim["test"]["flags"] = ["read_the_answers_first"]
         self.assertRule(d, "47")
+
+
+class TestCapturedCopies(Base):
+    """Rule 51 (v0.37, amended) and warning 32: a captured copy stands in for a missing archive."""
+
+    def doc(self, version):
+        d = load("submission-native.json")
+        d.setdefault("references", []).append({"id": "B9", "target": "https://forum.example/t/1", "id_type": "url"})
+        art = {"id": "A3", "kind": "data", "description": "A captured forum thread.", "reference": "B9",
+               "availability": {"level": "author_only", "reason": "legal", "content_hash": "sha256:" + "a" * 64}}
+        if version:
+            art["version"] = version
+        d["artefacts"].append(art)
+        return d
+
+    def test_captured_copy_passes_with_a_warning(self):
+        d = self.doc("sha256:" + "a" * 64)
+        self.assertNotIn("51", self.rules(d)[0])
+        self.assertWarning(d, "W32")
+
+    def test_no_copy_and_no_archive_fails_51(self):
+        self.assertRule(self.doc(None), "51")

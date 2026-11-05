@@ -549,11 +549,19 @@ SELECTOR_KEYS = ("exact", "prefix", "suffix", "start", "end")
 def check_coding(state, body, by, eid):
     """A coding (§5.21): codes applied to a captured source, or to a passage of it, by its writer (L27)."""
     sid = _ref(state, _req(body, "source", "coding"), "coding", "source", {"source"})
-    codes = body.get("codes", [] if body.get("withdrawn") is True else None)
+    empty = body.get("withdrawn") is True or body.get("none_apply") is True
+    codes = body.get("codes", [] if empty else None)
     if not isinstance(codes, list) or not all(isinstance(c, str) for c in codes):
         raise LabError("schema", "coding: codes must be a list of term IDs")
-    if not codes and body.get("withdrawn") is not True:
-        raise LabError("schema", "coding: name at least one code (a correction with no codes says withdrawn: true)")
+    if body.get("withdrawn") is True and body.get("none_apply") is True:
+        raise LabError("schema", "coding: withdrawn or none_apply, not both")
+    if empty and codes:
+        raise LabError("schema", "coding: a coding that is withdrawn, or that says no code applies, names no codes")
+    if not codes and not empty:
+        raise LabError("schema", "coding: name at least one code; a source read and given no code says none_apply: "
+                                 "true (`--none`), a correction that removes the codes says withdrawn: true")
+    if body.get("none_apply") is True and body.get("quote") is not None:
+        raise LabError("schema", "coding: a coding that says no code applies is of the whole source, with no quote")
     for c in codes:
         if state.get(c) is None or not is_code(state, c):
             raise LabError("L27", f"coding: {c} is not a code: record it as a term of kind concept with "

@@ -68,6 +68,8 @@ def _cmd_studies(args):
                  f"{r.get('pending', 0)} pending plans"]
         if not r.get("on_branch"):
             state.append("NOT on its study branch: `claimset setup --study " + r["study"] + " --adopt`")
+        elif r.get("desk"):
+            state.append("desk mode: committed, not pushed or anchored")
         elif r.get("unpushed"):
             state.append(f"{r['unpushed']} commits not pushed")
         print(f"{r['study']}: " + ", ".join(state))

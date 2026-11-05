@@ -236,8 +236,14 @@ def cmd_code(args):
     if src is None or src["type"] != "source":
         raise LabError("L12", f"no source '{args.source}'")
     body = {"source": src["id"], "codes": list(args.codes or []), "unit": args.unit, "pass": args.pass_,
-            "memo": args.memo, "withdrawn": True if args.withdraw else None}
-    if args.withdraw:
+            "memo": args.memo, "withdrawn": True if args.withdraw else None,
+            "none_apply": True if args.none else None}
+    if args.none:
+        if args.codes or args.excerpt or args.withdraw:
+            raise LabError("schema", "code --none: the source was read and no code applies: give no codes, excerpt "
+                                     "or --withdraw")
+        body["codes"] = []
+    elif args.withdraw:
         if not args.supersedes:
             raise LabError("schema", "code: --withdraw corrects a coding: give --supersedes CD…")
         body["codes"] = []
@@ -278,6 +284,22 @@ def cmd_capture(args):
     if args.private and args.public:
         raise LabError("schema", "capture: --private or --public, not both")
     vis = "private" if args.private else "public" if args.public else None
+    if args.supersedes and not args.file and not args.fetch:
+        rights = None
+        if args.licence or args.terms or args.own:
+            rights = {k: v for k, v in (("holder", "study" if args.own else "third_party"), ("licence", args.licence),
+                                        ("terms", args.terms)) if v}
+        event = _sources.correct(lab, by, args.supersedes, uri=args.uri, method=args.method,
+                                 retrieved_at=args.retrieved_at, title=args.title, format=args.format,
+                                 visibility=vis, rights=rights, archive_uri=args.archive_uri, venue=args.venue,
+                                 published_at=args.published_at, description=args.description,
+                                 author=args.author, author_as_given=args.author_as_given)
+        _emit(args, event)
+        _auto_anchor(lab, event)
+        return 0
+    if args.supersedes:
+        raise LabError("schema", "capture --supersedes corrects a source's description, with the same files: give "
+                                 "no file; a page captured again is a new source (§5.20)")
     event = _sources.capture(lab, by, file=args.file, url=args.uri, fetch_url=args.fetch, method=args.method,
                              retrieved_at=args.retrieved_at, title=args.title, fmt=args.format, text=args.text,
                              visibility=vis, holder="study" if args.own else "third_party", licence=args.licence,
@@ -852,6 +874,8 @@ def add_parser(subparsers):
     p.add_argument("--pass", dest="pass_", metavar="PASS", help="the coding pass or round: 1, 2, \"second coder\"")
     p.add_argument("--memo", help="why these codes: the coder's note")
     p.add_argument("--withdraw", action="store_true", help="with --supersedes: the passage no longer has codes")
+    p.add_argument("--none", action="store_true", help="the source was read and no code applies (it stays in the "
+                                                       "sample, so counts have their denominator)")
 
     p = cmd("hypothesis", cmd_hypothesis, "record a hypothesis")
     p.add_argument("statement", help="mark the terms it names: [[TM3:MASE]]")

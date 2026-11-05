@@ -528,7 +528,7 @@ def studies(cwd=None):
             try:
                 s = build(lab.read())
                 info.update(events=s["events"], open=len(s["open_hypotheses"]), pending=len(s["pending_plans"]),
-                            unpushed=unpushed(lab), on_branch=bool(config(lab)))
+                            unpushed=unpushed(lab), on_branch=bool(config(lab)), desk=desk(lab))
             except LabError:
                 info["unreadable"] = True
         out.append(info)

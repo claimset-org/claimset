@@ -7,6 +7,7 @@ completion list: a claimset never contains instructions.
 """
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -675,6 +676,10 @@ class _Exporter:
             when = f" on {str(b['retrieved_at'])[:10]}" if b.get("retrieved_at") else ""
             text = (f"{b.get('title') or 'Captured source'} ({b.get('format')}), {how}{when}; recorded in the lab "
                     f"record as {cur['id']} on {str(cur.get('at', ''))[:10]}.")
+            facts = [f"{k}: {b[k]}" for k, label in (("venue", "venue"), ("published_at", "published"),
+                                                    ("author", "author")) if b.get(k)]
+            if facts:                           # what counts distinct by venue, year or author read
+                text += " " + "; ".join(f.replace("published_at:", "published:") for f in facts) + "."
             if third:
                 text += " Written by others" + (f"; shared under: {rights['terms']}." if rights.get("terms") else ".")
             if b.get("description"):
@@ -706,19 +711,70 @@ class _Exporter:
                 art["reference"] = bid
             self.artefacts.append(art)
         art_of = {sr: aid for aid, sr in self.mapping.items() if isinstance(sr, str) and sr.startswith("SR")}
+        self.exported_quotes = set()
         for ev in self.evidence:
             srcs = ev.pop("_sources", None)
-            if srcs:
-                arts = [art_of[s] for s in srcs if s in art_of]
-                if arts:
-                    ev["artefacts"] = list(dict.fromkeys(list(ev.get("artefacts") or []) + arts))
+            if srcs is None:
+                continue
+            arts = [art_of[s] for s in srcs if s in art_of]
+            if arts:
+                ev["artefacts"] = list(dict.fromkeys(list(ev.get("artefacts") or []) + arts))
+            self.coded_evidence(ev, srcs, art_of)
         self.excerpt_todo()
+
+    def coded_evidence(self, ev, srcs, art_of):
+        """Evidence from runs that read codings: the quoted passages of its sources as excerpts, how the coding
+        was done as a limitation, and what did the counting (§9)."""
+        from .sources import current_codings
+        dmap = getattr(self, "dmap", {})
+        codings = [c for c in current_codings(self.st) if c["body"].get("source") in srcs]
+        results = ev.setdefault("results", [])
+        for c in codings:
+            q = c["body"].get("quote")
+            if not isinstance(q, dict) or c["body"]["source"] not in art_of:
+                continue
+            code = self.st.root(c["body"]["codes"][0])
+            results.append({"id": f"R{len(results) + 1}", "variable": dmap.get(code, code),
+                            "value": {"text": q.get("exact"),
+                                      "locator": {"artefact": art_of[c["body"]["source"]], "start": q.get("start"),
+                                                  "end": q.get("end"), "lab_event": c["id"]}}})
+            self.exported_quotes.add(c["id"])
+        if not results:
+            ev.pop("results", None)
+        coders = {c.get("by") for c in codings}
+        passes = {str(c["body"].get("pass")) for c in codings if c["body"].get("pass") is not None}
+        if codings and len(coders) == 1 and len(passes) <= 1:
+            lid = f"L{len(self.limitations) + 1}"
+            affects = [cl["id"] for cl in self.claims
+                       if any(s.get("evidence") == ev["id"] for s in cl.get("support") or [])]
+            self.limitations.append({
+                "id": lid, "category": "measurement", "affects": affects, "impact": "could_bias_magnitude",
+                "mitigation": "none",
+                "statement": f"The {len(srcs)} sources of {ev['id']} were coded by one coder in one pass; agreement "
+                             f"between coders was not assessed."})
+            for cl in self.claims:
+                if cl["id"] in affects:
+                    cl.setdefault("limitations", []).append(lid)
+            self.todo(f"limitations.{lid}", f"review {lid}: exported because one coder coded the sources in one pass")
+        counters = [self.st.get(r) for r in ev.get("lab_runs") or []]
+        versions = sorted({(r["body"].get("parameters") or {}).get("counter") for r in counters
+                           if r and (r["body"].get("parameters") or {}).get("counter")})
+        if versions:
+            ex = ev.setdefault("execution", {})
+            note = (f"Counted by the counter of the lab record tool ({', '.join(versions)}, claimset/lab/count.py) "
+                    f"from the codings in force, recorded with the run (codings.json); the code version is the "
+                    f"study's code checkout, not the counter's.")
+            ex["notes"] = f"{ex['notes']} {note}" if ex.get("notes") else note
 
     def excerpt_todo(self):
         """Codings with a quote, as the excerpts a claim can give (claimset §3.4, rule 78)."""
         from .sources import current_codings
         art_of = {sr: aid for aid, sr in self.mapping.items() if isinstance(sr, str) and sr.startswith("SR")}
-        quoted = [c for c in current_codings(self.st) if isinstance(c["body"].get("quote"), dict)]
+        quoted = [c for c in current_codings(self.st) if isinstance(c["body"].get("quote"), dict)
+                  and c["id"] not in getattr(self, "exported_quotes", set())]
+        if getattr(self, "exported_quotes", None):
+            self.todo("evidence", f"{len(self.exported_quotes)} quoted codings are exported as excerpts of the evidence "
+                                  f"whose runs read them; keep those the claims rely on and remove the rest")
         if not quoted:
             return
         lines = []
@@ -847,6 +903,7 @@ class _Exporter:
 
         def swap(v):
             return dmap.get(v.strip(), v) if isinstance(v, str) and TERM_ID_RE.match(v.strip()) else v
+        self.dmap = dmap
 
         for d in definitions:
             if "_broader" in d:
@@ -877,6 +934,10 @@ class _Exporter:
         by_name = {d["term"].strip().lower(): d["id"] for d in definitions
                    if isinstance(d.get("term"), str) and d.get("kind") == "variable"}
         for ev in self.evidence:
+            if isinstance(ev.get("description"), str):     # term IDs written in a plan's design or analysis
+                ev["description"] = re.sub(r"\b(?:AC\d+\.)?TM\d+\b", lambda m: dmap.get(m.group(0), m.group(0)),
+                                           TERM_MARK_RE.sub(lambda m: m.group(0).replace(
+                                               m.group(1), dmap.get(m.group(1), m.group(1)), 1), ev["description"]))
             for res in ev.get("results") or []:
                 var = res.get("variable")
                 if isinstance(var, str) and var.strip().lower() in by_name:

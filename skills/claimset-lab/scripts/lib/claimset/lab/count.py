@@ -134,7 +134,10 @@ def results(snapshot, counts):
     for name in sorted(counts):
         spec = counts[name]
         c = count(snapshot, spec)
-        out.append({"quantity": result_quantity(name), "value": c["value"], "n": c["n"]})
+        cond = {"unit": spec.get("unit", "source"), "distinct_by": spec.get("distinct_by") or spec.get("unit", "source")}
+        if len(spec.get("codes") or []) == 1:
+            cond["code"] = spec["codes"][0]
+        out.append({"quantity": result_quantity(name), "value": c["value"], "n": c["n"], "conditions": cond})
         if c["missing"]:
             out.append({"quantity": f"{result_quantity(name)}, units not counted for want of "
                                     f"{spec.get('distinct_by')}", "value": c["missing"]})
