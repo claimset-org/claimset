@@ -65,6 +65,7 @@ Record events as the work happens, not afterwards from memory.
 | Exploratory evidence bears on a hypothesis | `claimset lab status H4 inconclusive --evidence RS7 --why "…" --by AC2` |
 | You make a choice that shapes the work | `claimset lab decide "Dropped weekly series: too few observations per series." --affects H2 --by AC2` |
 | You read outside material the study relies on (a forum thread, an issue, a web page, a transcript) | Save it, then `claimset lab capture thread.html --uri https://… --retrieved-at 2026-11-05T11:00:00Z --venue musescore.org`; `claimset lab quote SR1 "the words"` before quoting it |
+| You code a source (assign it, or a passage of it, to a theme) | Record the code once: `claimset lab term "arrange for ensemble" --kind concept --definition "…" --include "…" --exclude "…"`; then `claimset lab code SR1 --codes TM4 --excerpt "the words" --unit post --pass 1` |
 | You observe something worth keeping | `claimset lab note "Errors grow sharply after horizon 6." --refers-to RN3 --by AC2` |
 | You produce or use a file others need | `claimset lab artefact results/table1.csv --kind table --description "…" --licence CC-BY-4.0 --by AC2` |
 | Someone else checks a result | `claimset lab check RN3 --outcome confirmed --extent full --notes "…" --by AC5` (never the author of the target) |
@@ -113,6 +114,8 @@ Never treat silence, a general instruction ("do whatever you need"), or a reply 
 Options that take IDs take several at once (`--hypotheses H1 H2`, `--evidence RS4 RS5`, `--refers-to`, `--prompted-by`, `--affects`). `--seed N`, `--param name=value` (the value is read as JSON when it parses, e.g. `--param grid=[0.1,0.5]`) and `--data FILE` can be repeated.
 
 **Sources.** Outside material the research rests on is data, not a link in a note: capture it when you first read it, with `claimset lab capture FILE --uri URL`. Save the page yourself (in a browser, or with whatever fetch you used to read it) and capture the file: that records what you saw. `--fetch --uri URL` has the tool fetch a public page itself and records a different method. Pages, posts and issues written by others are private by default: kept in the record, left out of the package, published only by their hash and short excerpts; never give them the paper's licence (`--public` needs the source's `--licence` or `--terms` that permit it). Give `--archive-uri` when a web archive copy exists. Runs that read sources name their files as data (`--data lab/sources/SR1/text.txt`); a source captured after the plan whose test uses it is flagged. Quote only what `claimset lab quote` finds in the source's text, with the locator it prints; never quote from a summarising tool's account of a page.
+
+**Coding.** Codes are terms of kind `concept` with criteria: `--include` (what a passage must show) and `--exclude` (what does not count); `--broader TM3` puts a code under a theme. Changing a code's criteria is a correction of its term (`--supersedes`), so earlier codings keep the version they applied. Code with `claimset lab code SR1 --codes TM4 [--excerpt "the words"]`: the excerpt must be in the source's text, once; leave it out to code the whole source. Recode or withdraw with `--supersedes CD3` (`--withdraw`). Never count codes yourself or write a count in a note: a run receives the codings in force in `$CLAIMSET_CODINGS` (a JSON file with the codes, the sources coded and the codings), and its script counts them and writes the counts as results, like any other number. A second coder codes in their own agent log with `--pass 2`; agreement is computed by a run from both passes.
 
 **Results.** Your script writes its numbers as a JSON array to the file named by `$CLAIMSET_RESULTS`, and any other outputs into `$CLAIMSET_RUN_DIR`. Each entry: `quantity` (what was measured, self-contained), `value` (a number), and optionally `unit`, `interval` `{level, lower, upper}` and `conditions` (the settings that define this result):
 
@@ -228,6 +231,7 @@ The message names the rule. The usual cases:
 | L24 | A captured source's files were changed, removed or added to | Restore them; capture a new version as a new source |
 | L25 | The quoted words are not in the source's text | Quote the words exactly as the source has them |
 | L26 | Content written by others marked public without its licence or terms | Give `--licence` or `--terms`, or keep it private |
+| L27 | A coding names something that is not a captured source, or a term without a code part | Capture the source; record the code with `--include` first |
 
 Never work around a refusal by editing files or by writing as another actor.
 
