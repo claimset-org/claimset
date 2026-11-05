@@ -33,13 +33,14 @@ def _cmd_setup(args):
             print(f"wrote {record.write_ci()}: pull requests fail if they bring study records into the code")
         if args.study:
             lab, what, notes = record.setup(args.study, title=args.title, repository=args.repository,
-                                            remote=args.remote, adopt=args.adopt,
-                                            by=args.by or __import__("os").environ.get("CLAIMSET_ACTOR"))
+                                            remote=args.remote or "origin", adopt=args.adopt,
+                                            by=args.by or __import__("os").environ.get("CLAIMSET_ACTOR"),
+                                            desk=args.desk, upgrade=args.remote is not None)
             print(f"{args.study}: {what} at {lab.root.parent} (branch {record.PREFIX}{args.study})")
             for n in notes:
                 print(f"  {n}")
         elif not args.ci:
-            done = record.attach_all(remote=args.remote)
+            done = record.attach_all(remote=args.remote or "origin")
             for study, what in done:
                 print(f"{study}: {what}")
             if not done:
@@ -67,6 +68,8 @@ def _cmd_studies(args):
                  f"{r.get('pending', 0)} pending plans"]
         if not r.get("on_branch"):
             state.append("NOT on its study branch: `claimset setup --study " + r["study"] + " --adopt`")
+        elif r.get("desk"):
+            state.append("desk mode: committed, not pushed or anchored")
         elif r.get("unpushed"):
             state.append(f"{r['unpushed']} commits not pushed")
         print(f"{r['study']}: " + ", ".join(state))
@@ -248,7 +251,11 @@ def build_parser():
     su.add_argument("--study", help="the study (default: attach every study branch of the remote)")
     su.add_argument("--title", help="working title, for a new study")
     su.add_argument("--repository", help="URI of the repository, for a new study")
-    su.add_argument("--remote", default="origin")
+    su.add_argument("--remote", help="the git remote study branches are pushed to (default origin); given for a "
+                                      "study kept in desk mode, it starts anchoring it")
+    su.add_argument("--desk", action="store_true",
+                    help="desk mode, for a new study: the record is committed on its study branch after every "
+                         "command but never pushed, so nothing is anchored (no remote needed)")
     su.add_argument("--adopt", action="store_true",
                     help="move a study committed on the code branch (claimset/<study>/) onto its own branch")
     su.add_argument("--by", help="actor recording the move, for --adopt (default: $CLAIMSET_ACTOR)")

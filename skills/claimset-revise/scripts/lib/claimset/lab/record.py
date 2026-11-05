@@ -75,14 +75,22 @@ def _save_record_config(lab, remote, branch):
     cfg = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
     cfg.pop("anchor", None)          # the study branch is the anchor from now on; receipts keep the history
     cfg["record"] = {"remote": remote, "branch": branch}
+    if remote is None:
+        cfg["record"]["mode"] = "desk"   # committed on the study branch, never pushed (§7.1, desk mode)
     p.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+
+
+def desk(lab):
+    """Whether the lab is kept in desk mode: on its study branch, without a remote (§7.1)."""
+    cfg = config(lab)
+    return bool(cfg) and cfg.get("remote") is None
 
 
 def anchor_config(lab):
     """The anchoring configuration that study-branch mode implies (every event, on the study branch)."""
     cfg = config(lab)
-    if not cfg:
-        return None
+    if not cfg or cfg.get("remote") is None:
+        return None                     # desk mode: nothing is anchored
     return {"service": "git_remote", "remote": cfg.get("remote", "origin"), "branch": cfg["branch"], "every": "event"}
 
 
@@ -185,6 +193,10 @@ def push(lab):
     cfg = config(lab)
     top = Path(lab.root).resolve().parent
     remote, branch = cfg.get("remote", "origin"), cfg["branch"]
+    if remote is None:
+        raise LabError("anchor", f"{branch} is kept in desk mode, without a remote: nothing is anchored; to anchor "
+                                 f"from now on, run `claimset setup --study {Path(lab.root).resolve().parent.name} "
+                                 f"--remote <name>`")
     out = git(["push", "-q", remote, f"HEAD:refs/heads/{branch}"], cwd=top, check=False)
     if out.returncode != 0:
         raise LabError("anchor", f"push of {branch} to {remote} failed: {out.stderr.strip()}")
@@ -249,6 +261,8 @@ def derived_receipt(lab, known):
     if top_of(top) != top:
         return None
     remote, branch = cfg.get("remote", "origin"), cfg["branch"]
+    if remote is None:
+        return None
     ref = git(["rev-parse", "--verify", "-q", f"refs/remotes/{remote}/{branch}"], cwd=top, check=False).stdout.strip()
     if not ref or any((a.get("receipt") or {}).get("commit") == ref for a in known if isinstance(a, dict)):
         return None
@@ -300,6 +314,8 @@ def save(lab, before=0, message=None):
     c = commit(lab, message or "claimset lab: update", codes)
     if c is None and not new and not migrated:
         return None
+    if desk(lab):
+        return None                     # committed; desk mode pushes nothing
     try:
         return push(lab)
     except LabError as exc:
@@ -315,6 +331,8 @@ def unpushed(lab):
         return None
     top = Path(lab.root).resolve().parent
     remote, branch = cfg.get("remote", "origin"), cfg["branch"]
+    if remote is None:
+        return None
     ref = git(["rev-parse", "--verify", "-q", f"refs/remotes/{remote}/{branch}"], cwd=top, check=False).stdout.strip()
     if not ref:
         return None
@@ -344,12 +362,18 @@ def code_top(cwd=None):
 
 
 def _remote_has(top, remote, branch):
+    if remote is None:
+        return False
     out = git(["ls-remote", "--heads", remote, branch], cwd=top, check=False)
     return out.returncode == 0 and bool(out.stdout.strip())
 
 
-def setup(study, title=None, repository=None, remote="origin", adopt=False, by=None, cwd=None, clock=None):
-    """Create, attach or adopt the study branch of `study`; returns (Lab, what was done, notes)."""
+def setup(study, title=None, repository=None, remote="origin", adopt=False, by=None, cwd=None, clock=None,
+          desk=False, upgrade=False):
+    """Create, attach or adopt the study branch of `study`; returns (Lab, what was done, notes). `desk`: keep a
+    new study without a remote (desk mode, §7.1); `upgrade`: give a desk-mode study the remote `remote`."""
+    if desk:
+        remote = None
     if not NAME_RE.match(study or ""):
         raise LabError("layout", f"'{study}' is not a valid study name: lower-case letters, digits and hyphens, "
                                  f"starting with a letter")
@@ -364,8 +388,14 @@ def setup(study, title=None, repository=None, remote="origin", adopt=False, by=N
 
     if path.exists() and top_of(path) == path.resolve() and branch_of(path) == branch:
         lab = Lab(path / "lab")
-        if not config(lab):
+        cfg = config(lab)
+        if not cfg:
             _save_record_config(lab, remote, branch)
+        elif cfg.get("remote") is None and remote is not None and upgrade:
+            _save_record_config(lab, remote, branch)        # from desk mode to a remote: anchored from now on
+            notes.append(f"{branch} is now pushed to {remote} after every command; what was recorded in desk mode "
+                         f"is anchored by the first push, not before")
+            save(lab, len(lab.read()), "claimset: anchor the study branch")
         return lab, "attached already", notes
 
     tracked = git(["ls-files", "--", f"{FOLDER}/{study}"], cwd=top).stdout.strip()
@@ -383,7 +413,8 @@ def setup(study, title=None, repository=None, remote="origin", adopt=False, by=N
         local = True
     if local:
         git(["worktree", "add", "-q", str(path), branch], cwd=top)
-        git(["branch", "-q", f"--set-upstream-to={remote}/{branch}", branch], cwd=top, check=False)
+        if remote is not None:
+            git(["branch", "-q", f"--set-upstream-to={remote}/{branch}", branch], cwd=top, check=False)
         return Lab(path / "lab"), "attached", notes
 
     if not title:
@@ -497,7 +528,7 @@ def studies(cwd=None):
             try:
                 s = build(lab.read())
                 info.update(events=s["events"], open=len(s["open_hypotheses"]), pending=len(s["pending_plans"]),
-                            unpushed=unpushed(lab), on_branch=bool(config(lab)))
+                            unpushed=unpushed(lab), on_branch=bool(config(lab)), desk=desk(lab))
             except LabError:
                 info["unreadable"] = True
         out.append(info)

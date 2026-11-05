@@ -6,8 +6,10 @@ published. Its text is what excerpts are checked against: quotes come from captu
 from code (§2).
 """
 
+import hashlib
 import html.parser
 import mimetypes
+import secrets
 import re
 import shutil
 import urllib.request
@@ -84,9 +86,26 @@ def fetch(url, dest_dir, timeout=30):
     return path, fmt
 
 
+SALT_FILE = "pseudonym-salt"
+
+
+def pseudonym(lab, handle):
+    """A stable pseudonym for an author's handle in this study (§5.20): `a-` and 12 hex digits of the SHA-256 of
+    the study's salt and the handle. The salt is kept in the lab (`pseudonym-salt`), so every checkout gives the
+    same pseudonym; it keeps handles out of the record's text, and is not a secret from someone who has the record
+    and can guess a handle."""
+    path = lab.root / SALT_FILE
+    if not path.exists():
+        path.write_text(secrets.token_hex(16) + "\n", encoding="utf-8")
+    salt = path.read_text(encoding="utf-8").strip()
+    norm = " ".join(str(handle).split()).casefold()
+    return "a-" + hashlib.sha256(f"{salt}:{norm}".encode("utf-8")).hexdigest()[:12]
+
+
 def capture(lab, by, file=None, url=None, fetch_url=False, method=None, retrieved_at=None, title=None,
             fmt=None, text=None, visibility=None, holder="third_party", licence=None, terms=None,
-            archive_uri=None, venue=None, published_at=None, description=None):
+            archive_uri=None, venue=None, published_at=None, description=None, author=None,
+            author_as_given=False):
     """Record a source: copy (or fetch) the file into sources/<id>/, hash it, extract its text, write the event."""
     if fetch_url == bool(file):
         raise LabError("schema", "capture: give a saved file, or --fetch with a URL")
@@ -125,7 +144,11 @@ def capture(lab, by, file=None, url=None, fetch_url=False, method=None, retrieve
         if visibility is None:
             visibility = "private" if holder == "third_party" else "public"
         rights = {k: v for k, v in (("holder", holder), ("licence", licence), ("terms", terms)) if v}
-        body = {"uri": url, "title": title, "method": method, "retrieved_at": retrieved_at, "format": fmt,
+        if author is not None and not str(author).strip():
+            raise LabError("schema", "capture: --author must name the author")
+        who = None if author is None else (" ".join(str(author).split()) if author_as_given else pseudonym(lab, author))
+        body = {"uri": url, "title": title, "author": who, "method": method, "retrieved_at": retrieved_at,
+                "format": fmt,
                 "files": files, "visibility": visibility, "rights": rights, "archive_uri": archive_uri,
                 "venue": venue, "published_at": published_at, "description": description}
         event = lab.append("source", {k: v for k, v in body.items() if v is not None}, by=by)
@@ -136,6 +159,41 @@ def capture(lab, by, file=None, url=None, fetch_url=False, method=None, retrieve
         return event
     except BaseException:
         if event is None and pending.exists():     # nothing was recorded: leave nothing behind
+            shutil.rmtree(pending, ignore_errors=True)
+        raise
+
+
+def correct(lab, by, old_id, **changes):
+    """A correction of a captured source's description (an archived copy found later, a date, the author): the
+    same files, copied into the correction's folder, with the given fields changed (§5.20)."""
+    st = lab.view(by)
+    old = st.latest(old_id) if st.get(old_id) else None
+    if old is None or old["type"] != "source":
+        raise LabError("L11", f"capture --supersedes: {old_id} is not a source")
+    src_dir = lab.root / SOURCES_DIR / old["id"]
+    if not src_dir.is_dir():
+        raise LabError("L24", f"capture --supersedes: the files of {old['id']} are missing ({src_dir})")
+    author = changes.pop("author", None)
+    as_given = changes.pop("author_as_given", False)
+    body = dict(old["body"])
+    for k, v in changes.items():
+        if v is not None:
+            body[k] = v
+    if author is not None:
+        body["author"] = " ".join(str(author).split()) if as_given else pseudonym(lab, author)
+    if body.get("visibility") == "public" and (body.get("rights") or {}).get("holder") == "third_party" and \
+            not ((body.get("rights") or {}).get("licence") or (body.get("rights") or {}).get("terms")):
+        raise LabError("L26", "capture: content written by others is published only under its own licence or terms")
+    root = lab.root / SOURCES_DIR
+    pending = root / f".pending-{uuid.uuid4().hex}"
+    shutil.copytree(src_dir, pending)
+    event = None
+    try:
+        event = lab.append("source", body, by=by, supersedes=old["id"])
+        pending.rename(root / event["id"])
+        return event
+    except BaseException:
+        if event is None and pending.exists():
             shutil.rmtree(pending, ignore_errors=True)
         raise
 
@@ -256,7 +314,8 @@ def current_codings(st):
         if e.get("type") != "coding" or st.root(e["id"]) != e["id"]:
             continue
         cur = st.latest(e["id"])
-        if cur is None or is_withheld(cur) or cur["body"].get("withdrawn") or not cur["body"].get("codes"):
+        if cur is None or is_withheld(cur) or cur["body"].get("withdrawn") or \
+                not (cur["body"].get("codes") or cur["body"].get("none_apply")):
             continue
         out.append(cur)
     return out
@@ -282,8 +341,8 @@ def codings_snapshot(st):
         s = st.get(c["body"]["source"])
         if s is not None and not is_withheld(s) and s["id"] not in sources:
             b = s["body"]
-            sources[s["id"]] = {k: b.get(k) for k in ("uri", "title", "venue", "published_at", "retrieved_at")
-                                if b.get(k) is not None}
+            sources[s["id"]] = {k: b.get(k) for k in ("uri", "title", "author", "venue", "published_at",
+                                                      "retrieved_at") if b.get(k) is not None}
             sources[s["id"]]["id"] = s["id"]
     rows = []
     for c in codings:
@@ -294,6 +353,8 @@ def codings_snapshot(st):
         for k in ("unit", "pass", "memo"):
             if b.get(k) is not None:
                 row[k] = b[k]
+        if b.get("none_apply"):
+            row["none_apply"] = True
         if isinstance(b.get("quote"), dict):
             row["quote"] = {k: b["quote"][k] for k in ("exact", "start", "end") if k in b["quote"]}
         rows.append(row)

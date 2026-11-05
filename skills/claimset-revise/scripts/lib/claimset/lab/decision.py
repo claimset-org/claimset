@@ -232,7 +232,15 @@ def problems(decision, runs=1, hypotheses=None, same=None):
                 out.append(f"quantity name '{name}' must start with a letter and use only letters, digits and _")
             elif name in names:
                 out.append(f"'{name}' is both a quantity and a parameter")
-            if not isinstance(spec, dict) or not isinstance(spec.get("quantity"), str) or not spec["quantity"].strip():
+            if isinstance(spec, dict) and "count" in spec:     # a count over the codings (§5.21.1)
+                from . import count as _count
+                if "quantity" in spec:
+                    out.append(f"quantity '{name}' is a count or a result's quantity, not both")
+                bad = sorted(set(spec) - {"count", "run"})
+                if bad:
+                    out.append(f"quantity '{name}' is a count: it has only count and run, not {', '.join(bad)}")
+                out += _count.spec_problems(name, spec["count"])
+            elif not isinstance(spec, dict) or not isinstance(spec.get("quantity"), str) or not spec["quantity"].strip():
                 out.append(f"quantity '{name}' needs the text of the result's quantity")
                 continue
             if spec.get("conditions") is not None and not isinstance(spec["conditions"], dict):
@@ -314,7 +322,11 @@ def bind(decision, results):
         run = spec.get("run")
         pool = per_run[run - 1] if isinstance(run, int) and 1 <= run <= len(per_run) else \
             [r for rs in per_run for r in rs]
-        matches = [r for r in pool if isinstance(r, dict) and r.get("quantity") == spec.get("quantity")
+        want = spec.get("quantity")
+        if "count" in spec:
+            from .count import result_quantity
+            want = result_quantity(name)
+        matches = [r for r in pool if isinstance(r, dict) and r.get("quantity") == want
                    and all((r.get("conditions") if isinstance(r.get("conditions"), dict) else {}).get(k) == v
                            for k, v in cond.items())]
         if len(matches) != 1:

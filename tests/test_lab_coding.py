@@ -135,7 +135,9 @@ class TestExport(CodingCase):
         self.assertIn("Coded when: asks for automatic arranging for named instruments.", code["definition"])
         self.assertIn("Not coded when: manual tools such as explode/implode.", code["definition"])
         self.assertEqual(code["broader"], [defs["arranging"]["id"]])
-        self.assertIn("1 codings of captured sources", " | ".join(t["what"] for t in out["completion"]))
+        todo = " | ".join(t["what"] for t in out["completion"])
+        self.assertIn("1 quoted codings", todo)
+        self.assertIn("\"lab_event\": \"CD1\"", todo)
 
 
 class TestCodeCli(TestCli):
