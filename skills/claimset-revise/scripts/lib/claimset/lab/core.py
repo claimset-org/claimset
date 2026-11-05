@@ -25,14 +25,14 @@ PREFIX = {
     "actor": "AC", "question": "Q", "hypothesis": "H", "status": "ST", "assumption": "AS",
     "plan": "PL", "approval": "AP", "run": "RN", "result": "RS", "decision": "DC",
     "deviation": "DV", "check": "CK", "artefact": "AR", "note": "NT", "merge": "MG",
-    "paper": "PA", "relocation": "MV", "term": "TM",
+    "paper": "PA", "relocation": "MV", "term": "TM", "source": "SR",
 }
 INIT_ID = "INIT"
 
 #: Event types whose bodies this version of the tool can write and fully check.
 IMPLEMENTED = {"init", "actor", "question", "hypothesis", "status", "assumption",
                "decision", "check", "artefact", "note", "plan", "approval", "run", "result",
-               "deviation", "merge", "paper", "relocation", "term"}
+               "deviation", "merge", "paper", "relocation", "term", "source"}
 
 #: Event types that are written only to the main log, never to an agent log (§3.5).
 MAIN_ONLY = {"init", "actor", "merge", "paper", "relocation"}
@@ -55,6 +55,9 @@ ENUM = {
     "run_label": {"confirmatory", "exploratory"},
     "exit_status": {"success", "failed", "crashed", "cancelled"},
     "status_rule": {"supported", "not_supported", "neither"},
+    "source_method": {"saved", "browser", "fetched"},
+    "source_visibility": {"public", "private"},
+    "rights_holder": {"study", "third_party"},
     # Kinds of definitions and roles of a study's setup, as in the claimset specification (§3.2, §3.4)
     # `measure` (lab record v0.12) is read as `variable` (v0.13)
     "term_kind": {"method", "intervention", "population", "data", "setting", "design", "variable", "measure", "concept",
@@ -648,7 +651,24 @@ def plan_flags(state, plan_version, runs):
                 break
     if reproduced_results(state, plan_version, runs):
         flags.append("reproduces_prompting_result")
+    if sources_after_plan(state, plan_version, runs):
+        flags.append("sources_captured_after_plan")
     return flags
+
+
+def sources_after_plan(state, plan_version, runs):
+    """Sources a deciding run used (declared input files with a source file's hash) that were captured after the
+    plan was written (§5.7.5): the test's material was chosen once the plan existed, so the plan did not fix it.
+    Returns their IDs."""
+    used = {d.get("hash") for r in runs if not is_withheld(r) for d in r["body"].get("data") or []
+            if isinstance(d, dict)}
+    out = []
+    for e in state.events:
+        if e.get("type") != "source" or is_withheld(e) or state.pos.get(e["id"], 0) <= state.pos[plan_version["id"]]:
+            continue
+        if used & {f.get("hash") for f in e["body"].get("files") or [] if isinstance(f, dict)}:
+            out.append(e["id"])
+    return out
 
 
 def prompting_runs(state, hypothesis_ids):
@@ -898,6 +918,34 @@ def check_artefact(state, body, by, eid):
         raise LabError("schema", "artefact: hash must be sha256: followed by 64 hex digits")
 
 
+def check_source(state, body, by, eid):
+    """A captured source (§5.20): its files, how it was obtained, whose it is and whether it may be published."""
+    method = _enum(body, "method", "source_method", "source")
+    _req(body, "format", "source")
+    vis = _enum(body, "visibility", "source_visibility", "source")
+    files = body.get("files")
+    if not isinstance(files, list) or not files or not all(
+            isinstance(f, dict) and isinstance(f.get("path"), str) and f["path"] and "/" not in f["path"]
+            and HASH_RE.match(str(f.get("hash", ""))) and f.get("role") in ("original", "text") for f in files):
+        raise LabError("schema", "source: files must be a list of {path, hash, role: original|text}, the file names "
+                                 "in the source's folder")
+    if [f["role"] for f in files].count("original") != 1:
+        raise LabError("schema", "source: exactly one file is the original")
+    if method == "fetched" and not body.get("uri"):
+        raise LabError("schema", "source: a fetched source names its URI")
+    for f in ("retrieved_at", "published_at"):
+        v = body.get(f)
+        if v is not None and not (isinstance(v, str) and (AT_RE.match(v) or re.match(r"^\d{4}-\d{2}-\d{2}$", v))):
+            raise LabError("schema", f"source: {f} must be a UTC time (YYYY-MM-DDTHH:MM:SSZ) or a date (YYYY-MM-DD)")
+    rights = body.get("rights")
+    if not isinstance(rights, dict):
+        raise LabError("schema", "source: rights {holder, licence, terms} are required")
+    holder = _enum(rights, "holder", "rights_holder", "source rights")
+    if vis == "public" and holder == "third_party" and not (rights.get("licence") or rights.get("terms")):
+        raise LabError("L26", "source: content written by others is published only under its own licence or terms "
+                              "that permit it; give --licence or --terms, or keep it private")
+
+
 def check_note(state, body, by, eid):
     _req(body, "text", "note")
     _refs(state, body.get("refers_to"), "note", "refers_to")
@@ -1118,7 +1166,7 @@ BODY_CHECKS = {
     "decision": check_decision, "check": check_check, "artefact": check_artefact, "note": check_note,
     "plan": check_plan, "approval": check_approval, "run": check_run, "result": check_result,
     "deviation": check_deviation, "merge": check_merge, "paper": check_paper, "relocation": check_relocation,
-    "term": check_term,
+    "term": check_term, "source": check_source,
 }
 
 
@@ -1693,6 +1741,9 @@ def verify(lab, check_files=True, remote=False):
     rep.setdefault("warnings", [])
     if check_files:
         rep["errors"] += verify_run_files(lab, events)
+    if check_files:
+        from .sources import verify_source_files
+        rep["errors"] += verify_source_files(lab, events)
     rep["errors"] += verify_anchors(lab, events)
     rep["errors"] += verify_confirmatory_anchoring(lab, events)
     rep["errors"] += verify_agents(lab, events, check_files)

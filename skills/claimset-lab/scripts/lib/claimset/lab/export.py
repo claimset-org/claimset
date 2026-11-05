@@ -114,7 +114,7 @@ class _Exporter:
                 self.bases[a] = agent_base(self.events, agent)
         self.completion, self.mapping = [], {}
         self.contributors, self.models, self.claims, self.evidence = [], [], [], []
-        self.limitations, self.artefacts = [], []
+        self.limitations, self.artefacts, self.references = [], [], []
         self.person, self.evidence_of_run = {}, {}
         self.results_of = {}
         for e in st.events:
@@ -556,6 +556,7 @@ class _Exporter:
             if art["kind"] in ("figure", "table") and "description" not in art:
                 self.todo(f"artefacts.{aid}.description", f"describe what {aid} shows, self-contained")
             self.artefacts.append(art)
+        self.export_sources()
         lab_aid = f"A{len(self.artefacts) + 1}"
         init = self.body("INIT")
         rel = _repo_path(self.lab.log_path) or f"{self.lab.root.name}/{self.lab.log_path.name}"
@@ -583,7 +584,7 @@ class _Exporter:
                       f"grows, so it will not match the version hash: anchor the record (`claimset lab anchor`) "
                       f"and export again, or give a URI of this version ({art['version']})")
         for x in self.artefacts:
-            if "licence" not in x:
+            if "licence" not in x and not (x.get("reference") and x["availability"]["level"] != "public"):
                 self.todo(f"artefacts.{x['id']}.licence",
                           f"give the licence of {x['id']} itself, which is not necessarily the paper's: the study's "
                           f"own code and data take the licence their owners choose; content written by others "
@@ -591,6 +592,60 @@ class _Exporter:
                           f"licence; say whose it is and under what terms it is shared, or leave it out of the "
                           f"package")
         return lab_aid
+
+    def export_sources(self):
+        """Captured sources (§5.20) as artefacts: content written by others is a cited work (`reference`), never
+        under the paper's licence; a private source is listed with its hash and left out of the package."""
+        st = self.st
+        for e in self.roots:
+            if e["type"] != "source":
+                continue
+            cur = st.latest(e["id"])
+            if is_withheld(cur):
+                self.todo("artefacts", f"source {cur['id']} is withheld and is not exported")
+                continue
+            b = cur["body"]
+            files = {f.get("role"): f for f in b.get("files") or [] if isinstance(f, dict)}
+            original = files.get("original") or {}
+            rights = b.get("rights") if isinstance(b.get("rights"), dict) else {}
+            third = rights.get("holder") == "third_party"
+            aid = f"A{len(self.artefacts) + 1}"
+            self.mapping[aid] = cur["id"]
+            how = {"saved": "saved by hand", "browser": "captured from a browser",
+                   "fetched": "fetched by the lab tool"}.get(b.get("method"), b.get("method"))
+            when = f" on {str(b['retrieved_at'])[:10]}" if b.get("retrieved_at") else ""
+            text = (f"{b.get('title') or 'Captured source'} ({b.get('format')}), {how}{when}; recorded in the lab "
+                    f"record as {cur['id']} on {str(cur.get('at', ''))[:10]}.")
+            if third:
+                text += " Written by others" + (f"; shared under: {rights['terms']}." if rights.get("terms") else ".")
+            if b.get("description"):
+                text += " " + b["description"]
+            art = {"id": aid, "kind": "data", "version": original.get("hash"), "description": text}
+            if b.get("visibility") == "public":
+                path = self.lab.root / "sources" / cur["id"] / str(original.get("path"))
+                art["uri"] = _repo_path(path) or f"{self.lab.root.name}/sources/{cur['id']}/{original.get('path')}"
+                art["availability"] = {"level": "public"}
+            else:
+                if b.get("uri"):
+                    art["uri"] = b["uri"]
+                art["availability"] = {"level": "author_only", "reason": "legal", "content_hash": original.get("hash")}
+                self.todo(f"artefacts.{aid}.availability",
+                          f"{cur['id']} is private: it is listed with its hash and not packaged; check the level "
+                          f"(author_only, audit, platform) and the reason (legal for others' copyright, personal_data)")
+            if rights.get("licence"):
+                art["licence"] = rights["licence"]
+            if third and b.get("uri"):
+                bid = f"B{len(self.references) + 1}"
+                ref = {"id": bid, "target": b["uri"], "id_type": "url"}
+                if b.get("archive_uri"):
+                    ref["archive_uri"] = b["archive_uri"]
+                else:
+                    self.todo(f"references.{bid}.archive_uri",
+                              f"{cur['id']} ({b['uri']}) has no archived copy; give one (a web archive snapshot), "
+                              f"since a page at a URL can change or disappear")
+                self.references.append(ref)
+                art["reference"] = bid
+            self.artefacts.append(art)
 
     def hypothesis_counts(self, hyps):
         counts = {k: 0 for k in ("supported", "not_supported", "inconclusive", "revised", "abandoned", "open")}
@@ -748,6 +803,8 @@ class _Exporter:
         draft = {"schema_version": SPEC_VERSION, "paper": paper, "contributors": self.contributors,
                  "models": self.models, "definitions": definitions, "claims": self.claims, "evidence": self.evidence,
                  "warrants": [], "limitations": self.limitations, "artefacts": self.artefacts}
+        if self.references:
+            draft["references"] = self.references
         return {"draft": draft, "completion": self.completion, "mapping": self.mapping}
 
 

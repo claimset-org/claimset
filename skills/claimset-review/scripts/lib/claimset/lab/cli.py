@@ -243,6 +243,37 @@ def cmd_note(args):
     return _write(args, "note", {"text": args.text, "refers_to": args.refers_to})
 
 
+def cmd_capture(args):
+    from . import sources as _sources
+    lab = _lab(args)
+    by = _actor(args)
+    if args.private and args.public:
+        raise LabError("schema", "capture: --private or --public, not both")
+    vis = "private" if args.private else "public" if args.public else None
+    event = _sources.capture(lab, by, file=args.file, url=args.uri, fetch_url=args.fetch, method=args.method,
+                             retrieved_at=args.retrieved_at, title=args.title, fmt=args.format, text=args.text,
+                             visibility=vis, holder="study" if args.own else "third_party", licence=args.licence,
+                             terms=args.terms, archive_uri=args.archive_uri, venue=args.venue,
+                             published_at=args.published_at, description=args.description)
+    _emit(args, event)
+    _auto_anchor(lab, event)
+    return 0
+
+
+def cmd_quote(args):
+    from . import sources as _sources
+    st = _view(args)
+    src = st.latest(args.source) if st.get(args.source) else None
+    if src is None or src["type"] != "source":
+        raise LabError("L12", f"no source '{args.source}'")
+    sel = _sources.quote(_lab(args), src, args.words)
+    print(json.dumps(sel, ensure_ascii=False, indent=None if args.json else 2))
+    if sel["occurrences"] > 1 and not args.json:
+        print(f"claimset: warning: the words occur {sel['occurrences']} times in {src['id']}; the first is given, "
+              f"so quote enough to tell them apart", file=sys.stderr)
+    return 0
+
+
 def cmd_decide(args):
     return _write(args, "decision", {"text": args.text, "prompted_by": args.prompted_by,
                                      "affects": args.affects})
@@ -758,6 +789,33 @@ def add_parser(subparsers):
     p = cmd("note", cmd_note, "record an observation")
     p.add_argument("text")
     p.add_argument("--refers-to", nargs="+", default=[], metavar="ID")
+
+    p = cmd("capture", cmd_capture, "record an outside source (a saved page, post, transcript or document) as data: "
+                                    "its file, hash, how it was obtained and whose it is")
+    p.add_argument("file", nargs="?", help="the file as you saved it (default); leave out with --fetch")
+    p.add_argument("--uri", help="where the source was found (required with --fetch)")
+    p.add_argument("--fetch", action="store_true", help="have the tool fetch the public page at --uri itself")
+    p.add_argument("--method", choices=["saved", "browser"], help="how the file was obtained (default saved)")
+    p.add_argument("--retrieved-at", dest="retrieved_at", metavar="TIME",
+                   help="when you retrieved it, UTC (2026-11-05T12:00:00Z) or a date; --fetch records it itself")
+    p.add_argument("--title")
+    p.add_argument("--format", metavar="MEDIA_TYPE", help="e.g. text/html (default: from the file name)")
+    p.add_argument("--text", metavar="FILE", help="its text, for formats the tool cannot read (PDF, images)")
+    p.add_argument("--private", action="store_true", help="keep it in the record, out of the published package "
+                                                          "(default for content written by others)")
+    p.add_argument("--public", action="store_true", help="publish the file with the package")
+    p.add_argument("--own", action="store_true", help="the study's own material, not content written by others")
+    p.add_argument("--licence", metavar="SPDX", help="the source's licence, if it has one")
+    p.add_argument("--terms", help="the terms under which it is shared, if it has no licence")
+    p.add_argument("--archive-uri", dest="archive_uri", help="an archived copy of the page (a web archive snapshot)")
+    p.add_argument("--venue", help="where it was published (a forum, a repository, a journal)")
+    p.add_argument("--published-at", dest="published_at", metavar="DATE", help="when it was written or published")
+    p.add_argument("--description")
+
+    p = cmd("quote", cmd_quote, "check that words are in a captured source and print their locator",
+            parents=(viewer,))
+    p.add_argument("source", help="source ID (SR1)")
+    p.add_argument("words", help="the excerpt, as it appears in the source")
 
     p = cmd("decide", cmd_decide, "record a decision and its reason")
     p.add_argument("text", help="the decision and why it was taken")

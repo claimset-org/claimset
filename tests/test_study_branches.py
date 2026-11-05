@@ -275,6 +275,18 @@ class TestCleanCheckout(StudyRepo):
         self.assertTrue(verify(lab)["ok"], verify(lab)["errors"])
         self.assertTrue(verify(lab, remote=True)["ok"], verify(lab, remote=True)["errors"])
 
+    def test_capture_leaves_the_checkout_clean(self):
+        """Lab record v0.16 §5.20: a captured source's files are committed with its event."""
+        self.new_study()
+        os.environ["CLAIMSET_ACTOR"] = "AC1"
+        page = Path(self.tmp.name) / "thread.html"
+        page.write_text("<p>Please add an Arrange for command.</p>", encoding="utf-8")
+        code, _, err = self.cli("lab", "capture", str(page), "--uri", "https://musescore.org/en/node/42911")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.status(), "")
+        tracked = git("ls-files", "lab/sources", cwd=self.top / "claimset" / "alpha").split()
+        self.assertEqual(sorted(tracked), ["lab/sources/SR1/text.txt", "lab/sources/SR1/thread.html"])
+
     def test_the_receipt_of_each_push_is_in_the_next_commit(self):
         lab = self.new_study()
         os.environ["CLAIMSET_ACTOR"] = "AC1"

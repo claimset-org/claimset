@@ -12,6 +12,15 @@ A plan could name several hypotheses but had one pair of rules, so every hypothe
 - §9: a claim's `test` carries the rules of its hypothesis and only the quantities they use. The `lab_record` artefact's description names the specification version the record was begun under, the date it was begun and the version of the tool that exported it, from the record itself.
 - §10: `--supported` and `--not-supported` take a hypothesis prefix (`--supported "H1: s < threshold"`) and can be repeated.
 
+Outside sources (a forum thread, a web page, a transcript) were things a note mentioned, not data: a link in a note can change or disappear, and what it said cannot be quoted or counted from the record.
+
+- §5.20: a new event, `source` (prefix `SR`), written by `claimset lab capture`: the file as the researcher saved it (the default) or as the tool fetched it, under `sources/<id>/` with its hash and its extracted text, with where it was found (`uri`), how it was obtained (`method`: `saved`, `browser` or `fetched`), when it was retrieved, its format, whose it is (`rights`) and whether it is published (`visibility`). Content written by others is private by default.
+- §2, principle 3: quotes come from captured sources; `claimset lab quote` checks an excerpt against a source's text and gives its locator (a W3C Web Annotation text-quote selector).
+- §5.7.5: a new flag, `sources_captured_after_plan`: a deciding run used a source captured after its plan.
+- §6: new rules L24 (a source's files are as captured), L25 (an excerpt is in its source's text) and L26 (content written by others is published only under its own licence or terms).
+- §8, §9: a private source is listed with its hash and left out of the package; content written by others is exported as a cited work (`reference`), never under the paper's licence.
+- §3, §10, §11 updated.
+
 ## Changes in v0.15 (since v0.14)
 
 On a study branch the tool committed and pushed the record after every command, then wrote the push's receipt into `anchors.jsonl`. A commit cannot hold the receipt of its own push, so the receipt stayed in the checkout, uncommitted: every command left the study checkout dirty, and tools that require a clean checkout (a hook that stops on uncommitted changes) failed after every command.
@@ -146,13 +155,13 @@ Research is iterative: ideas are formed, tested, revised and abandoned. Conventi
 - negative results are captured as a by-product of doing the work;
 - an agent can resume the work after a context reset or hand it to another agent.
 
-Version 0.1 targets computational research (simulation, analysis of existing data, method development, proofs). Laboratory and qualitative research fit the same model, with humans recording data-collection events; dedicated event types for them are an open question.
+Version 0.1 targeted computational research (simulation, analysis of existing data, method development, proofs). Laboratory and qualitative research fit the same model, with humans recording data-collection events. Since v0.16, outside material a study reads (pages, posts, transcripts, documents) is captured as data (§5.20); coding and data-collection sessions are open questions (§11).
 
 ## 2. Principles
 
 1. **Append only.** Events are never edited or deleted. A correction is a new event that names the event it supersedes.
 2. **Recorded by the tool.** Events are written by the lab tool, which assigns sequence numbers, times and hashes. Agents do not write the log by hand.
-3. **Results come from code.** Numbers enter the record only from files written by the code that produced them, never typed by an agent.
+3. **Results come from code; quotes come from sources.** Numbers enter the record only from files written by the code that produced them, never typed by an agent. Words quoted from outside material are checked against a captured source (§5.20), never retyped from memory or from a summary.
 4. **Plan before run, or say it was exploratory.** A run is confirmatory only if a plan written earlier covers it; every other run is labelled exploratory. Exploration is legitimate; it is just labelled. It is recorded where its results inform decisions (a run whose output is looked at to choose a direction, a setting or a hypothesis), not step by step, so the record's account of exploration is a lower bound. The rules are strict only on the path from a plan to a claim.
 5. **Every outcome is recorded.** Failed runs, crashed runs, null results, refuted and abandoned hypotheses are all events.
 6. **Exploration cannot confirm itself.** Evidence that suggested a hypothesis cannot also be the evidence that supports it.
@@ -174,6 +183,7 @@ claimset/                      ignored by the code branches
       anchors.jsonl            timestamp anchors of the log (§7); on a study branch, receipts of earlier pushes
       config.json              the study branch and its remote (§7.1)
       runs/<run id>/           per-run outputs: stdout, stderr, results.json, other files
+      sources/<source id>/     captured sources: the original file and its text (§5.20)
     <paper>.claimset.json      a paper drawn from the study (claimset §2.4)
     <paper>.claimset.txt       its reading view
 claimset-code/<study>/         on the code branches: code only this study uses (prototypes, benchmarks)
@@ -440,10 +450,11 @@ A hypothesis may be tested again under a new plan (a replication, a larger sampl
 
 #### 5.7.5 Flags
 
-Three things weaken a planned test without making it invalid. The tool does not refuse them; it reports them as flags of the decided plan (in `verify`, in `verdict`, and in the exported claim's `test.flags`):
+Four things weaken a planned test without making it invalid. The tool does not refuse them; it reports them as flags of the decided plan (in `verify`, in `verdict`, and in the exported claim's `test.flags`):
 - `code_changed_after_plan`: a deciding run used a different commit from the one recorded with the plan, or the code had uncommitted changes when the plan was written or a deciding run was made. The analysis was not fixed when the plan was. Commit the analysis code before writing the plan to avoid it.
 - `holdout_used_elsewhere`: a run other than the plan's deciding runs declared a held-out file of the plan (by hash) as input data. The data meant to test the hypothesis was also used to explore it. Only inputs declared to the tool (`run --data`) can be detected.
 - `reproduces_prompting_result`: a plan names a hypothesis recorded `from_exploration`, and a result of a deciding run has the same `quantity`, the same `conditions` and the same `value` as a result of a run that suggested it (a run named in the hypothesis's `prompted_by`, or the run of a result named there). Under a rule with quantities, only the results the quantities bind are compared; under text rules every result is. Results with value 0 are not compared: a count of zero (no mismatches, no failures) is what a correct method gives on any data. The test may have recomputed the exploration (the same data, or data generated by code that a new seed did not change) rather than tested the hypothesis on anything new.
+- `sources_captured_after_plan`: a deciding run declared as input data (`run --data`) a file of a source (§5.20) captured after the plan was written. The material the test was run on was chosen once the plan existed, so the plan did not fix it. A plan that samples sources still to be collected ("the next 20 threads that a search returns") says so in its `design` and `new_data`; the flag tells readers to check that the sources captured match that rule.
 
 #### 5.7.6 Warnings
 
@@ -565,6 +576,24 @@ Papers split a study's results between them; the split must not decide what is r
 
 A term is recorded once and corrected with `--supersedes` when what it means changes; the correction keeps its place, so hypotheses and plans that named it keep naming it, and the record shows when its meaning changed. A term changed after a plan that names it in its setup was written is a change to the plan's test, and is recorded as a deviation if the runs used the new meaning.
 
+### 5.20 `source` (prefix `SR`), written by the tool
+
+`{uri, title, method, retrieved_at, format, files, visibility, rights, archive_uri, venue, published_at, description}`: outside material kept as data: a web page, a forum thread, an issue, a transcript, a document. `claimset lab capture FILE` copies the file into `sources/<id>/`, hashes it and writes the event; `claimset lab capture --fetch --uri URL` has the tool fetch a public page itself.
+
+- `uri`: where the source was found. Required when `method` is `fetched`; a transcript or a document with no address has none.
+- `method`: how the file was obtained. `saved`: the researcher saved it by hand (the default; it records what the researcher saw, including a page that needed a sign-in or was read after a cookie banner); `browser`: captured from a browser by a tool (an extension, print to file); `fetched`: fetched by the lab tool. Fetching is for public pages and repeatable re-captures; it records a different method because the tool, not the researcher, saw the page.
+- `retrieved_at`: when the source was retrieved, a UTC time or a date: the researcher's account for `saved` and `browser`, the tool's time for `fetched`. The event's `at` is when it was recorded; both are kept.
+- `format`: the original file's media type (`text/html`, `application/pdf`, `text/plain`).
+- `files`: `{path, hash, role}` for the files in `sources/<id>/`: exactly one `original` (the file as saved or fetched) and, when the tool can read the format or the researcher gives one (`--text`), its `text`: the visible text of an HTML page (script, style and head left out; a line per block), or a text the researcher made of a PDF or image. Excerpts are checked against the text (L25).
+- `visibility`: `private` (kept in the record and its repository, left out of the published package: its metadata and hash are published, and short excerpts with their locators) or `public` (published with the package). Content written by others is `private` unless the researcher says otherwise.
+- `rights`: `{holder, licence, terms}`: `holder` is `study` (the study's own material) or `third_party` (written by others: posts, issues, pages, documents); `licence` is the source's SPDX licence, if it has one; `terms`, if it has none, the terms under which it is shared (a site's terms of service, a permission). The paper's licence never applies to content written by others. A `public` third-party source has a `licence` or `terms` that permit publishing it (L26).
+- `archive_uri`: an archived copy of exactly this page (a web archive snapshot): a witness, independent of the study, that the page said this at that time. The record's hash shows only that the file has not changed since it was captured.
+- `venue`, `published_at`, `description`: where and when the source was written or published, and anything else a reader needs.
+
+A source is captured once, when it is first read for the study; a later capture of the same page is a new source, so a page that changed shows as two sources with different hashes. Runs read sources by their files (`run --data lab/sources/SR1/text.txt`), so the hashes tie each run to the material it read.
+
+**Quoting.** `claimset lab quote SR1 "the words"` checks that the words are in the source's text (ignoring differences in whitespace) and prints their locator as a W3C Web Annotation text-quote selector, `{exact, prefix, suffix}` with the words' character positions in the text (`start`, `end`). An excerpt a claim gives (claimset §3.4, excerpts) carries that locator, so a reader with access to the source can find it, and a reader without access knows it was checked.
+
 ## 6. Rules
 
 L1. No line of `lab.jsonl` is modified or removed after it is written.
@@ -590,6 +619,9 @@ L20. A record with a study branch is written only in the checkout of that branch
 L21. A hypothesis's `about` and a plan's `setup` name only `term` events; every term mark in a hypothesis's statement (`[[TM3:…]]`) names a term; every term `about` names is marked in the statement; a list in `about.object` names only terms of kind `variable`.
 L22. An approval's `by` is a human actor, or an agent actor with `on_behalf_of` naming a human actor and non-empty `words`; an approval by a human has no `on_behalf_of`.
 L23. A confirmatory run is not made under a plan with `requires_approval` unless an approval of that plan was written after its current version (the version the run names in `plan_version`).
+L24. Each source's folder `sources/<id>/` holds exactly the files its event records, with the recorded hashes (§5.20).
+L25. An excerpt quoted from a source is in that source's text (§5.20).
+L26. A source whose `rights.holder` is `third_party` is `public` only with a `licence` or `terms` (§5.20).
 
 The tool enforces L1–L5 and L8–L23 mechanically, and refuses L6 and L7 violations. L15–L17 apply to records begun under v0.5 or later, and to records whose `init` is withheld. Where a check depends on withheld content (a withheld run, result or plan), `verify` does not report it as a violation; withholding lowers verifiability instead (§8).
 
@@ -642,7 +674,7 @@ Tools before v0.15 read the heads from the working tree after the commit, so a r
 
 ## 8. Publication and redaction
 
-By default the whole lab record is published with the claimset, as an artefact of kind `lab_record`, together with run outputs.
+By default the whole lab record is published with the claimset, as an artefact of kind `lab_record`, together with run outputs. Private sources (§5.20) are not: their events (metadata and hashes) are published, their files are not.
 
 Individual events can be withheld. A withheld event keeps its header and replaces its body with:
 
@@ -680,6 +712,7 @@ Hypotheses without a final status are counted as open; they are not forced close
 | `assumption` | assumption claim (without novelty) with `assumption_category` and `check`; `check_evidence` when it names a run or result used in an evidence object |
 | `check` | a `checks` entry on the claim whose hypothesis, final status, or evidence run or result it targets. A check by an actor exported as an author is not exported (claimset rule 39) and is named in the completion list |
 | `artefact` | artefact with `kind`, `uri` (the path or URI), `version` (the hash), `licence`, `description` |
+| `source` | artefact of kind `data` after the `artefact` events, with `version` (the original's hash) and a `description` naming the source, its method, when it was retrieved and recorded, and, for content written by others, its terms. Private: `uri` is the source's address, `availability: {level: author_only, reason: legal, content_hash}` (the completion list asks to confirm the level and reason), and the file is not packaged. Public: `uri` is the file's path, `availability: public`. `licence` is the source's own licence, never the paper's. Content written by others with an address is also a cited work: a `references` entry `{target: uri, id_type: url, archive_uri}` that the artefact names in `reference` (the completion list asks for `archive_uri` when the source has none) |
 | the whole record | artefact of kind `lab_record`: `uri` (for a repository on GitHub whose last event is anchored by a git commit, the log in that commit; otherwise the repository URI from `init` followed by the log's path, and the completion list asks for a fixed URI, or the path alone), `version` (the hash of `lab.jsonl`), `availability: public`, `withheld_events`, and a `description` that names, from the record and the tool, the version of this specification the record was begun under (`init.lab_spec_version`), the date it was begun and the version of the tool that exported it; referenced from `paper.exploration.lab_record` |
 
 **Papers.** With paper events, export makes one paper at a time: `--paper NAME`, or the only paper. It exports the hypotheses of the paper's questions only. `paper.study` is the study's name; the exploration summary counts the paper's questions and hypotheses and its tests, and `covers` gives the questions it reports, the whole lab's counts (`lab`) and the other papers with their questions (`other_papers`), so readers see what the paper does not report (claimset §3.1.1). Runs are not tied to questions and are counted for the whole lab. Assumptions are exported from the whole record, and the completion list asks for those no claim of the paper rests on to be removed. The draft is written to `claimset/<study>/<paper>.claimset.json` unless another file is named.
@@ -717,6 +750,8 @@ The reference tool is part of the `claimset` package. Indicative commands:
 | `claimset lab approve PL2 --by AC1` | approval by the human, who runs the command |
 | `claimset lab approve PL2 --by AC2 --on-behalf-of AC1 --words "Yes, go ahead with PL2." [--given-at …] [--channel conversation]` | approval recorded by an agent on the human's behalf, with their words (§5.8) |
 | `claimset lab run [--plan PL2] [--exploratory] [--param k=v] [--seed N] [--data FILE] -- <command>` | runs the command, records `run` and `result` events (§5.9.1) |
+| `claimset lab capture FILE --uri URL [--retrieved-at T] [--method saved\|browser] [--title …] [--venue …] [--published-at D] [--private\|--public] [--own] [--licence SPDX \| --terms "…"] [--archive-uri URL] [--text FILE]` | records a source the researcher saved (§5.20); `--fetch --uri URL` instead has the tool fetch a public page |
+| `claimset lab quote SR1 "the words"` | checks that the words are in the source's text and prints their locator (§5.20) |
 | `claimset lab decide` / `deviate` / `check` / `artefact` | writes the corresponding event |
 | `claimset lab summary` | current state: open questions, hypotheses by status, pending plans, recent decisions; for an actor with an open agent log, what that agent sees |
 | `claimset lab show H3` | one event, with corrections resolved |
@@ -737,6 +772,6 @@ The reference tool is part of the `claimset` package. Indicative commands:
 
 1. Anchoring service: platform receipts, RFC 3161 providers, or both.
 2. Storage of large run outputs (content-addressed storage, external archives).
-3. Event types for laboratory and qualitative research (data-collection sessions, instruments, coding rounds). Terms (§5.19) record what a qualitative study's setup is; how its interviews and coding rounds are recorded as runs is still open.
+3. Event types for laboratory and qualitative research. Terms (§5.19) record what a qualitative study's setup is and sources (§5.20) what it reads; coding (codes applied to passages of sources, by a coder, in a pass) and counts and rules computed from coded data are the next step, and data-collection sessions (interviews, observations) are still open.
 4. Very long explorations (thousands of runs): summarised export without losing the counts.
 5. Whether abandoned hypotheses with substantial evidence should be exportable as claims.
