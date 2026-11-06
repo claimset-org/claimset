@@ -117,7 +117,7 @@ ENUM = {
     "reviewer_type": {"ai", "human"},
     "strength": {"high", "moderate", "low", "very_low"},
     "definition_kind": {"method", "intervention", "population", "data", "setting", "design", "variable", "concept",
-                        "theory", "other"},
+                        "theory", "substance", "organism", "biological_material", "entity", "source", "other"},
 }
 
 PREFIX = {"definitions": "D", "claims": "C", "evidence": "E", "warrants": "W",
@@ -1111,7 +1111,8 @@ ABOUT_SLOTS = ("subject", "relation", "object", "comparator", "conditions")
 DEF_ID_RE = re.compile(r"^D\d+$")
 # Kinds of the parts a setup should name (warning 28): a defined term of these kinds in a claim's `about` is a part
 # of the study the claim's evidence should list.
-SETUP_PART_KINDS = {"method", "intervention", "population", "data", "design", "variable"}
+SETUP_PART_KINDS = {"method", "intervention", "population", "data", "design", "variable", "substance", "organism",
+                    "biological_material", "entity", "source"}
 CURIE_RE = re.compile(r"^[a-z][a-z0-9._-]*:\S+$")
 ROW_REF_RE = re.compile(r"^(A\d+)#row=(\d+)(?:-(\d+))?$")
 EXCERPT_FIELDS = {"text", "locator", "language", "translation"}
