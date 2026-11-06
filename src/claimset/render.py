@@ -112,7 +112,9 @@ def _declarations(d):
     parts = []
     if "funding" in d:
         fund = [_join([f.get("funder"), f"({f['funder_id']})" if f.get("funder_id") else "",
-                       f"award {f['award']}" if f.get("award") else ""], " ")
+                       f"award {f['award']}" if f.get("award") else "",
+                       "in kind" if f.get("kind") == "in_kind" else "",
+                       f"(role: {f['role']})" if f.get("role") else ""], " ")
                 for f in d.get("funding") or [] if isinstance(f, dict)]
         parts.append("funding: " + ("; ".join(fund) if fund else "none"))
     if d.get("competing_interests"):
@@ -128,11 +130,15 @@ def _declarations(d):
 
 def _definition(d):
     tags = [("members", "members"), ("part_of", "part of"), ("broader", "a kind of"), ("assumptions", "assumes"),
-            ("identifiers", "identifiers")]
+            ("identifiers", "identifiers"), ("measures", "measures")]
     line = f"{d.get('id')} " + (f"[{d['kind']}] " if d.get("kind") else "") + f"{d.get('term')}: {d.get('definition')}"
     for key, label in tags:
         if d.get(key):
             line += f" [{label} {', '.join(_s(x) for x in d[key])}]"
+    if isinstance(d.get("location"), list):
+        pts = [_join([f"{_num(x.get('latitude'))}, {_num(x.get('longitude'))}", x.get("label")], " ")
+               for x in d["location"] if isinstance(x, dict)]
+        line += f" [location {'; '.join(pts)}]"
     if d.get("source"):
         line += f" [source {_s(d['source']) if not isinstance(d['source'], dict) else d['source'].get('target')}]"
     return [line + _ext(d)]
@@ -305,6 +311,10 @@ def render(doc):
     out.append(_join(meta))
     if p.get("declarations"):
         out.append("declarations " + _declarations(p["declarations"]))
+    if isinstance(p.get("collaborations"), list):
+        out.append("on behalf of " + "; ".join(
+            _join([x.get("name"), ", ".join(x.get("identifiers") or [])], " ") for x in p["collaborations"]
+            if isinstance(x, dict)))
     if isinstance(doc.get("extensions"), dict) and doc["extensions"]:
         out.append("extensions " + ", ".join(f"{k} {v}" for k, v in doc["extensions"].items()) + _ext(p))
     if isinstance(p.get("exploration"), dict):

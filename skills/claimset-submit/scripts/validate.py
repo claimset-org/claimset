@@ -51,9 +51,10 @@ ENUM = {
     "origin": {"native", "converted"},
     "autonomy": {"autonomous", "human_supervised", "human_assisted", "unknown"},
     "contribution_record": {"complete", "partial", "unknown"},
-    "claim_type": {"descriptive", "associational", "causal", "predictive", "interpretive", "formal", "methodological"},
+    "claim_type": {"descriptive", "associational", "causal", "mechanistic", "predictive", "interpretive", "formal",
+                   "methodological"},
     "role": {"principal", "supporting", "secondary"},
-    "novelty": {"no_prior_found", "replication", "extension", "refutation"},
+    "novelty": {"no_prior_found", "replication", "extension", "refutation", "not_applicable"},
     "provenance": {"author_stated", "extracted", "inferred"},
     "verification": {"machine_checked", "agent_checked", "peer_checked", "disputed", "unchecked"},
     "check_outcome": {"confirmed", "disputed", "inconclusive"},
@@ -79,7 +80,7 @@ ENUM = {
     "design": {"experiment", "quasi_experiment", "observational", "survey", "benchmark", "other"},
     "data_sources": {"interview", "focus_group", "ethnography", "observation", "document", "other"},
     "analytic_approach": {"thematic", "grounded_theory", "ipa", "discourse", "framework", "case_study",
-                          "content_analysis", "other"},
+                          "content_analysis", "source_criticism", "other"},
     "design_model_role": {"subject", "instrument", "annotator", "generator", "baseline"},
     "reasoning": {"deductive", "inductive", "abductive", "analogical", "interpretive"},
     "artefact_kind": {"code", "data", "protocol", "proof", "model", "software", "figure", "table",
@@ -89,7 +90,7 @@ ENUM = {
     "derived_how": {"reanalysis", "subset", "pooled", "extension"},
     "ethics_decision": {"approved", "exempt", "not_required"},
     "relation": {"supports", "contradicts", "extends", "refines", "replicates", "fails_to_replicate", "supersedes",
-                 "addresses", "explains", "qualifies"},
+                 "addresses", "explains", "qualifies", "disputes_evidence"},
     "limitation_category": {"sampling", "sample_size", "measurement", "confounding", "data_quality",
                             "model_specification", "analytic_flexibility", "researcher_position",
                             "computational", "deviation", "other"},
@@ -98,6 +99,7 @@ ENUM = {
     "level": {"public", "platform", "audit", "author_only", "unavailable", "not_stated"},
     "reason": {"personal_data", "commercial", "legal", "ethics", "security", "other"},
     "contributor_type": {"agent", "human", "organisation"},
+    "funding_kind": {"grant", "in_kind"},
     "position": {"author", "supervisor", "guarantor", "conversion_guarantor", "contributor", "converter"},
     "credit": {"conceptualization", "data_curation", "formal_analysis", "funding_acquisition", "investigation",
                "methodology", "project_administration", "resources", "software", "supervision", "validation",
@@ -1117,7 +1119,7 @@ CURIE_RE = re.compile(r"^[a-z][a-z0-9._-]*:\S+$")
 ROW_REF_RE = re.compile(r"^(A\d+)#row=(\d+)(?:-(\d+))?$")
 EXCERPT_FIELDS = {"text", "locator", "language", "translation"}
 ENCODING_KEYS = {"x", "y", "colour", "shape", "size", "panel"}
-LOCAL_RELATION_TYPES = {"supports", "contradicts", "refines", "explains", "qualifies"}
+LOCAL_RELATION_TYPES = {"supports", "contradicts", "refines", "explains", "qualifies", "disputes_evidence"}
 #: Relation types for other works only (§3.7)
 EXTERNAL_ONLY_RELATIONS = {"replicates", "fails_to_replicate", "supersedes", "addresses"}
 
@@ -1958,6 +1960,32 @@ def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
             if not isinstance(idl, list) or not idl or not all(isinstance(x, str) and CURIE_RE.match(x) for x in idl):
                 r.err("68", f"{dw}.identifiers", "a non-empty list of compact identifiers prefix:local "
                                                  "(e.g. chebi:15377, ncbitaxon:9606, doi:10.…)")
+        if "location" in d:
+            loc = d["location"]
+            if d.get("kind") != "setting":
+                r.err("83", f"{dw}.location", "only a setting has a location")
+            if not isinstance(loc, list) or not loc:
+                r.err("83", f"{dw}.location", "a non-empty list of points {latitude, longitude, label}")
+            else:
+                for i, pt in enumerate(loc):
+                    pt = pt if isinstance(pt, dict) else {}
+                    lat, lon = pt.get("latitude"), pt.get("longitude")
+                    if not (set(pt) <= {"latitude", "longitude", "label"} and _is_number(lat) and -90 <= lat <= 90
+                            and _is_number(lon) and -180 <= lon <= 180
+                            and ("label" not in pt or isinstance(pt["label"], str) and pt["label"].strip())):
+                        r.err("83", f"{dw}.location[{i}]", "{latitude, longitude, label}: decimal degrees (WGS 84), "
+                                                           "latitude -90 to 90, longitude -180 to 180, label text")
+        if "measures" in d:
+            ml = d["measures"]
+            if d.get("kind") != "variable":
+                r.err("83", f"{dw}.measures", "only a variable measures a construct")
+            if not isinstance(ml, list) or not ml:
+                r.err("83", f"{dw}.measures", "a non-empty list of IDs of concepts")
+            else:
+                for x in ml:
+                    if not (isinstance(x, str) and x in defs and defs[x].get("kind") == "concept"):
+                        r.err("83", f"{dw}.measures", f"{x} is not a definition of kind concept: a variable measures "
+                                                      f"a construct the paper defines as a concept")
         if "assumptions" in d:
             al = d["assumptions"]
             if not isinstance(al, list) or not al:
@@ -2025,8 +2053,11 @@ def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
                     continue
                 if k in defs and members_of(k):
                     groups.append(k)
-                    if isinstance(v, str) and DEF_ID_RE.match(v) and v in defs and v not in members_of(k):
-                        r.err("66", f"{ow}.conditions", f"{v} is not a member of {k}, the dimension it lies on")
+                    if isinstance(v, str) and DEF_ID_RE.match(v) and v in defs and v not in members_of(k) and \
+                            defs[v].get("kind") != defs[k].get("kind"):
+                        r.err("66", f"{ow}.conditions", f"{v} is not a member of {k}, the dimension it lies on, nor "
+                                                        f"of its kind ({defs[k].get('kind')}), as a control or "
+                                                        f"baseline compared with its members is")
             comp = cond.get("comparator")
             if isinstance(comp, str) and DEF_ID_RE.match(comp) and comp in defs and groups \
                     and not any(comp in members_of(g) for g in groups):
@@ -2080,6 +2111,21 @@ def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
         if cyc(derived, eid):
             r.err("72", f"evidence:{eid}.derived_from", "derived_from forms a cycle")
 
+    # ----- collaborations (rule 85) -----
+    if "collaborations" in paper:
+        cl = paper["collaborations"]
+        if not isinstance(cl, list) or not cl:
+            r.err("85", "paper.collaborations", "a non-empty list of {name, identifiers}")
+        else:
+            for i, x in enumerate(cl):
+                x = x if isinstance(x, dict) else {}
+                ok = (set(x) <= {"name", "identifiers"} and isinstance(x.get("name"), str) and x["name"].strip()
+                      and ("identifiers" not in x or isinstance(x["identifiers"], list) and x["identifiers"]
+                           and all(isinstance(y, str) and CURIE_RE.match(y) for y in x["identifiers"])))
+                if not ok:
+                    r.err("85", f"paper.collaborations[{i}]", "{name, identifiers}: the collaboration's name and, "
+                                                             "optionally, compact identifiers (ror:…, wikidata:Q…)")
+
     # ----- declarations (rule 69, warning 29) -----
     decl = paper.get("declarations")
     if decl is not None:
@@ -2097,6 +2143,15 @@ def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
                     f = as_dict(f)
                     if not isinstance(f.get("funder"), str) or not f["funder"].strip():
                         r.err("69", f"paper.declarations.funding[{i}]", "missing funder")
+                    x = f
+                    extra = sorted(set(x) - {"funder", "funder_id", "award", "kind", "role"})
+                    if extra:
+                        r.err("69", f"paper.declarations.funding[{i}]", f"only funder, funder_id, award, kind and "
+                                                                       f"role; not {', '.join(extra)}")
+                    check_enum(r, "69", f"paper.declarations.funding[{i}].kind", x.get("kind"), "funding_kind")
+                    if "role" in x and not (isinstance(x["role"], str) and x["role"].strip()):
+                        r.err("69", f"paper.declarations.funding[{i}].role", "non-empty text: what the funder did, "
+                                                                            "or did not do, in the work")
             if "ethics" in decl:
                 if not isinstance(decl["ethics"], list):
                     r.err("69", "paper.declarations.ethics", "a list (empty when no ethics review was needed)")
@@ -2343,6 +2398,11 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
                                         "result stating the claim")
         else:
             check_enum(r, "1", f"{w}.novelty", c.get("novelty"), "novelty", required=True)
+            if c.get("novelty") == "not_applicable" and c.get("role") == "principal":
+                r.err("84", f"{w}.novelty", "a principal claim is a finding of the paper: say whether it is new "
+                                            "(no_prior_found, replication, extension or refutation); not_applicable is "
+                                            "for secondary and supporting claims that are not findings (a control, a "
+                                            "routine check)")
     if c.get("provenance") is not None:
         check_enum(r, "1", f"{w}.provenance", c.get("provenance"), "provenance")
     if c.get("verification") is not None:
@@ -2423,8 +2483,9 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
 
 
     if c.get("type") == "interpretive":
-        if not c.get("warrant"):
-            r.err("6", w, "interpretive claims require a warrant")
+        argued = any(as_dict(x).get("kind") == "argument" and as_dict(x).get("warrant") for x in support)
+        if not c.get("warrant") and not argued:
+            r.err("6", w, "interpretive claims require a warrant: on the claim, or on its argument support entry")
     if c.get("warrant"):
         ref("6", f"{w}.warrant", c.get("warrant"), "warrants")
 
