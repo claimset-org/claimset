@@ -16,6 +16,14 @@ Tests planned outside a Claimset lab record can be reported as planned. A study 
 - Rules 42, 44 and 46 (revised): only claims exported from a lab record need `hypothesis.lab_event`, `paper.exploration` and its counts.
 - `claimset migrate` turns the registration URI of a v0.38 test into a reference.
 
+Uncertainty is typed, so numbers from different papers can be compared by machine: a mean ± SD and a mean ± SE, a 95% confidence and a 95% credible interval, a measurement's statistical and systematic uncertainty are no longer told apart only in text.
+
+- §3.4, *Uncertainty* (new): a result, and the estimate of a single-estimate study, may carry `uncertainty`, a list of components `{kind, value}` (±) or `{kind, plus, minus}`: `sd`, `se`, `stat`, `sys`, `total` or `unspecified`, with a `label` naming a component's source and a `level` when it is not one standard deviation.
+- §3.4: an interval may say its `kind`: `confidence`, `credible` or `prediction`.
+- §3.4, *Tables*: the reserved condition key `uncertainty` marks a column that holds the uncertainty of another (`{"variable": "D8", "conditions": {"uncertainty": "sd"}}`).
+- §3.3.3: a test quantity may read a component's value (`field: "uncertainty.se"`).
+- New rule 82 (intervals and uncertainty well formed); rule 47 revised (a quantity's `field` is from the list); warning 17 counts uncertainty values; new warning 35 (a native paper's interval without a kind, or an `unspecified` uncertainty).
+
 ## Changes in v0.38 (since v0.37)
 
 The format becomes a core with extensions. The core holds what every field shares and what claims are compared by across fields: claims and their atoms, support, definitions, observations, assumptions, limitations, provenance and contributors. An extension adds the detail one kind of work needs (the glosses of linguistic examples, the structures of compounds, the endpoints of a trial), in blocks of its own on the objects it concerns. Extensions have their own versions, so one can be added or revised without a new version of the core, and a paper uses as many as it needs.
@@ -738,7 +746,7 @@ A claim that tests a hypothesis carries it as `hypothesis`, with the test's outc
 | `bayesian` | `prior`, `threshold` (e.g. a Bayes factor or posterior probability that decides), `sample` |
 | `deterministic`, `formal`, `qualitative` | none |
 
-- `quantities`: when the rules are expressions, the results they are evaluated on: `{name: {variable, conditions, field, run}}`. Each binds exactly one result: the one whose `variable` is the given one (§3.4) and whose `conditions` include every given key with the given value, read from `field`: `value` (default), `interval.lower` or `interval.upper`; with several deciding runs, `run` names the run (1 for the first). They correspond to results in the claim's evidence. (Files before v0.38 name the variable `quantity`.)
+- `quantities`: when the rules are expressions, the results they are evaluated on: `{name: {variable, conditions, field, run}}`. Each binds exactly one result: the one whose `variable` is the given one (§3.4) and whose `conditions` include every given key with the given value, read from `field`: `value` (default), `interval.lower`, `interval.upper`, or `uncertainty.<kind>` (the `value` of the result's one symmetric uncertainty component of that kind, §3.4: `uncertainty.se`); with several deciding runs, `run` names the run (1 for the first). They correspond to results in the claim's evidence. (Files before v0.38 name the variable `quantity`.)
 - `supported`, `not_supported`: the two rules, each an expression over the quantities and numeric parameters, or text saying what observation decides. If neither rule holds, the outcome is `inconclusive`; if both hold, the rules overlap and the outcome is `inconclusive`. An **expression** is at most 1,000 characters long and uses finite numbers, names (quantities and numeric parameters), `+ - * /`, unary minus, `abs()`, comparisons (`< <= > >= == !=`, which may be chained: `0 < d < 1`), `and`, `or`, `not` and parentheses; nothing else. Every name is a quantity or a numeric parameter. A quantity that cannot be bound (no result matches, or several do) allows no conclusive outcome.
 - `verdict`: `computed` (the rules are expressions and the outcome was computed from the recorded results by the lab tool) · `judged` (the rules are text and the outcome was stated by the writer, who said which rule the evidence met).
 - `runs`: how many runs decided the test. `lab_plan`: the plan's lab-record ID, when there is one. `registration`: the ID of the registration in `references` (§3.13), when the test was registered outside the lab record: `"B7"` (in files before v0.39, the registration's URI). A confirmatory test names its plan: `lab_plan`, `registration`, or both when a lab-record plan was also registered (rule 81).
@@ -833,7 +841,7 @@ Common fields: `id`, `profile`, `description`, `artefacts` (list of artefact IDs
 
 **Observations.** What a study found is recorded as observations: each the value of a variable, observed on something, under conditions that tell it apart from the others. A reaction time per participant and condition, the expression of a gene per cell line and treatment, the yield of a reaction per catalyst and temperature, whether a construction is attested per language and period, the outcome of an appeal per court and year, the accuracy of a model per benchmark, whether a theme appears per participant: each is an observation, and every field's results take this one form, so that readers can query results instead of parsing prose, and compare them across papers. A single observation is a result entry (`results`); observations that the paper reports as a table are a table (`tables`), a compact form of the same thing. Results and tables appear in evidence of any profile except `formal`.
 
-**Results** (`results`): `{id, variable, value, unit, interval, n, conditions, read_from, artefact}`
+**Results** (`results`): `{id, variable, value, unit, interval, uncertainty, n, conditions, read_from, artefact}`
 - `id`: `R1`, `R2`, … unique within the evidence object; referenced from elsewhere as `<evidence id>.<result id>`, e.g. `E23.R2`.
 - `variable`: what is observed: the ID of a definition of kind `variable` (§3.2), or of a `concept` whose presence is observed (a theme in an excerpt), or text for one the paper does not define, e.g. `"D8"` or `"largest KL divergence per observation, mixture vs exact"`. (Was `quantity` until v0.31.)
 - `value`: one of
@@ -841,11 +849,29 @@ Common fields: `id`, `profile`, `description`, `artefacts` (list of artefact IDs
   - a category: the ID of a definition (an outcome the paper defines, such as `"upheld"`) or a short word or code (`"present"`, `"B"`);
   - a boolean (attested or not, significant or not);
   - an **excerpt**, `{text, locator, language, translation}`: words from the data that are themselves the observation (an interview passage, a passage of a judgment, a linguistic example). `text` is the words as the source gives them; `locator` where they are: text (a transcript and line, a document and paragraph, a corpus and sentence ID) or, for words from a file the claimset lists as an artefact, `{artefact, start, end, lab_event}`: the artefact (a captured source, lab record §5.20), the characters of its text the words occupy (`start` inclusive, `end` exclusive, counted in Unicode code points from 0), and optionally the lab record event that recorded the passage (a coding, `CD3`) (rule 78); `language` a BCP 47 tag when not English; `translation` an English translation of words in another language. The interlinear gloss of a linguistic example is given by the linguistics extension (`ext.linguistics.gloss` on the result, §2.7). Excerpts from people's data carry no personal data beyond what the participants consented to publish (`declarations.consent`).
-- `unit`: optional; a UCUM code (`ms`, `%`, `mg/L`, `Cel`, `1` for a dimensionless ratio) or, where UCUM has none, text. `interval`: optional `{level, lower, upper}`. `n`: optional, the number of cases the value rests on.
+- `unit`: optional; a UCUM code (`ms`, `%`, `mg/L`, `Cel`, `1` for a dimensionless ratio) or, where UCUM has none, text. `interval`: optional `{level, lower, upper, kind}`: `level` the coverage as a fraction (0.95), `lower` ≤ `upper`, and `kind` what the interval is: `confidence` (a frequentist confidence interval), `credible` (a Bayesian posterior interval) or `prediction` (where a new observation is expected to fall). `uncertainty`: optional, below. `n`: optional, the number of cases the value rests on.
 - `conditions`: the observation's coordinates: an object whose keys are dimensions and whose values are where the observation lies on each, e.g. `{"D26": "D9", "D5": "D14", "horizon": 12}`. A key is the ID of a definition or text. A value is the ID of a definition, a number, text or a boolean. When a key is a group (§3.2, *Groups*), its value is one of the group's members; when it is a `variable` or `setting` with a unit, its value is a literal in that unit.
 - `read_from`: optional `{artefact, precision}`, when the value was read off a figure or a recording rather than taken from data or a table: `artefact` is the figure or recording, `precision` how exactly it could be read (a number in the observation's unit, or text). Values read off a figure are recorded only with it, so a reader knows they are approximate.
 - `artefact`: optional; the artefact holding the full data this observation summarises.
-A single-estimate study may use `estimand`, `estimate`, `interval` and `n` instead: one observation whose variable is the estimand.
+**Uncertainty** (`uncertainty`): the ± a paper reports with a number, as a list of components, each `{kind, value}` (symmetric) or `{kind, plus, minus}` (asymmetric: `plus` above the value, `minus` below it), in the observation's unit, with optional `label` and `level`. Kinds:
+
+- `sd`: the standard deviation of the observations the value summarises; their spread, not the precision of the value.
+- `se`: the standard error of the value, the precision of an estimate.
+- `stat`: the statistical component of a measurement's uncertainty, reported beside a systematic one.
+- `sys`: a systematic component; `label` names its source (`"luminosity"`, `"theory"`). A measurement may have several, each with its own label.
+- `total`: the combined uncertainty.
+- `unspecified`: a ± the paper does not explain. Converted papers only, in practice: a native paper says what its ± is (warning 35).
+
+`stat`, `sys` and `total` are at one standard deviation unless `level` gives their coverage (`0.95`). An uncertainty belongs to a numeric value. The Higgs boson mass of 126.0 ± 0.4 (stat) ± 0.4 (sys) GeV is
+
+```json
+{"id": "R1", "variable": "D9", "value": 126.0, "unit": "GeV",
+ "uncertainty": [{"kind": "stat", "value": 0.4}, {"kind": "sys", "value": 0.4}]}
+```
+
+and a mean of 4.2 ± 1.1 (SD) over 40 participants is `{"value": 4.2, "uncertainty": [{"kind": "sd", "value": 1.1}], "n": 40}`. An interval and an uncertainty may both be given; neither replaces the other.
+
+A single-estimate study may use `estimand`, `estimate`, `interval`, `uncertainty` and `n` instead: one observation whose variable is the estimand.
 
 **Tables** (`tables`): observations that the paper reports as a table, recorded as one. `{id, description, conditions, row_labels, columns, units, rows, artefact, source_spans}`
 - `id`: `T1`, `T2`, … unique within the evidence object; referenced from elsewhere as `<evidence id>.<table id>`, e.g. `E2.T1`.
@@ -857,7 +883,7 @@ A single-estimate study may use `estimand`, `estimate`, `interval` and `n` inste
 - `rows`: list of `{id, label, values}`. `id`: `r1`, `r2`, … unique within the table; a row is referenced as `<evidence id>.<table id>.<row id>`, e.g. `E2.T1.r3`. `label`: the row's value on each row label, in order: a definition ID (a member of the dimension when it is a group), a number or text. `values`: one value per column, in order, of any type a result value may have; `null` where the paper reports no value.
 - `artefact`: optional artefact ID of the source of the full table. `source_spans`: optional locations of the table in the source text (converted papers).
 
-Each cell is one observation: its variable is the column's; its conditions are the table's, the row's labels and the column's. Intervals, ranks and test statistics are columns of their own (`{"variable": "D8", "conditions": {"statistic": "95% interval, lower"}}`). A table records what the paper reports; it is not split into result entries, and result entries are not repeated in a table.
+Each cell is one observation: its variable is the column's; its conditions are the table's, the row's labels and the column's. Intervals, ranks and test statistics are columns of their own (`{"variable": "D8", "conditions": {"statistic": "95% interval, lower"}}`). A column holding the uncertainty of another column's values has the reserved condition key `uncertainty`, whose value is a kind of uncertainty (above): beside a column `"D8"` of means, `{"variable": "D8", "conditions": {"uncertainty": "sd"}}` holds their standard deviations. A table records what the paper reports; it is not split into result entries, and result entries are not repeated in a table.
 
 **Contrasts.** A value that compares two positions on one dimension (a difference in means, a ratio, an odds ratio, a standardised effect size, the p-value of a comparison, a rank difference) is an observation of the pair. Its conditions name one position as usual and the other under the reserved key `comparator`; its variable says what the contrast is (a defined variable such as "difference in mean MASE", or text). `{"variable": "D11", "conditions": {"D26": "D1", "comparator": "D2", "D5": "D14"}, "value": -0.013, "interval": {"level": 0.95, "lower": -0.021, "upper": -0.005}}` is CES against ETS on the M3 monthly series. The comparator lies on the dimension whose value it replaces: a member of the same group, or a value of the same variable. A table of contrasts has `comparator` in its conditions, its row labels or its columns' conditions. The atom of a claim resting on a contrast has the same comparator (§3.3.5).
 
@@ -912,7 +938,7 @@ The keys of v0.23 to v0.29 map to these: `compared` → `studied`, `data` → `c
 - `prompts`: artefact ID of kind `prompt`.
 
 **Profile `quant`**
-`design` (`experiment` · `quasi_experiment` · `observational` · `survey` · `benchmark` · `other`), `estimand`, `estimate`, `interval` (`{level, lower, upper}`), `n`, `model`.
+`design` (`experiment` · `quasi_experiment` · `observational` · `survey` · `benchmark` · `other`), `estimand`, `estimate`, `interval` (`{level, lower, upper, kind}`), `uncertainty` (§3.4), `n`, `model`.
 
 **Profile `qual`**
 `data_sources` (list: `interview` · `focus_group` · `ethnography` · `observation` · `document` · `other`), `n_participants_or_cases`, `sampling`, `analytic_approach` (`thematic` · `grounded_theory` · `ipa` · `discourse` · `framework` · `case_study` · `content_analysis` (coding material against a codebook and counting the codes) · `other`), `reflexivity` (text). Excerpts are results (above).
@@ -1310,7 +1336,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 ### 10.8 Rules added in v0.12 (errors: file rejected)
 
-47. `planning` is `confirmatory` or `confirmatory_with_deviations` ⇒ `test` present, with a `framework` from the list, non-empty `supported` and `not_supported` rules, the parameters its framework requires, and `verdict` (`computed` or `judged`); `verdict: computed` ⇒ `quantities` present; `flags`, if present, are from the list in §3.3.3.
+47. `planning` is `confirmatory` or `confirmatory_with_deviations` ⇒ `test` present, with a `framework` from the list, non-empty `supported` and `not_supported` rules, the parameters its framework requires, and `verdict` (`computed` or `judged`); `verdict: computed` ⇒ `quantities` present; `flags`, if present, are from the list in §3.3.3. (Revised in v0.39: a quantity's `field`, if present, is `value`, `interval.lower`, `interval.upper` or `uncertainty.<kind>`.)
 
 ### 10.9 Rules added in v0.14 (errors: file rejected)
 
@@ -1404,6 +1430,8 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 81. Plans of confirmatory tests. A claim with `planning` `confirmatory` or `confirmatory_with_deviations` has `hypothesis`, and its `test` names the plan: `lab_plan` or `registration`, or both. `test.registration`, if present, is the ID of an entry in `references`. `planned_at_anchor: registry` ⇒ `test.registration` present.
 
+82. Intervals and uncertainty (§3.4). An `interval` of a result or of an evidence object's estimate has only `level`, `lower`, `upper` and `kind`; `lower` and `upper` are numbers with `lower` ≤ `upper`; `level`, if present, is a number between 0 and 1; `kind`, if present, is `confidence`, `credible` or `prediction`. `uncertainty`, if present, is a non-empty list of components, each with a `kind` from §3.4 and either `value` or both `plus` and `minus`, all non-negative numbers; `level`, if present, is between 0 and 1; `label`, if present, is non-empty text; two components of the same kind have different labels; no other fields. An interval or uncertainty is given only with a numeric value. A table column's condition `uncertainty` is a kind from §3.4.
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -1422,7 +1450,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 14. `id_type: reference` in a native paper: give the cited work's identifier.
 15. A `supporting` claim that no principal claim rests on, directly or through other claims (by `depends_on` or `assumptions`, including the assumptions of the evidence a principal claim cites and the assumptions it inherits from the terms it rests on, §3.2 *Assumptions of a term*): link it to the claim that rests on it, or make it `secondary`. (Revised in v0.32 and v0.33.)
 16. A principal or supporting claim rests on a `secondary` claim (by `depends_on` or `assumptions`): a claim that a contribution rests on is `supporting`.
-17. A number in the statement of a claim with `empirical_quant` or `simulation` support matches, at the precision stated, no value in: the results (value, interval, conditions) and tables (conditions, cells, row labels) of the evidence the claim cites; that evidence's `estimate`, `interval` and `n`; the claim's `test.parameters` and `scope`; the definitions its statement references. Evidence descriptions do not count. Numbers inside LaTeX, `[[D…]]` markers and model notation (`ETS(A,N,A)`, `AR(1)`), and numbers of sections, tables, figures, equations and theorems, are ignored. The reverse of warning 12: a number a statement reports is a recorded result, or a setting in the scope.
+17. A number in the statement of a claim with `empirical_quant` or `simulation` support matches, at the precision stated, no value in: the results (value, interval, uncertainty, conditions) and tables (conditions, cells, row labels) of the evidence the claim cites; that evidence's `estimate`, `interval`, `uncertainty` and `n`; the claim's `test.parameters` and `scope`; the definitions its statement references. Evidence descriptions do not count. Numbers inside LaTeX, `[[D…]]` markers and model notation (`ETS(A,N,A)`, `AR(1)`), and numbers of sections, tables, figures, equations and theorems, are ignored. The reverse of warning 12: a number a statement reports is a recorded result, or a setting in the scope.
 18. Two evidence objects have the same `execution.code_version` and the same results (quantity, value and conditions): one computation recorded twice. Record it once and cite it from every claim it supports.
 19. `novelty: no_prior_found` on a claim whose only support is `consensus`: if established knowledge already shows the claim, the claim is known (cite it, or relate to it); if it is not, give the support that shows it. (Revised in v0.22.)
 20. In a native paper, a principal claim lists a limitation with `impact: could_reverse` and `mitigation: none`, and its author assessment neither has strength `low` or `very_low` nor names that limitation by ID in its rationale: say how the risk was weighed, or lower the strength.
@@ -1440,6 +1468,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 32. A `url` reference has no `archive_uri`, and an artefact naming it holds a captured copy (a page behind a sign-in, or not yet archived): the copy, with its hash, stands in for the archive; give `archive_uri` if the page can be archived.
 33. An extension is declared in `extensions` and no object has a block of it (§2.7).
 34. A claim with `planning: confirmatory_with_deviations` lists no limitation of category `deviation`: record each departure from the plan (§3.3.3).
+35. In a native paper, an interval without `kind`, or an uncertainty component of kind `unspecified`: say what the interval or the ± is (§3.4).
 
 ## 11. Platform dependencies
 

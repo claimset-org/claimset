@@ -32,7 +32,22 @@ def _interval(iv):
         return ""
     level = iv.get("level")
     lvl = f"{_num(level * 100 if isinstance(level, (int, float)) and level <= 1 else level)}% " if level is not None else ""
-    return f"{lvl}interval {_num(iv.get('lower'))} to {_num(iv.get('upper'))}"
+    kind = f"{iv['kind']} " if isinstance(iv.get("kind"), str) else ""
+    return f"{lvl}{kind}interval {_num(iv.get('lower'))} to {_num(iv.get('upper'))}"
+
+
+def _uncertainty(unc):
+    """± 0.4 (stat) ± 0.4 (sys); +0.5/-0.3 (sys, luminosity); the level when not one standard deviation."""
+    parts = []
+    for u in unc if isinstance(unc, list) else []:
+        if not isinstance(u, dict):
+            continue
+        size = f"± {_num(u['value'])}" if "value" in u else f"+{_num(u.get('plus'))}/-{_num(u.get('minus'))}"
+        level = u.get("level")
+        note = _join([u.get("kind"), u.get("label"),
+                      f"{_num(level * 100)}%" if isinstance(level, (int, float)) else ""], ", ")
+        parts.append(f"{size} ({note})")
+    return " ".join(parts)
 
 
 def _conditions(c):
@@ -236,13 +251,14 @@ def _evidence(e):
         lines.append("  derived from " + ", ".join(derived))
     if e.get("estimate") is not None:
         lines.append(f"  estimate: {e.get('estimand', '')} = {_num(e['estimate'])}"
+                     + (f" {_uncertainty(e.get('uncertainty'))}" if e.get("uncertainty") else "")
                      + (f" ({_interval(e.get('interval'))})" if e.get("interval") else ""))
     if e.get("assumptions"):
         lines.append("  assumes " + ", ".join(e["assumptions"]))
     for r in e.get("results") or []:
         if isinstance(r, dict):
             rf = r.get("read_from") if isinstance(r.get("read_from"), dict) else {}
-            extra = _join([r.get("unit"), _interval(r.get("interval")),
+            extra = _join([_uncertainty(r.get("uncertainty")), r.get("unit"), _interval(r.get("interval")),
                            f"n {_num(r['n'])}" if r.get("n") is not None else "", _conditions(r.get("conditions")),
                            f"read from {rf.get('artefact')}, precision {_s(rf.get('precision'))}" if rf else ""], " ")
             lines.append(f"  {e.get('id')}.{r.get('id')} {_s(r.get('variable'))} = {_val(r.get('value'))}"

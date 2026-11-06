@@ -11,6 +11,7 @@ import uuid
 from pathlib import Path
 
 from .anchor import anchoring, ensure_covered
+from ..validate import OBSERVATION_MEASURES, measure_problems
 from .core import LabError, file_hash, is_withheld
 
 RESULTS_FILE = "results.json"
@@ -87,8 +88,12 @@ def _parse_results(path, key="variable"):
                 or not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v):
             problems.append(f"entry {i}: needs 'variable' (text) and 'value' (a finite number)")
             continue
+        bad = measure_problems(r, v, parts=("uncertainty",))
+        if bad:
+            problems.append(f"entry {i}: {bad[0][0]}: {bad[0][1]}")
+            continue
         entry = {key: var}
-        entry.update({k: r[k] for k in ("value", "unit", "interval", "conditions") if r.get(k) is not None})
+        entry.update({k: r[k] for k in OBSERVATION_MEASURES if r.get(k) is not None})
         good.append(entry)
     return good, problems
 

@@ -66,6 +66,8 @@ ENUM = {
     "planning": {"confirmatory", "confirmatory_with_deviations", "exploratory"},
     "anchor": {"platform", "rfc3161", "registry", "git_remote", "none"},
     "framework": {"frequentist", "equivalence", "bayesian", "deterministic", "formal", "qualitative"},
+    "interval_kind": {"confidence", "credible", "prediction"},
+    "uncertainty_kind": {"sd", "se", "stat", "sys", "total", "unspecified"},
     "verdict": {"computed", "judged"},
     "test_flag": {"code_changed_after_plan", "holdout_used_elsewhere", "reproduces_prompting_result",
                   "sources_captured_after_plan"},
@@ -793,6 +795,9 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
         if e.get("profile") in ("quant", "simulation"):
             if e.get("estimate") is None and not as_list(e.get("results")) and not as_list(e.get("tables")):
                 r.warn("W8", w, "no estimate and no results: add a structured results list for the numbers this evidence produced")
+        if "estimate" in e or "uncertainty" in e or isinstance(e.get("interval"), dict):
+            for fld, msg in measure_problems(e, e.get("estimate")):
+                r.err("82", f"{w}.{fld}", msg)
         if e.get("profile") != "formal":
             seen_r = set()
             for i, rs in enumerate(as_list(e.get("results"))):
@@ -852,6 +857,19 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
                 c = ref("1", f"{w}.assumptions", aid, "claims")
                 if c is not None and not is_assumption(c):
                     r.err("3", f"{w}.assumptions", f"{aid} is not an assumption claim")
+
+    # ---------- Kinds of interval and uncertainty in native papers (warning 35) ----------
+    if origin == "native":
+        for e in coll["evidence"]:
+            e = as_dict(e)
+            for x, where in [(e, f"evidence:{e.get('id')}")] + [
+                    (as_dict(rs), f"evidence:{e.get('id')}.{as_dict(rs).get('id')}") for rs in as_list(e.get("results"))]:
+                iv = x.get("interval")
+                if isinstance(iv, dict) and "kind" not in iv:
+                    r.warn("W35", f"{where}.interval", "say what kind of interval it is: confidence, credible or "
+                                                       "prediction")
+                if any(as_dict(u).get("kind") == "unspecified" for u in as_list(x.get("uncertainty"))):
+                    r.warn("W35", f"{where}.uncertainty", "say what the ± is: sd, se, stat, sys or total")
 
     # ---------- Warrants ----------
     for wa in coll["warrants"]:
@@ -1391,12 +1409,12 @@ def unsourced_numbers(c, support, by_id):
             continue
         for x in as_list(e.get("results")):
             x = as_dict(x)
-            _numbers_in([x.get("value"), x.get("interval"), x.get("conditions")], sources)
+            _numbers_in([x.get("value"), x.get("interval"), x.get("uncertainty"), x.get("conditions")], sources)
         for t in as_list(e.get("tables")):
             t = as_dict(t)
             _numbers_in([t.get("conditions"), [as_dict(row).get("values") for row in as_list(t.get("rows"))],
                          [as_dict(row).get("label") for row in as_list(t.get("rows"))]], sources)
-        _numbers_in([e.get("estimate"), e.get("interval"), e.get("n")], sources)
+        _numbers_in([e.get("estimate"), e.get("interval"), e.get("uncertainty"), e.get("n")], sources)
     _numbers_in([as_dict(c.get("test")).get("parameters"), c.get("scope")], sources)
     stmt = c.get("statement") or ""
     for m in re.finditer(r"\[\[(D\d+):", stmt):
@@ -1496,6 +1514,8 @@ def check_test(r, test, w):
                                                        "quantity binds its variable \"count: <name>\"")
         elif not isinstance(q.get("variable"), str) or not q["variable"].strip():
             r.err("47", f"{w}.quantities.{name}.variable", "the variable of the result the quantity binds")
+        elif q.get("field", "value") not in QUANTITY_FIELDS:
+            r.err("47", f"{w}.quantities.{name}.field", f"one of {', '.join(QUANTITY_FIELDS)}")
     if "addresses" in test:
         if not isinstance(test["addresses"], list) or not test["addresses"]:
             r.err("59", f"{w}.addresses", "a non-empty list of review comments' global IDs")
@@ -1522,6 +1542,74 @@ def value_ok(v):
                 and (isinstance(loc, str) and loc.strip() != "" or isinstance(loc, dict))
                 and all(isinstance(v[k], str) for k in v if k != "locator"))
     return False
+
+
+#: What an observation measures besides its variable: the fields a lab record's result carries (lab record §5.10).
+OBSERVATION_MEASURES = ("value", "unit", "interval", "uncertainty", "conditions")
+#: Where a test quantity reads a result from (§3.3.3, `field`).
+QUANTITY_FIELDS = ("value", "interval.lower", "interval.upper") + tuple(
+    f"uncertainty.{k}" for k in sorted(ENUM["uncertainty_kind"]))
+INTERVAL_FIELDS = {"level", "lower", "upper", "kind"}
+UNCERTAINTY_FIELDS = {"kind", "value", "plus", "minus", "level", "label"}
+
+
+def _level_ok(x):
+    return _is_number(x) and 0 < x < 1
+
+
+def measure_problems(obj, number, parts=("interval", "uncertainty")):
+    """Rule 82: the interval and the uncertainty of an observation whose value is `number`, as (field, message)."""
+    out = []
+    iv = obj.get("interval") if "interval" in parts else None
+    if iv is not None:
+        if not isinstance(iv, dict):
+            out.append(("interval", "{level, lower, upper, kind}"))
+        else:
+            extra = sorted(set(iv) - INTERVAL_FIELDS)
+            if extra:
+                out.append(("interval", f"only level, lower, upper and kind; not {', '.join(extra)}"))
+            if not (_is_number(iv.get("lower")) and _is_number(iv.get("upper")) and iv["lower"] <= iv["upper"]):
+                out.append(("interval", "lower and upper are numbers, lower <= upper"))
+            if "level" in iv and not _level_ok(iv["level"]):
+                out.append(("interval.level", "the coverage as a fraction between 0 and 1: 0.95"))
+            if "kind" in iv and iv["kind"] not in ENUM["interval_kind"]:
+                out.append(("interval.kind", f"one of {', '.join(sorted(ENUM['interval_kind']))}"))
+    unc = obj.get("uncertainty") if "uncertainty" in parts else None
+    if unc is not None:
+        if not isinstance(unc, list) or not unc:
+            out.append(("uncertainty", "a non-empty list of components {kind, value} or {kind, plus, minus}"))
+            unc = []
+        seen = set()
+        for i, u in enumerate(unc):
+            uw = f"uncertainty[{i}]"
+            if not isinstance(u, dict):
+                out.append((uw, "{kind, value} or {kind, plus, minus}"))
+                continue
+            extra = sorted(set(u) - UNCERTAINTY_FIELDS)
+            if extra:
+                out.append((uw, f"only kind, value, plus, minus, level and label; not {', '.join(extra)}"))
+            if u.get("kind") not in ENUM["uncertainty_kind"]:
+                out.append((f"{uw}.kind", f"one of {', '.join(sorted(ENUM['uncertainty_kind']))}"))
+            sym = "value" in u
+            asym = "plus" in u or "minus" in u
+            nonneg = lambda x: _is_number(x) and x >= 0   # noqa: E731
+            if sym == asym or (sym and not nonneg(u["value"])) or \
+                    (asym and not (nonneg(u.get("plus")) and nonneg(u.get("minus")))):
+                out.append((uw, "either value (a symmetric uncertainty, ±) or plus and minus (an asymmetric one), "
+                                "each a non-negative number in the observation's unit"))
+            if "level" in u and not _level_ok(u["level"]):
+                out.append((f"{uw}.level", "the coverage as a fraction between 0 and 1, when not one standard "
+                                           "deviation"))
+            if "label" in u and not (isinstance(u["label"], str) and u["label"].strip()):
+                out.append((f"{uw}.label", "the source of this component, as text"))
+            key = (u.get("kind"), u.get("label"))
+            if key in seen:
+                out.append((uw, "two components of the same kind need different labels (their sources)"))
+            seen.add(key)
+    if (iv is not None or unc is not None) and not _is_number(number):
+        out.append(("interval" if iv is not None else "uncertainty", "an interval or uncertainty belongs to a "
+                                                                      "numeric value"))
+    return out
 
 
 def _coord_ok(k, v):
@@ -1567,6 +1655,9 @@ def check_result(r, rw, rs, ref):
         r.err("66", f"{rw}.n", "a non-negative integer")
     if "interval" in rs and not isinstance(rs["interval"], dict):
         r.err("66", f"{rw}.interval", "{level, lower, upper}")
+    else:
+        for fld, msg in measure_problems(rs, rs.get("value")):
+            r.err("82", f"{rw}.{fld}", msg)
     conds = rs.get("conditions")
     if conds is not None and (not isinstance(conds, dict) or not all(_coord_ok(k, v) for k, v in conds.items())):
         r.err("66", f"{rw}.conditions", "an object of dimension: value, each a definition ID, text, number or boolean")
@@ -1622,6 +1713,11 @@ def check_tables(r, w, e, ref):
             cols = None
         elif len({json.dumps(x, sort_keys=True) for x in cols}) != len(cols):
             r.err("48", f"{tw}.columns", "columns must be distinct")
+        for i, c in enumerate(cols or []):
+            u = as_dict(as_dict(c).get("conditions")).get("uncertainty")
+            if u is not None and u not in ENUM["uncertainty_kind"]:
+                r.err("82", f"{tw}.columns[{i}].conditions.uncertainty", f"the kind of uncertainty the column holds: "
+                                                                          f"one of {', '.join(sorted(ENUM['uncertainty_kind']))}")
         if cols is not None and "units" in t:
             u = t["units"]
             if not isinstance(u, list) or len(u) != len(cols) or not all(x is None or isinstance(x, str) for x in u):

@@ -19,7 +19,7 @@ from .. import validate as _claimset
 FRAMEWORKS = tuple(sorted(_claimset.ENUM["framework"]))
 REQUIRED = _claimset.TEST_PARAMETERS
 SIDES = ("two_sided", "greater", "less")
-FIELDS = ("value", "interval.lower", "interval.upper")
+FIELDS = _claimset.QUANTITY_FIELDS                                 # where a quantity reads a result (claimset §3.3.3)
 OUTCOMES = ("supported", "not_supported", "inconclusive")          # the order verdicts are reported in
 assert set(OUTCOMES) == _claimset.ENUM["outcome"]
 TEXT_RULE_OUTCOME = {"supported": "supported", "not_supported": "not_supported", "neither": "inconclusive"}
@@ -347,13 +347,26 @@ def bind(decision, results):
             continue
         field = spec.get("field", "value")
         r = matches[0]
-        interval = r.get("interval") if isinstance(r.get("interval"), dict) else {}
-        v = r.get("value") if field == "value" else interval.get(str(field).split(".")[-1])
+        v = read_field(r, field)
         if not _is_number(v):
             probs.append(f"quantity '{name}' has no numeric {field}")
             continue
         values[name] = v
     return values, probs
+
+
+def read_field(result, field):
+    """The number a quantity reads from a result: its value, a bound of its interval, or the symmetric uncertainty
+    of the one component of a kind (`uncertainty.se`); None when there is no such number."""
+    if field == "value":
+        return result.get("value")
+    part, _, key = str(field).partition(".")
+    if part == "interval":
+        return (result.get("interval") if isinstance(result.get("interval"), dict) else {}).get(key)
+    if part == "uncertainty":
+        comps = [u for u in result.get("uncertainty") or [] if isinstance(u, dict) and u.get("kind") == key]
+        return comps[0].get("value") if len(comps) == 1 else None
+    return None
 
 
 def verdict(decision, results):

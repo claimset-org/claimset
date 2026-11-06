@@ -190,9 +190,10 @@ Fill the profile fields:
 ```
 
 - `variable`: what is observed, a definition of kind `variable` (or a `concept` whose presence is observed), or text.
-- `value`: a number, a category (a definition ID or a word), a boolean, or an excerpt `{text, locator}` (an interview passage, a passage of a judgment, a linguistic example with `gloss` and `translation`).
+- `value`: a number, a category (a definition ID or a word), a boolean, or an excerpt `{text, locator}` (an interview passage, a passage of a judgment, a linguistic example with its `translation`; its gloss is `ext.linguistics.gloss`).
 - `conditions`: where the observation lies, `{dimension: value}`, dimensions and values naming definitions where they exist. When the dimension is a group (the compared methods), the value is one of its members.
-- `unit` (a UCUM code: `ms`, `%`, `mg/L`), `interval`, `n`.
+- `unit` (a UCUM code: `ms`, `%`, `mg/L`), `interval` with its `kind` (`confidence`, `credible` or `prediction`), `n`.
+- A ± goes in `uncertainty`, typed: `[{"kind": "sd", "value": 1.1}]` for a standard deviation, `se` for a standard error, `stat` and `sys` for a measurement's statistical and systematic components (each `sys` with a `label` naming its source), `total`; `{"kind": "sys", "plus": 0.5, "minus": 0.3}` when it is asymmetric. Ask the author what an unexplained ± is; `unspecified` is for converted papers that do not say. In a table, a column of standard deviations is `{"variable": "D8", "conditions": {"uncertainty": "sd"}}`.
 - A value read off a figure says so: `"read_from": {"artefact": "A5", "precision": 0.01}`.
 - A contrast (a difference, ratio, effect size or the p-value of a comparison) names the other side with the reserved condition `comparator`: `{"D7": "D2", "comparator": "D3"}`.
 
