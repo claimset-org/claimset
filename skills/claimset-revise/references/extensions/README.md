@@ -8,6 +8,8 @@ An extension is registered here before it is used. A validator knows the extensi
 |---|---|---|---|---|
 | `linguistics` | 0.1 (`linguistics-v0.1.md`) | Interlinear glosses of linguistic examples, their segmentation into morphemes, acceptability judgements | result entries with an excerpt value | from v0.38 |
 
+`candidates.md` surveys the extensions the format may need, by kind of work, and the needs found to belong in the core instead (informative).
+
 ## Writing an extension
 
 - **Name** the kind of work, not the discipline (`synthesis`, not `chemistry`): one paper may use several extensions, and one kind of work happens in several disciplines.
