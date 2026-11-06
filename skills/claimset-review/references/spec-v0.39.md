@@ -1473,7 +1473,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 85. `paper.collaborations`, if present, is a non-empty list; each entry has a non-empty `name` and optionally `identifiers`, a non-empty list of compact identifiers; no other fields.
 
-86. Types. Every field has the type this specification gives it: one ID or a piece of text is a string, a list is a list, an object an object. A value of another type is an error under the rule of its field and, where no rule names that field's type, under this rule. This rule states what every version assumed, and applies to files of every version (the errata of v0.37 and v0.38 say so).
+86. Types. Every field has the type this specification gives it: one ID or a piece of text is a string, a list is a list, an object an object. A value of another type is an error under the rule of its field and, where no rule names that field's type, under this rule. This rule states what every version assumed, and applies to files of every version (the errata of v0.38 say so).
 
 ### 10.4 Warnings (file accepted, warning recorded)
 
