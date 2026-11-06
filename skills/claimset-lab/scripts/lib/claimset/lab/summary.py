@@ -19,7 +19,7 @@ def _text(event):
     if event["type"] == "run":
         return f"[{b.get('label')}, {b.get('exit_status')}] {' '.join(b.get('command') or [])}"
     if event["type"] == "result":
-        return f"{b.get('quantity')} = {b.get('value')} ({b.get('run')})"
+        return f"{b.get('variable', b.get('quantity'))} = {b.get('value')} ({b.get('run')})"
     if event["type"] == "plan":
         return f"[{b.get('kind')}] {b.get('design', '')}"
     if event["type"] == "approval":
@@ -32,7 +32,9 @@ def _text(event):
     if event["type"] == "merge":
         return f"{b.get('events_merged')} events from {', '.join(b.get('agents') or [])}"
     if event["type"] == "term":
-        crit = f"; coded when: {b['code'].get('include')}" if isinstance(b.get("code"), dict) else ""
+        from .qualitative import code_of
+        code = code_of(b)
+        crit = f"; coded when: {code.get('include')}" if isinstance(code, dict) else ""
         return f"{b.get('term')} [{b.get('kind')}]{crit}"
     if event["type"] == "source":
         bits = [b.get("title") or b.get("uri") or (b.get("files") or [{}])[0].get("path", "")]
@@ -141,7 +143,8 @@ def build(events):
                  "confirmatory": sum(r["body"].get("label") == "confirmatory" for r in runs),
                  "exploratory": sum(r["body"].get("label") == "exploratory" for r in runs),
                  "failed": sum(r["body"].get("exit_status") != "success" for r in runs)},
-        "recent_results": [{"id": r["id"], "run": r["body"].get("run"), "quantity": r["body"].get("quantity"),
+        "recent_results": [{"id": r["id"], "run": r["body"].get("run"),
+                            "variable": r["body"].get("variable", r["body"].get("quantity")),
                             "value": r["body"].get("value"), "conditions": r["body"].get("conditions")}
                            for r in results[-5:]],
     }
@@ -192,7 +195,7 @@ def render(s):
                    f"{r['failed']} not successful)")
     if s["recent_results"]:
         out.append("Recent results:")
-        out += [f"  {x['id']} ({x['run']}) {x['quantity']} = {x['value']}" for x in s["recent_results"]]
+        out += [f"  {x['id']} ({x['run']}) {x['variable']} = {x['value']}" for x in s["recent_results"]]
     if s["checks"]:
         out.append("Checks: " + "; ".join(f"{c['id']} {c['target']} {c['outcome']}" for c in s["checks"]))
     if s["recent_decisions"]:

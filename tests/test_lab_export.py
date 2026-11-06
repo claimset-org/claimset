@@ -31,7 +31,7 @@ from test_lab_protect import HAVE_GIT, make_repo
 
 SCRIPT = """
 import json, os, sys
-json.dump([{"quantity": "mean relative MASE reduction", "value": float(sys.argv[1]),
+json.dump([{"variable": "mean relative MASE reduction", "value": float(sys.argv[1]),
             "conditions": {"frequency": sys.argv[2]}}], open(os.environ["CLAIMSET_RESULTS"], "w"))
 sys.exit(int(sys.argv[3]) if len(sys.argv) > 3 else 0)
 """
@@ -39,7 +39,7 @@ sys.exit(int(sys.argv[3]) if len(sys.argv) > 3 else 0)
 
 def rule(frequency=None):
     """A deterministic decision rule on the reduction SCRIPT writes: supported if positive, refuted if negative."""
-    spec = {"quantity": "mean relative MASE reduction"}
+    spec = {"variable": "mean relative MASE reduction"}
     if frequency:
         spec["conditions"] = {"frequency": frequency}
     return {"framework": "deterministic", "quantities": {"d": spec}, "supported": "d > 0", "not_supported": "d < 0"}

@@ -1,10 +1,10 @@
-"""Counts of coded material (lab record spec v0.18 §5.21.1).
+"""Counts of coded material: the counter of the qualitative extension (spec/extensions/qualitative-v0.1.md, §3.4).
 
 A plan's quantity can be a count over the recorded codings instead of a result a script writes: "the number of
 threads from different years coded 'arrange for ensemble'". `claimset lab count` runs this file as the deciding
 run's command: it reads the codings in force from $CLAIMSET_CODINGS and writes one result per count to
-$CLAIMSET_RESULTS, so the counts come from code like any other result, and anyone can re-run it on the run's
-`codings.json`.
+$CLAIMSET_RESULTS, whose variable is `count: <name>`, so the counts come from code like any other result, and
+anyone can re-run it on the run's `codings.json`. The extension's rules use its `spec_problems` to check counts.
 
 This file uses only the standard library and imports nothing from the package, so it runs as a script.
 """
@@ -21,13 +21,14 @@ MATCH = ("any", "all")
 WHERE_KEYS = ("pass", "unit", "coder", "venue", "published_from", "published_to")
 
 
-def result_quantity(name):
-    """The quantity text of the result that holds a count, which the plan's quantity binds to."""
+def result_variable(name):
+    """The variable of the result that holds a count, which the plan's quantity binds to."""
     return f"count: {name}"
 
 
 def spec_problems(name, spec):
-    """What makes a count specification incomplete or invalid (rule L15)."""
+    """What makes a count specification incomplete or invalid (rule qualitative.L3; L15 in records begun before
+    lab record v0.20)."""
     if not isinstance(spec, dict):
         return [f"count of quantity '{name}' must be an object {{codes, match, unit, distinct_by, where}}"]
     out = []
@@ -36,7 +37,7 @@ def spec_problems(name, spec):
         out.append(f"count of quantity '{name}' has {', '.join(extra)}; it has only {', '.join(COUNT_KEYS)}")
     codes = spec.get("codes")
     if not isinstance(codes, list) or not codes or not all(isinstance(c, str) and c.strip() for c in codes):
-        out.append(f"count of quantity '{name}' needs codes: a list of the codes (term IDs) counted")
+        out.append(f"count of quantity '{name}' needs codes: a list of the codes counted (term IDs in a lab record, definition IDs in a claimset)")
     for key, allowed, default in (("match", MATCH, "any"), ("unit", UNITS, "source"),
                                   ("distinct_by", DISTINCT, None)):
         v = spec.get(key, default)
@@ -137,9 +138,9 @@ def results(snapshot, counts):
         cond = {"unit": spec.get("unit", "source"), "distinct_by": spec.get("distinct_by") or spec.get("unit", "source")}
         if len(spec.get("codes") or []) == 1:
             cond["code"] = spec["codes"][0]
-        out.append({"quantity": result_quantity(name), "value": c["value"], "n": c["n"], "conditions": cond})
+        out.append({"variable": result_variable(name), "value": c["value"], "n": c["n"], "conditions": cond})
         if c["missing"]:
-            out.append({"quantity": f"{result_quantity(name)}, units not counted for want of "
+            out.append({"variable": f"{result_variable(name)}, units not counted for want of "
                                     f"{spec.get('distinct_by')}", "value": c["missing"]})
     return out
 
@@ -159,7 +160,7 @@ def main(argv=None):
     with open(os.environ["CLAIMSET_RESULTS"], "w", encoding="utf-8") as fh:
         json.dump(out, fh, ensure_ascii=False, indent=1)
     for r in out:
-        print(f"{r['quantity']} = {r['value']}")
+        print(f"{r['variable']} = {r['value']}")
     return 0
 
 

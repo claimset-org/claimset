@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .. import LAB_SPEC_VERSION
+from .. import validate as _claimset
 from . import decision as _decision
 
 HEADER_FIELDS = ("seq", "id", "type", "at", "by", "prev", "content_hash", "supersedes", "origin")
@@ -25,32 +26,47 @@ PREFIX = {
     "actor": "AC", "question": "Q", "hypothesis": "H", "status": "ST", "assumption": "AS",
     "plan": "PL", "approval": "AP", "run": "RN", "result": "RS", "decision": "DC",
     "deviation": "DV", "check": "CK", "artefact": "AR", "note": "NT", "merge": "MG",
-    "paper": "PA", "relocation": "MV", "term": "TM", "source": "SR", "coding": "CD",
+    "paper": "PA", "relocation": "MV", "term": "TM", "source": "SR", "extension": "EX",
 }
 INIT_ID = "INIT"
+
+
+def _extension_modules():
+    """Every registered extension version's module (claimset §2.7)."""
+    from .. import extensions as _ext
+    return [(name, version, _ext.module(name, version)) for name, versions in _ext.KNOWN.items()
+            for version in versions]
+
+
+#: Event types defined by extensions (lab record §2.1): type -> extension name. Their ID prefixes join PREFIX.
+EXTENSION_EVENTS = {}
+for _name, _version, _mod in _extension_modules():
+    for _etype, _prefix in getattr(_mod, "LAB_EVENTS", {}).items():
+        EXTENSION_EVENTS[_etype] = _name
+        PREFIX[_etype] = _prefix
 
 #: Event types whose bodies this version of the tool can write and fully check.
 IMPLEMENTED = {"init", "actor", "question", "hypothesis", "status", "assumption",
                "decision", "check", "artefact", "note", "plan", "approval", "run", "result",
-               "deviation", "merge", "paper", "relocation", "term", "source", "coding"}
+               "deviation", "merge", "paper", "relocation", "term", "source", "extension"} | set(EXTENSION_EVENTS)
 
 #: Event types that are written only to the main log, never to an agent log (§3.5).
-MAIN_ONLY = {"init", "actor", "merge", "paper", "relocation"}
+MAIN_ONLY = {"init", "actor", "merge", "paper", "relocation", "extension"}
 AGENTS_DIR = "agents"
 
+# The claimset specification is the record's vocabulary (§2.1): every list the two share is the claimset's.
+_C = _claimset.ENUM
 ENUM = {
-    "actor_kind": {"agent", "human", "organisation"},
-    "record_source": {"harness", "user_reported", "self_reported"},
+    "actor_kind": _C["contributor_type"],
+    "record_source": _C["record_source"],
     "origin": {"a_priori", "from_exploration"},
     "status_to": {"testing", "supported", "not_supported", "inconclusive", "revised", "abandoned"},
-    "assumption_category": {"theoretical", "statistical", "methodological", "data", "axiom",
-                            "theorem_condition", "paradigmatic"},
-    "assumption_check": {"tested", "sensitivity_analysed", "unchecked", "untestable"},
-    "check_outcome": {"confirmed", "disputed", "inconclusive"},
-    "check_extent": {"full", "partial"},
-    "artefact_kind": {"code", "data", "protocol", "proof", "model", "software", "figure", "table",
-                      "prompt", "trace", "manuscript", "other"},
-    "withheld_reason": {"personal_data", "commercial", "legal", "ethics", "security", "other"},
+    "assumption_category": _C["assumption_category"],
+    "assumption_check": _C["check"],
+    "check_outcome": _C["check_outcome"],
+    "check_extent": _C["check_extent"],
+    "artefact_kind": _C["artefact_kind"],
+    "withheld_reason": _C["reason"],
     "plan_kind": {"confirmatory", "exploratory"},
     "run_label": {"confirmatory", "exploratory"},
     "exit_status": {"success", "failed", "crashed", "cancelled"},
@@ -58,15 +74,13 @@ ENUM = {
     "source_method": {"saved", "browser", "fetched"},
     "source_visibility": {"public", "private"},
     "rights_holder": {"study", "third_party"},
-    # Kinds of definitions and roles of a study's setup, as in the claimset specification (§3.2, §3.4)
     # `measure` (lab record v0.12) is read as `variable` (v0.13)
-    "term_kind": {"method", "intervention", "population", "data", "setting", "design", "variable", "measure", "concept",
-                  "theory", "other"},
+    "term_kind": _C["definition_kind"] | {"measure"},
 }
-SETUP_ROLES = ("studied", "cases", "procedure", "lens", "context")
-ABOUT_SLOTS = ("subject", "relation", "object", "comparator", "conditions")
+SETUP_ROLES = _claimset.SETUP_ROLES
+ABOUT_SLOTS = _claimset.ABOUT_SLOTS
 #: Kinds of the parts a plan's setup should name when a hypothesis it tests is about them (§5.7.6).
-SETUP_PART_KINDS = {"method", "intervention", "population", "data", "design", "variable", "measure"}
+SETUP_PART_KINDS = _claimset.SETUP_PART_KINDS | {"measure"}
 #: Term kinds of lab record v0.12 and their names since v0.13.
 RENAMED_KINDS = {"measure": "variable"}
 TERM_ID_RE = re.compile(r"^(?:AC\d+\.)?TM\d+$")
@@ -74,6 +88,10 @@ TERM_MARK_RE = re.compile(r"\[\[((?:AC\d+\.)?TM\d+):[^\]]+\]\]")
 
 #: The first version of this specification with decision rules (L15-L17).
 STRICT_VERSION = (0, 5)
+#: The first version with extensions (§2.1, §5.22, L30) and results that name their `variable`; records begun
+#: earlier have the qualitative extension from their start and keep the forms they were written in.
+EXTENSIONS_VERSION = (0, 20)
+IMPLICIT_EXTENSIONS = {"qualitative": "0.1"}
 
 
 def version_tuple(v):
@@ -178,6 +196,7 @@ class State:
         self.lab_path = None     # where the lab lives, as the latest relocation records it
         self.relocations = []    # relocation bodies, in order
         self.papers = {}         # paper root -> latest visible paper event
+        self.extensions = {}     # extension name -> version declared (§5.22)
 
     # -- lookups
     def get(self, eid):
@@ -192,6 +211,28 @@ class State:
         while e is not None and e["id"] in self.superseded_by:
             e = self.by_id[self.superseded_by[e["id"]]]
         return e
+
+    @property
+    def legacy(self):
+        """Whether the record was begun before v0.20: it keeps `quantity`, a term's `code`, a run's `codings` and
+        count quantities in its decision rules (§5.10, qualitative extension)."""
+        return self.spec_version is not None and self.spec_version < EXTENSIONS_VERSION
+
+    def lab_extension(self, name):
+        """The lab implementation of a declared extension (its module's LAB), or None."""
+        from .. import extensions as _ext
+        version = self.extensions.get(name)
+        mod = _ext.module(name, version) if version else None
+        lab = getattr(mod, "LAB", None) if mod else None
+        if not lab:
+            return None
+        import importlib
+        return importlib.import_module(lab)
+
+    def declared(self):
+        """[(name, lab implementation or None, extension module)] of the declared extensions."""
+        from .. import extensions as _ext
+        return [(n, self.lab_extension(n), _ext.module(n, v)) for n, v in self.extensions.items()]
 
     @property
     def strict(self):
@@ -282,8 +323,12 @@ class State:
             self.has_withheld = True
         if event["type"] == "init" and visible:
             self.spec_version = version_tuple(body.get("lab_spec_version"))
+            if self.spec_version < EXTENSIONS_VERSION:
+                self.extensions.update(IMPLICIT_EXTENSIONS)
             if isinstance(body.get("study"), str):
                 self.study = body["study"]
+        if event["type"] == "extension" and visible and isinstance(body.get("name"), str):
+            self.extensions.setdefault(body["name"], body.get("version"))
         if event["type"] == "relocation" and visible:
             self.relocations.append(body)
             if isinstance(body.get("study"), str):
@@ -333,6 +378,35 @@ class State:
         checker = BODY_CHECKS.get(etype)
         if checker:
             checker(self, body, by, eid)
+        if etype in EXTENSION_EVENTS:
+            name = EXTENSION_EVENTS[etype]
+            if name not in self.extensions:
+                raise LabError("L30", f"{etype} events are the {name} extension's: declare it first "
+                                      f"(`claimset lab extension {name}`)")
+            impl = self.lab_extension(name)
+            if impl is not None:
+                impl.check_event(self, etype, body, by, eid)
+        if "ext" in body:
+            self.check_blocks(etype, body, eid)
+
+    def check_blocks(self, etype, body, eid):
+        """An event's extension blocks (§2.1, L30)."""
+        ext = body["ext"]
+        if not isinstance(ext, dict):
+            raise LabError("L30", f"{etype}: ext is an object {{extension name: block}}")
+        for name, block in ext.items():
+            if name not in self.extensions:
+                raise LabError("L30", f"{etype}: the extension {name} is not declared in the record "
+                                      f"(`claimset lab extension {name}`)")
+            from .. import extensions as _ext
+            mod = _ext.module(name, self.extensions[name])
+            if mod is None or etype not in getattr(mod, "LAB_BLOCKS", ()):
+                raise LabError("L30", f"{etype}: the extension {name} has no block on {etype} events")
+            if not isinstance(block, dict):
+                raise LabError("L30", f"{etype}: an extension's block is an object")
+            impl = self.lab_extension(name)
+            if impl is not None:
+                impl.check_block(self, etype, body, block, eid)
 
     def check_header(self, etype, eid, by, supersedes):
         """The checks that need only the header; they apply to withheld events too."""
@@ -365,6 +439,38 @@ class State:
             if supersedes in self.superseded_by:
                 raise LabError("L11", f"{supersedes} is already superseded by {self.superseded_by[supersedes]}; "
                                       f"correct that one instead")
+
+
+def record_forms(state, etype, body):
+    """A body in the forms the record is written in (§5.10, §5.7.1; qualitative extension §2.1, §2.4), from the
+    forms a writer gives: a term's `code` and a decision rule's count quantities go to the qualitative extension's
+    block, and quantities bind by `variable`; records begun before v0.20 keep `code`, count quantities and
+    `quantity`. Returns (body, the extensions the body needs)."""
+    import copy
+    body = copy.deepcopy(body)
+    needs = set()
+    if etype == "term" and body.get("code") is not None:
+        needs.add("qualitative")
+        if not state.legacy:
+            body.setdefault("ext", {}).setdefault("qualitative", {})["code"] = body.pop("code")
+    d = body.get("decision") if etype == "plan" else None
+    quantities = d.get("quantities") if isinstance(d, dict) else None
+    if isinstance(quantities, dict):
+        from ..extensions.qualitative_count import result_variable
+        old, new = ("variable", "quantity") if state.legacy else ("quantity", "variable")
+        counts = {}
+        for name, q in list(quantities.items()):
+            if not isinstance(q, dict):
+                continue
+            if "count" in q:
+                needs.add("qualitative")
+                if not state.legacy:
+                    counts[name] = q["count"]
+                    q = dict({k: v for k, v in q.items() if k != "count"}, variable=result_variable(name))
+            quantities[name] = {(new if k == old else k): v for k, v in q.items()}
+        if counts:
+            body.setdefault("ext", {}).setdefault("qualitative", {})["counts"] = counts
+    return body, needs
 
 
 def final_statuses(st):
@@ -572,20 +678,12 @@ def check_term(state, body, by, eid):
     src = body.get("source")
     if src is not None and (not isinstance(src, str) or not src.strip()):
         raise LabError("schema", "term: source must be non-empty text (a reference, identifier or citation)")
-    code = body.get("code")
-    if code is not None:
-        if kind != "concept":
-            raise LabError("schema", "term: a code (a term with a code part) is a concept")
-        if not isinstance(code, dict) or not isinstance(code.get("include"), str) or not code["include"].strip():
-            raise LabError("schema", "term: code needs include: what a passage must show to get this code")
-        extra = set(code) - {"include", "exclude", "examples"}
-        if extra:
-            raise LabError("schema", f"term: code has only include, exclude and examples, not {sorted(extra)}")
-        if code.get("exclude") is not None and (not isinstance(code["exclude"], str) or not code["exclude"].strip()):
-            raise LabError("schema", "term: code.exclude must be non-empty text")
-        ex = code.get("examples")
-        if ex is not None and not (isinstance(ex, list) and all(isinstance(x, str) and x.strip() for x in ex)):
-            raise LabError("schema", "term: code.examples must be a list of texts")
+    if body.get("code") is not None:
+        if not state.legacy:
+            raise LabError("schema", "term: a code's criteria are the qualitative extension's since lab record "
+                                     "v0.20: ext.qualitative.code (`claimset lab term … --include` writes them)")
+        from .qualitative import check_code
+        check_code(body["code"], kind)
     broader = body.get("broader")
     if broader is not None:
         if not isinstance(broader, list) or not broader:
@@ -596,63 +694,6 @@ def check_term(state, body, by, eid):
                 raise LabError("L21", f"term: broader names {t!r}, which is not a term recorded earlier")
             if eid is not None and state.root(t) == state.root(eid):
                 raise LabError("schema", "term: a term is not broader than itself")
-
-
-def is_code(state, term_id):
-    """Whether a term ID names a code: a term whose latest version has a code part (§5.19)."""
-    e = state.latest(term_id) if isinstance(term_id, str) and state.get(term_id) else None
-    return e is not None and e["type"] == "term" and not is_withheld(e) and isinstance(e["body"].get("code"), dict)
-
-
-SELECTOR_KEYS = ("exact", "prefix", "suffix", "start", "end")
-
-
-def check_coding(state, body, by, eid):
-    """A coding (§5.21): codes applied to a captured source, or to a passage of it, by its writer (L27)."""
-    sid = _ref(state, _req(body, "source", "coding"), "coding", "source", {"source"})
-    empty = body.get("withdrawn") is True or body.get("none_apply") is True
-    codes = body.get("codes", [] if empty else None)
-    if not isinstance(codes, list) or not all(isinstance(c, str) for c in codes):
-        raise LabError("schema", "coding: codes must be a list of term IDs")
-    if body.get("withdrawn") is True and body.get("none_apply") is True:
-        raise LabError("schema", "coding: withdrawn or none_apply, not both")
-    if empty and codes:
-        raise LabError("schema", "coding: a coding that is withdrawn, or that says no code applies, names no codes")
-    if not codes and not empty:
-        raise LabError("schema", "coding: name at least one code; a source read and given no code says none_apply: "
-                                 "true (`--none`), a correction that removes the codes says withdrawn: true")
-    if body.get("none_apply") is True and body.get("quote") is not None:
-        raise LabError("schema", "coding: a coding that says no code applies is of the whole source, with no quote")
-    for c in codes:
-        if state.get(c) is None or not is_code(state, c):
-            raise LabError("L27", f"coding: {c} is not a code: record it as a term of kind concept with "
-                                  f"--include (and --exclude) first")
-    if len(set(state.root(c) for c in codes)) != len(codes):
-        raise LabError("schema", "coding: a code is named once")
-    versions = body.get("code_versions")
-    if versions is not None:
-        if not isinstance(versions, dict) or set(versions) != set(codes):
-            raise LabError("schema", "coding: code_versions has one entry per code: the version applied")
-        for c, v in versions.items():
-            if not isinstance(v, str) or state.get(v) is None or state.root(v) != state.root(c):
-                raise LabError("L12", f"coding: {v!r} is not a version of {c}")
-    sel = body.get("quote")
-    if sel is not None:
-        src = state.get(sid)
-        if not isinstance(sel, dict) or not isinstance(sel.get("exact"), str) or not sel["exact"].strip() \
-                or not all(isinstance(sel.get(k), int) and not isinstance(sel.get(k), bool) for k in ("start", "end")) \
-                or not 0 <= sel["start"] < sel["end"] or set(sel) - set(SELECTOR_KEYS):
-            raise LabError("schema", "coding: quote is {exact, prefix, suffix, start, end}, as `claimset lab quote` "
-                                     "gives it")
-        if src is not None and not is_withheld(src) and \
-                not any(isinstance(f, dict) and f.get("role") == "text" for f in src["body"].get("files") or []) \
-                and src["body"].get("format") not in ("text/plain", "text/markdown", "text/csv", "application/json",
-                                                       "text/html", "application/xhtml+xml"):
-            raise LabError("L25", f"coding: {sid} has no text to quote from")
-    for f in ("unit", "pass", "memo"):
-        v = body.get(f)
-        if v is not None and (not isinstance(v, (str, int)) or isinstance(v, bool) or (isinstance(v, str) and not v.strip())):
-            raise LabError("schema", f"coding: {f} must be non-empty text or a number")
 
 
 def _term_marks(state, text, etype):
@@ -770,7 +811,9 @@ def _check_confirmatory_run(state, plan_id, plan):
 # A review comment's global ID (revision spec §2.2), named by plans that run its resolution test (§5.7.7)
 COMMENT_ID_RE = re.compile(r"^\S+@v[1-9]\d*/RV[1-9]\d*\.c[1-9]\d*$")
 
-FLAGS = ("code_changed_after_plan", "holdout_used_elsewhere", "reproduces_prompting_result")
+#: The core's test flags, in the order they are reported (their meanings: claimset §3.3.3).
+FLAGS = ("code_changed_after_plan", "holdout_used_elsewhere", "reproduces_prompting_result", "sources_captured_after_plan")
+assert set(FLAGS) == _C["test_flag"]
 
 
 def plan_flags(state, plan_version, runs):
@@ -779,8 +822,8 @@ def plan_flags(state, plan_version, runs):
     b = plan_version["body"]
     commit = b.get("code_version")
     visible = [r for r in runs if not is_withheld(r)]
-    # a run of the built-in counter (§5.21.1) runs the tool's own code, whose version it records: the study's
-    # analysis code is not what decides it
+    # a run of an extension's counter runs the tool's own code, whose version it records: the study's analysis code
+    # is not what decides it
     analysed = [r for r in visible if not (r["body"].get("parameters") or {}).get("counter")]
     if analysed and (commit is not None and any(r["body"].get("code_version") != commit or r["body"].get("dirty")
                                                 for r in analysed) or b.get("dirty")):
@@ -798,82 +841,10 @@ def plan_flags(state, plan_version, runs):
         flags.append("reproduces_prompting_result")
     if sources_after_plan(state, plan_version, runs):
         flags.append("sources_captured_after_plan")
-    if coded_before_plan(state, plan_version, runs):
-        flags.append("coded_before_plan")
-    if codebook_changed(state, plan_version, runs):
-        flags.append("codebook_changed_after_plan")
+    for _name, impl, _mod in state.declared():
+        if impl is not None and hasattr(impl, "plan_flags"):
+            flags += impl.plan_flags(state, plan_version, runs)
     return flags
-
-
-def count_specs(decision):
-    """{name: count specification} of a decision rule's count quantities (§5.21.1)."""
-    q = decision.get("quantities") if isinstance(decision, dict) else None
-    return {n: v["count"] for n, v in (q or {}).items() if isinstance(v, dict) and isinstance(v.get("count"), dict)}
-
-
-def plan_codes(state, plan_version):
-    """The roots of the codes a plan's counts name, with every narrower code (whose broader chain reaches them).
-    None if the plan counts no codes."""
-    named = {state.root(c) for spec in count_specs(plan_version["body"].get("decision")).values()
-             for c in spec.get("codes") or [] if isinstance(c, str) and state.get(c)}
-    if not named:
-        return None
-    out = set(named)
-    grew = True
-    while grew:
-        grew = False
-        for e in state.events:
-            if e.get("type") != "term" or state.root(e["id"]) in out:
-                continue
-            cur = state.latest(e["id"])
-            if cur and {state.root(b) for b in cur["body"].get("broader") or [] if state.get(b)} & out:
-                out.add(state.root(e["id"]))
-                grew = True
-    return out
-
-
-def codebook_changed(state, plan_version, runs):
-    """Codes the plan counts (or, if it counts none, codes applied by codings its deciding runs read) whose term
-    was corrected after the plan and before a deciding run (§5.7.5): the codebook the test used is not the one the
-    plan fixed. Returns their root IDs."""
-    if not any(isinstance(r["body"].get("codings"), dict) for r in runs if not is_withheld(r)):
-        return []
-    codes = plan_codes(state, plan_version)
-    if codes is None:
-        codes = {state.root(c) for e in state.events if e.get("type") == "coding"
-                 for c in e["body"].get("codes") or [] if isinstance(c, str) and state.get(c)}
-    start = state.pos[plan_version["id"]]
-    end = max(state.pos.get(r["id"], 0) for r in runs)
-    out = []
-    for e in state.events:
-        if e.get("type") == "term" and e.get("supersedes") and state.root(e["id"]) in codes \
-                and start < state.pos.get(e["id"], 0) < end and state.root(e["id"]) not in out:
-            out.append(state.root(e["id"]))
-    return out
-
-
-def coded_before_plan(state, plan_version, runs):
-    """Codings written before the plan that its deciding runs read, of the codes the plan counts (or of any code,
-    if it counts none) (§5.7.5): the material was coded before the test was fixed. Returns their root IDs."""
-    if not any(isinstance(r["body"].get("codings"), dict) for r in runs if not is_withheld(r)):
-        return []
-    codes = plan_codes(state, plan_version)
-    start = state.pos[plan_version["id"]]
-    end = max(state.pos.get(r["id"], 0) for r in runs)
-    out = []
-    for e in state.events:
-        if e.get("type") != "coding" or e.get("supersedes") or state.pos.get(e["id"], 0) >= start:
-            continue
-        latest = None
-        for v in [e] + [x for x in state.events if x.get("type") == "coding" and state.root(x["id"]) == e["id"]]:
-            if state.pos.get(v["id"], 0) < end:
-                latest = v
-        if latest is None or is_withheld(latest) or latest["body"].get("withdrawn") or not latest["body"].get("codes"):
-            continue
-        applied = {state.root(c) for c in latest["body"]["codes"] if isinstance(c, str) and state.get(c)}
-        if codes is None or applied & codes:
-            out.append(e["id"])
-    return out
 
 
 def sources_after_plan(state, plan_version, runs):
@@ -938,12 +909,12 @@ def reproduced_results(state, plan_version, runs):
             rb = r["body"]
             if rb.get("value") == 0:
                 continue
-            if specs is not None and not any(rb.get("quantity") == q.get("quantity") and
+            if specs is not None and not any(_decision.observed(rb) == _decision.bound_variable(q) and
                          all(_conditions(rb).get(k) == v for k, v in _conditions(q).items()) for q in specs):
                 continue
             for e in earlier:
                 eb = e["body"]
-                if eb.get("quantity") == rb.get("quantity") and eb.get("value") == rb.get("value") and \
+                if _decision.observed(eb) == _decision.observed(rb) and eb.get("value") == rb.get("value") and \
                         _conditions(eb) == _conditions(rb):
                     out.append((r["id"], e["id"]))
                     break
@@ -998,9 +969,9 @@ def plan_warnings(state, body):
 
 def uncounted_exclusions(state, plan_version, runs):
     """Names of the plan's exclusions that no result of the deciding runs counts (§5.7.6): a result whose
-    quantity contains "excluded" or the exclusion's name."""
+    variable contains "excluded" or the exclusion's name."""
     out = []
-    quantities = [str(r["body"].get("quantity", "")).lower() for run in runs
+    quantities = [str(_decision.observed(r["body"]) or "").lower() for run in runs
                   for r in state.results_of.get(run["id"], []) if not is_withheld(r)]
     for ex in plan_version["body"].get("exclusions") or []:
         if not isinstance(ex, dict) or not isinstance(ex.get("name"), str):
@@ -1170,6 +1141,22 @@ def check_source(state, body, by, eid):
                               "that permit it; give --licence or --terms, or keep it private")
 
 
+def check_extension(state, body, by, eid):
+    """An extension the record uses from here on (§5.22, L30)."""
+    from .. import extensions as _ext
+    name, version = _req(body, "name", "extension"), _req(body, "version", "extension")
+    if eid is not None and state.checking.get("supersedes"):
+        raise LabError("L30", "extension: a declaration is not corrected")
+    if not _ext.module(name, version):
+        known = sorted(_ext.KNOWN.get(name, {}))
+        what = f"version {version} of the extension {name} (it knows {', '.join(known)})" if known else \
+            f"the extension {name}"
+        raise LabError("L30", f"extension: this tool does not know {what}. The record may be valid: use a current "
+                              f"tool (update the claimset package); spec/extensions/README.md lists the extensions")
+    if name in state.extensions:
+        raise LabError("L30", f"extension: {name} is declared already, at version {state.extensions[name]}")
+
+
 def check_note(state, body, by, eid):
     _req(body, "text", "note")
     _refs(state, body.get("refers_to"), "note", "refers_to")
@@ -1231,11 +1218,24 @@ def check_plan(state, body, by, eid):
             probs = _decision.problems(body["decision"], runs, hyps, state.same_hypothesis)
             if probs:
                 raise LabError("L15", "plan: " + "; ".join(probs))
-            for name, code in count_specs(body["decision"]).items():
-                for c in code.get("codes") or []:
-                    if state.get(c) is None or not is_code(state, c):
-                        raise LabError("L27", f"plan: the count '{name}' names {c}, which is not a code of the "
-                                              f"codebook (a term with --include)")
+            quantities = body["decision"].get("quantities") if isinstance(body["decision"], dict) else None
+            for name, q in (quantities or {}).items():
+                if state.legacy or not isinstance(q, dict):
+                    continue
+                if "quantity" in q:
+                    raise LabError("L15", f"plan: quantity {name} binds a result by its variable since lab record "
+                                          f"v0.20: {{\"variable\": …}}")
+                if "count" in q:
+                    raise LabError("L15", f"plan: a count is the qualitative extension's since lab record v0.20: "
+                                          f"the plan's ext.qualitative.counts, bound by {{\"variable\": \"count: "
+                                          f"{name}\"}} (`--quantity {name}='{{\"count\": …}}'` writes both)")
+            if state.legacy:
+                from .qualitative import count_specs, is_code
+                for name, code in count_specs(body).items():
+                    for c in code.get("codes") or []:
+                        if state.get(c) is None or not is_code(state, c):
+                            raise LabError("L27", f"plan: the count '{name}' names {c}, which is not a code of the "
+                                                  f"codebook (a term with --include)")
         else:
             _req(body, "criterion", "plan")
     for d in body.get("data") or []:
@@ -1321,6 +1321,9 @@ def check_run(state, body, by, eid):
     if not isinstance(cmd, list) or not cmd or not all(isinstance(c, str) for c in cmd):
         raise LabError("schema", "run: command must be a non-empty list of strings")
     cod = body.get("codings")
+    if cod is not None and not state.legacy:
+        raise LabError("schema", "run: the codings a run read are the qualitative extension's since lab record "
+                                 "v0.20 (ext.qualitative.codings), written by the tool")
     if cod is not None and not (isinstance(cod, dict) and isinstance(cod.get("path"), str)
                                 and HASH_RE.match(str(cod.get("hash", ""))) and isinstance(cod.get("count"), int)):
         raise LabError("schema", "run: codings is {path, hash, count}, written by the tool")
@@ -1356,7 +1359,7 @@ def check_run(state, body, by, eid):
 
 def check_result(state, body, by, eid):
     run_id = _ref(state, _req(body, "run", "result"), "result", "run", {"run"})
-    _req(body, "quantity", "result")
+    _req(body, "quantity" if state.legacy else "variable", "result")
     v = body.get("value")
     if not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v):
         raise LabError("schema", "result: value must be a finite number")
@@ -1395,7 +1398,7 @@ BODY_CHECKS = {
     "decision": check_decision, "check": check_check, "artefact": check_artefact, "note": check_note,
     "plan": check_plan, "approval": check_approval, "run": check_run, "result": check_result,
     "deviation": check_deviation, "merge": check_merge, "paper": check_paper, "relocation": check_relocation,
-    "term": check_term, "source": check_source, "coding": check_coding,
+    "term": check_term, "source": check_source, "extension": check_extension,
 }
 
 
@@ -1971,9 +1974,15 @@ def verify(lab, check_files=True, remote=False):
     if check_files:
         rep["errors"] += verify_run_files(lab, events)
     if check_files:
-        from .sources import verify_codings, verify_source_files
+        from .sources import verify_source_files
         rep["errors"] += verify_source_files(lab, events)
-        rep["errors"] += verify_codings(lab, events)
+        seen = State()
+        for e in events:
+            if isinstance(e, dict):
+                seen.apply(e)
+        for _name, impl, _mod in seen.declared():
+            if impl is not None and hasattr(impl, "verify"):
+                rep["errors"] += impl.verify(lab, events)
     rep["errors"] += verify_anchors(lab, events)
     rep["errors"] += verify_confirmatory_anchoring(lab, events)
     rep["errors"] += verify_agents(lab, events, check_files)

@@ -44,6 +44,12 @@ class LabCase(unittest.TestCase):
         self.tmp.cleanup()
 
     def add(self, etype, body, by=None, supersedes=None):
+        """Write an event as the tool does: in the record's forms, declaring the extensions it needs."""
+        from claimset.lab.core import record_forms
+        body, needs = record_forms(self.lab.state(), etype, body)
+        for name in sorted(needs - set(self.lab.state().extensions)):
+            from claimset import extensions
+            self.lab.append("extension", {"name": name, "version": extensions.latest(name)}, by=by or self.agent)
         return self.lab.append(etype, body, by=by or self.agent, supersedes=supersedes)["id"]
 
     def hyp(self, statement="X improves Y.", **extra):
@@ -186,7 +192,7 @@ class TestRules(LabCase):
 
     def test_l6_results_of_prompting_run_cannot_confirm(self):
         run = self.add("run", run_body())
-        res = self.add("result", {"run": run, "quantity": "q", "value": 1.0, "source": "results.json"})
+        res = self.add("result", {"run": run, "variable": "q", "value": 1.0, "source": "results.json"})
         h = self.hyp(origin="from_exploration", prompted_by=[run])
         self.assertRefused("L6", "status", {"target": h, "to": "supported", "rationale": "r", "evidence": [res]})
 
@@ -380,7 +386,7 @@ from claimset.lab.run import run_command  # noqa: E402
 SCRIPT = """
 import json, os, sys
 open(os.path.join(os.environ["CLAIMSET_RUN_DIR"], "out.txt"), "w").write("data")
-json.dump([{"quantity": "q", "value": 0.5, "conditions": {"k": 1}}, {"quantity": "no value"}],
+json.dump([{"variable": "q", "value": 0.5, "conditions": {"k": 1}}, {"variable": "no value"}],
           open(os.environ["CLAIMSET_RESULTS"], "w"))
 print("done")
 sys.exit(int(sys.argv[1]) if len(sys.argv) > 1 else 0)
@@ -388,7 +394,7 @@ sys.exit(int(sys.argv[1]) if len(sys.argv) > 1 else 0)
 
 
 #: A deterministic decision rule on the result "q" that SCRIPT writes (0.5): its verdict is supported.
-DECISION = {"framework": "deterministic", "quantities": {"q": {"quantity": "q"}},
+DECISION = {"framework": "deterministic", "quantities": {"q": {"variable": "q"}},
             "supported": "q > 0", "not_supported": "q < 0"}
 
 
@@ -471,11 +477,11 @@ class TestRunRules(PlanRunCase):
 
     def test_l4_result_source_must_be_output(self):
         rn = self.add("run", run_body())
-        self.assertRefused("L4", "result", {"run": rn, "quantity": "q", "value": 1, "source": "other.json"})
+        self.assertRefused("L4", "result", {"run": rn, "variable": "q", "value": 1, "source": "other.json"})
 
     def test_result_value_is_number(self):
         rn = self.add("run", run_body())
-        self.assertRefused("schema", "result", {"run": rn, "quantity": "q", "value": "1",
+        self.assertRefused("schema", "result", {"run": rn, "variable": "q", "value": "1",
                                                 "source": "results.json"})
 
 

@@ -4,8 +4,10 @@ Only what is mechanical is changed:
 - v0.30: the roles of each evidence `setup` are renamed (compared -> studied, data -> cases, design -> procedure,
   measures -> lens);
 - v0.32: the kind `measure` is renamed `variable`; a result's `quantity` is renamed `variable`;
-- v0.38: an excerpt's `gloss` moves to the linguistics extension (`ext.linguistics.gloss` on its result), and the
-  extension is declared;
+- v0.38: an excerpt's `gloss` moves to the linguistics extension (`ext.linguistics.gloss` on its result); a test's
+  quantities name the result they bind by `variable` (was `quantity`); its flags `coded_before_plan` and
+  `codebook_changed_after_plan`, and count quantities, move to the qualitative extension (`ext.qualitative` on the
+  claim); the extensions used are declared;
 - `schema_version` is set to the current version.
 From v0.33 a claim inherits the assumptions of the methods studied only for its own subject (§3.2): the
 assumptions a claim inherited under v0.32 and no longer does are listed, to be added to its own `assumptions`
@@ -103,6 +105,38 @@ def migrate(doc):
             if lost:
                 todo.append(f"{c.get('id')}: no longer inherits {', '.join(lost)}, the assumptions of a method it is "
                             f"not about (§3.2); list in its assumptions those it rests on")
+    for c in out.get("claims") or []:
+        test = c.get("test") if isinstance(c, dict) else None
+        if not isinstance(test, dict):
+            continue
+        moved = {}
+        flags = test.get("flags")
+        if isinstance(flags, list):
+            qual = [f for f in flags if f in ("coded_before_plan", "codebook_changed_after_plan")]
+            if qual:
+                test["flags"] = [f for f in flags if f not in qual]
+                if not test["flags"]:
+                    del test["flags"]
+                moved["test_flags"] = qual
+        for name, q in list((test.get("quantities") or {}).items()) if isinstance(test.get("quantities"), dict) else []:
+            if not isinstance(q, dict):
+                continue
+            if "count" in q:
+                moved.setdefault("counts", {})[name] = q.pop("count")
+                q["variable"] = f"count: {name}"
+            elif "quantity" in q:
+                items = list(q.items())
+                q.clear()
+                q.update({("variable" if k == "quantity" else k): v for k, v in items})
+                done.append(f"{c.get('id')}.test.quantities.{name}: quantity -> variable")
+        if moved:
+            ext = c.setdefault("ext", {})
+            if isinstance(ext, dict):
+                ext.setdefault("qualitative", {}).update(moved)
+                exts = out.setdefault("extensions", {})
+                if isinstance(exts, dict):
+                    exts.setdefault("qualitative", "0.1")
+            done.append(f"{c.get('id')}: {', '.join(sorted(moved))} -> ext.qualitative")
     for c in out.get("claims") or []:
         if not isinstance(c, dict) or "about" in c or _is_assumption(c):
             continue

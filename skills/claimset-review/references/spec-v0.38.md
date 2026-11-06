@@ -11,6 +11,8 @@ The format becomes a core with extensions. The core holds what every field share
 - §2.7 (new): extensions. A file declares the extensions it uses in the top-level `extensions` (`{"linguistics": "0.1"}`); an object holds an extension's fields in its `ext` block (`"ext": {"linguistics": {...}}`). An extension adds fields; it never changes the meaning of a core field or adds values to a core list, and a file with every extension block removed is a valid core file. Extensions are specified in `spec/extensions/`.
 - New rule 80: extensions are declared, known to the validator and used only on the objects they allow. Rules of an extension are numbered within it (`linguistics.1`). New warning 33: a declared extension that no object uses.
 - §3.4, *Excerpts*: an excerpt's `gloss` (Leipzig glossing) moves to the linguistics extension, `ext.linguistics.gloss` on the result. `translation` stays in the core: any excerpt not in English may have one. `claimset migrate` moves glosses from v0.37 files.
+- §3.3.3: the test's frameworks and their required parameters are defined here (they were defined in the lab record, which now refers to this specification: the claimset specification is the vocabulary of the lab record). A quantity names the result it binds by `variable` (was `quantity`), as observations do.
+- The qualitative extension (`spec/extensions/qualitative-v0.1.md`) takes the codebook, the codings and the counts of coded material: a code's criteria are `ext.qualitative.code` on its definition; the test flags `coded_before_plan` and `codebook_changed_after_plan` and the counts a test is decided by are `ext.qualitative` on the claim. `claimset migrate` moves them.
 - §2.6: files of v0.37 stay valid, checked by the v0.37 rules (a frozen validator).
 
 ## Changes in v0.37 (since v0.36)
@@ -477,6 +479,8 @@ The core of this specification is what every field shares and what claims are co
 
 **Versions of extensions.** Each extension follows the compatibility rule of §2.6 on its own: a block valid under a version of an extension stays valid under that version for good, checked by that version's rules. An extension's specification names the core versions it works with (its first, and no last).
 
+**In the lab record.** An extension may also have a part for the lab record: blocks on lab events and event types of its own, which export carries into the claimset (lab record §2.1, §5.22). One extension covers both: what a kind of work records while it is done and what its claimset says.
+
 **Validation.** A validator checks the core, then each declared extension it knows, at the version declared. An extension it does not know, or a version later than it knows, is refused by rule 80 with a message of its own: the blocks may be valid, but this validator cannot check them; a current validator can. The core is still checked, so the report lists the core's errors too.
 
 ## 3. Object types
@@ -701,8 +705,8 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
   "framework": "frequentist",
   "parameters": {"alpha": 0.05, "test": "one-sided paired t-test on per-series MAE differences", "sides": "greater",
                  "correction": "none", "sample": "500 series, fixed in advance; no interim analysis"},
-  "quantities": {"p": {"quantity": "p-value, paired t-test of MAE difference"},
-                 "d_upper": {"quantity": "mean MAE difference", "field": "interval.upper"}},
+  "quantities": {"p": {"variable": "p-value, paired t-test of MAE difference"},
+                 "d_upper": {"variable": "mean MAE difference", "field": "interval.upper"}},
   "supported": "p < alpha",
   "not_supported": "d_upper < 0.01",
   "verdict": "computed",
@@ -712,14 +716,22 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
 }
 ```
 
-- `framework`: `frequentist` · `equivalence` · `bayesian` · `deterministic` · `formal` · `qualitative`, as defined in the lab record specification §5.7.1.
-- `parameters`: required per framework: `frequentist`: `alpha`, `test`, `sides`, `correction`, `sample`; `equivalence`: `alpha`, `test`, `lower_bound`, `upper_bound`, `sample`; `bayesian`: `prior`, `threshold`, `sample`.
-- `quantities`: when the rules are expressions, the results they are evaluated on, each `{quantity, conditions, field, run}`; `quantity` is the `variable` of the results it binds (§3.4), and they correspond to results in the claim's evidence.
-- `supported`, `not_supported`: the two rules: expressions over quantities and numeric parameters (lab record §5.7.3), or text saying what observation decides.
+- `framework`: how the outcome is decided: `frequentist` (a null-hypothesis significance test) · `equivalence` (an equivalence test against stated bounds) · `bayesian` · `deterministic` (a measured quantity compared with fixed thresholds, without sampling uncertainty, e.g. a benchmark or a simulation with fixed seeds) · `formal` (proof or counterexample) · `qualitative` (a stated pattern in qualitative data).
+- `parameters`: the parameters the framework requires (below), and any others the analysis fixes in advance. Values are numbers or text; numeric parameters can be used in the rules by name.
+
+| Framework | Required parameters |
+|---|---|
+| `frequentist` | `alpha` (significance level), `test`, `sides` (`two_sided` · `greater` · `less`), `correction` (for multiple tests within the plan: `none` · `bonferroni` · `holm` · `fdr_bh` or text), `sample` (planned sample size and stopping rule) |
+| `equivalence` | `alpha`, `test`, `lower_bound` and `upper_bound` (the equivalence margins: the smallest effect of interest), `sample` |
+| `bayesian` | `prior`, `threshold` (e.g. a Bayes factor or posterior probability that decides), `sample` |
+| `deterministic`, `formal`, `qualitative` | none |
+
+- `quantities`: when the rules are expressions, the results they are evaluated on: `{name: {variable, conditions, field, run}}`. Each binds exactly one result: the one whose `variable` is the given one (§3.4) and whose `conditions` include every given key with the given value, read from `field`: `value` (default), `interval.lower` or `interval.upper`; with several deciding runs, `run` names the run (1 for the first). They correspond to results in the claim's evidence. (Files before v0.38 name the variable `quantity`.)
+- `supported`, `not_supported`: the two rules, each an expression over the quantities and numeric parameters, or text saying what observation decides. If neither rule holds, the outcome is `inconclusive`; if both hold, the rules overlap and the outcome is `inconclusive`. An **expression** is at most 1,000 characters long and uses finite numbers, names (quantities and numeric parameters), `+ - * /`, unary minus, `abs()`, comparisons (`< <= > >= == !=`, which may be chained: `0 < d < 1`), `and`, `or`, `not` and parentheses; nothing else. Every name is a quantity or a numeric parameter. A quantity that cannot be bound (no result matches, or several do) allows no conclusive outcome.
 - `verdict`: `computed` (the rules are expressions and the outcome was computed from the recorded results by the lab tool) · `judged` (the rules are text and the outcome was stated by the writer, who said which rule the evidence met).
 - `runs`: how many runs decided the test. `lab_plan`: the plan's lab-record ID, when there is one. `registration`: the URI of an external pre-registration, when there is one.
 - `addresses`: optional list of the global IDs of review comments (`doi:…@v1/RV1.c6`) whose resolution test this test ran (revision §4.2). The test's rules are then the comment's: `supported` its `withdrawn` rule, `not_supported` its `upheld` rule.
-- `flags`: optional list of weaknesses of the test, from the lab record (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs) · `reproduces_prompting_result` (a result the decision rule uses has the same quantity, conditions and value as a result of a run that suggested the hypothesis: the test may have repeated the exploration rather than tested the hypothesis on anything new) · `sources_captured_after_plan` (a deciding run read a captured source recorded after the plan: the plan did not fix the material tested) · `coded_before_plan` (a deciding run read codings, of the codes the test counts, written before the plan: the material was coded before the test was fixed) · `codebook_changed_after_plan` (a code the test counts was redefined between the plan and the test).
+- `flags`: optional list of weaknesses of the test, as the lab record finds them (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs) · `reproduces_prompting_result` (a result the decision rule uses has the same quantity, conditions and value as a result of a run that suggested the hypothesis: the test may have repeated the exploration rather than tested the hypothesis on anything new) · `sources_captured_after_plan` (a deciding run read a captured source recorded after the plan: the plan did not fix the material tested). Flags of tests over coded material are in the qualitative extension (`ext.qualitative.test_flags`).
 
 `planned_at_anchor` says how far `planned_at` can be trusted (lab record §7): from strongest, `platform` (receipt from the Claimset platform), `rfc3161` (trusted timestamp authority), `git_remote` (pushed commit), to `none`.
 

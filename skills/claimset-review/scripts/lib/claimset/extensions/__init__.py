@@ -18,6 +18,7 @@ import importlib
 #: Registered extensions: name -> {version: module}. Mirrors spec/extensions/README.md.
 KNOWN = {
     "linguistics": {"0.1": "linguistics_v0_1"},
+    "qualitative": {"0.1": "qualitative_v0_1"},
 }
 
 
@@ -25,3 +26,9 @@ def module(name, version):
     """The module that checks `version` of extension `name`, or None if this package does not know it."""
     mod = KNOWN.get(name, {}).get(version)
     return importlib.import_module(f"{__name__}.{mod}") if mod else None
+
+
+def latest(name):
+    """The latest version of an extension this package knows, or None."""
+    versions = KNOWN.get(name, {})
+    return max(versions, key=lambda v: tuple(int(x) for x in v.split("."))) if versions else None

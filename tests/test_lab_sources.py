@@ -22,7 +22,7 @@ for a woodwind quintet automatically.</p><p>Second post: +1, I need this too.</p
 COUNT = """
 import json, os, sys
 text = open(sys.argv[1], encoding="utf-8").read()
-json.dump([{"quantity": "threads asking for arranging", "value": text.count("arrange")}],
+json.dump([{"variable": "threads asking for arranging", "value": text.count("arrange")}],
           open(os.environ["CLAIMSET_RESULTS"], "w"))
 """
 
@@ -203,7 +203,7 @@ class TestSourcesAndPlans(SourceCase):
     def plan(self):
         return self.add("plan", {"kind": "confirmatory", "hypotheses": [self.h], "design": "d", "analysis": "a",
                                  "decision": {"framework": "deterministic",
-                                              "quantities": {"n": {"quantity": "threads asking for arranging"}},
+                                              "quantities": {"n": {"variable": "threads asking for arranging"}},
                                               "supported": "n >= 1", "not_supported": "n < 1"}})
 
     def flags(self, plan, src):

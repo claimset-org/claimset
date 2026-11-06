@@ -241,14 +241,14 @@
         },
         "quantities": {
           "lower": {
-            "quantity": "mean relative MASE reduction, method M vs seasonal naive",
+            "variable": "mean relative MASE reduction, method M vs seasonal naive",
             "conditions": {
               "frequency": "monthly"
             },
             "field": "interval.lower"
           },
           "upper": {
-            "quantity": "mean relative MASE reduction, method M vs seasonal naive",
+            "variable": "mean relative MASE reduction, method M vs seasonal naive",
             "conditions": {
               "frequency": "monthly"
             },
@@ -317,14 +317,14 @@
         },
         "quantities": {
           "lower": {
-            "quantity": "mean relative MASE reduction, method M vs seasonal naive",
+            "variable": "mean relative MASE reduction, method M vs seasonal naive",
             "conditions": {
               "frequency": "weekly"
             },
             "field": "interval.lower"
           },
           "upper": {
-            "quantity": "mean relative MASE reduction, method M vs seasonal naive",
+            "variable": "mean relative MASE reduction, method M vs seasonal naive",
             "conditions": {
               "frequency": "weekly"
             },

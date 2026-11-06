@@ -69,8 +69,10 @@ def _outputs(rdir):
     return [{"path": str(p.relative_to(rdir)).replace(os.sep, "/"), "hash": file_hash(p)} for p in files]
 
 
-def _parse_results(path):
-    """Valid result entries and a list of problems with the rest."""
+def _parse_results(path, key="variable"):
+    """Valid result entries and a list of problems with the rest. Each entry names what it observes by `variable`
+    (`quantity`, its older name, is read as `variable`); `key` is the name the record's result events use: `variable`,
+    or `quantity` in records begun before lab record v0.20."""
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -80,11 +82,14 @@ def _parse_results(path):
     good, problems = [], []
     for i, r in enumerate(data):
         v = r.get("value") if isinstance(r, dict) else None
-        if not isinstance(r, dict) or not isinstance(r.get("quantity"), str) or not r["quantity"].strip() \
+        var = r.get("variable", r.get("quantity")) if isinstance(r, dict) else None
+        if not isinstance(var, str) or not var.strip() \
                 or not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v):
-            problems.append(f"entry {i}: needs 'quantity' (text) and 'value' (a finite number)")
+            problems.append(f"entry {i}: needs 'variable' (text) and 'value' (a finite number)")
             continue
-        good.append({k: r[k] for k in ("quantity", "value", "unit", "interval", "conditions") if r.get(k) is not None})
+        entry = {key: var}
+        entry.update({k: r[k] for k in ("value", "unit", "interval", "conditions") if r.get(k) is not None})
+        good.append(entry)
     return good, problems
 
 
@@ -139,14 +144,12 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
     rdir.mkdir()
     env = dict(os.environ, CLAIMSET_RUN_DIR=str(rdir.resolve()),
                CLAIMSET_RESULTS=str((rdir / RESULTS_FILE).resolve()))
-    from .sources import CODINGS_FILE, codings_snapshot
-    snapshot = codings_snapshot(st)
-    codings_entry = None
-    if snapshot is not None:                    # the codings in force, read by the run as data (§5.21)
-        (rdir / CODINGS_FILE).write_text(json.dumps(snapshot, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-        env["CLAIMSET_CODINGS"] = str((rdir / CODINGS_FILE).resolve())
-        codings_entry = {"path": CODINGS_FILE, "hash": file_hash(rdir / CODINGS_FILE),
-                         "count": len(snapshot["codings"])}
+    blocks = {}                                 # what the record's extensions give the run (§5.9.1, step 2)
+    for name, impl, _mod in st.declared():
+        if impl is not None and hasattr(impl, "prepare_run"):
+            block = impl.prepare_run(lab, st, rdir, env)
+            if block:
+                blocks[name] = block
 
     commit, dirty = code_version(cwd, lab.root)
     started = lab.clock()
@@ -181,10 +184,13 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
 
     body = {"plan": plan, "plan_version": plan_version, "label": label, "command": list(argv), "code_version": commit, "dirty": dirty,
             "parameters": parameters or None, "seeds": seeds or None, "data": data_entries or None,
-            "codings": codings_entry,
             "environment": environment(), "started_at": started, "ended_at": ended,
             "exit_status": status, "exit_code": exit_code, "outputs": _outputs(rdir)}
     body = {k: v for k, v in body.items() if v is not None}
+    if st.legacy and "codings" in blocks.get("qualitative", {}):
+        body["codings"] = blocks.pop("qualitative")["codings"]     # as records begun before v0.20 have it
+    if blocks:
+        body["ext"] = blocks
     try:
         run_event = lab.append("run", body, by=by)
     except LabError:
@@ -196,7 +202,7 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
 
     results, problems = [], []
     if (final / RESULTS_FILE).is_file():
-        entries, problems = _parse_results(final / RESULTS_FILE)
+        entries, problems = _parse_results(final / RESULTS_FILE, "quantity" if st.legacy else "variable")
         for r in entries:
             r = dict(r, run=run_event["id"], source=RESULTS_FILE)
             results.append(lab.append("result", r, by=by))
@@ -204,19 +210,22 @@ def run_command(lab, by, argv, plan=None, exploratory=False, parameters=None, se
 
 
 def count_run(lab, by, plan=None, counts=None, echo=False):
-    """A run of the built-in counter (§5.21.1): the counts of `plan` (its deciding run), or the exploratory
-    `counts` {name: spec}. Returns what run_command returns."""
+    """A run of the qualitative extension's counter (qualitative §2.4): the counts of `plan` (its deciding run), or
+    the exploratory `counts` {name: spec}. Returns what run_command returns."""
     import sys
     from pathlib import Path
     from .. import __version__
-    from . import count as _count
-    from .core import count_specs
+    from ..extensions import qualitative_count as _count
+    from .qualitative import count_specs
     st = lab.view(by)
+    if "qualitative" not in st.extensions:
+        raise LabError("L30", "count: counts are the qualitative extension's, and the record has no codes: record "
+                              "codes and codings first")
     if plan:
         pv = st.plan_rule_version(plan) if st.get(plan) else None
         if pv is None:
             raise LabError("L12", f"no plan '{plan}'")
-        counts = count_specs(pv["body"].get("decision"))
+        counts = count_specs(pv["body"])
         if not counts:
             raise LabError("schema", f"count: {pv['id']} has no count quantities; its deciding run is a script "
                                      f"(`claimset lab run --plan {plan} -- …`)")
