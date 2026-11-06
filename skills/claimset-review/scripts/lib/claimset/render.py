@@ -42,7 +42,8 @@ def _conditions(c):
 
 
 def _val(v):
-    """An observation's value: a number, a category, yes/no, or an excerpt with its locator, gloss and translation."""
+    """An observation's value: a number, a category, yes/no, or an excerpt with its locator and translation (and,
+    in files before v0.38, its gloss; since then the gloss is in the linguistics extension)."""
     if isinstance(v, bool):
         return "yes" if v else "no"
     if isinstance(v, (int, float)):
@@ -63,6 +64,18 @@ def _val(v):
             out += f" ({loc})"
         return out
     return "" if v is None else _s(v)
+
+
+def _ext(x):
+    """An object's extension blocks (spec §2.7), shown as data: ` [linguistics: gloss "…"; segmented "…"]`."""
+    ext = x.get("ext") if isinstance(x, dict) else None
+    if not isinstance(ext, dict):
+        return ""
+    out = ""
+    for name, block in ext.items():
+        if isinstance(block, dict) and block:
+            out += f" [{name}: " + "; ".join(f"{k} {_s(v)}" for k, v in block.items()) + "]"
+    return out
 
 
 def _column(c):
@@ -100,7 +113,7 @@ def _definition(d):
             line += f" [{label} {', '.join(_s(x) for x in d[key])}]"
     if d.get("source"):
         line += f" [source {_s(d['source']) if not isinstance(d['source'], dict) else d['source'].get('target')}]"
-    return [line]
+    return [line + _ext(d)]
 
 
 def _support(s):
@@ -158,7 +171,7 @@ def _claim(c, inherited=()):
             head.append(f"{key} {c[key]}")
     if isinstance(c.get("hypothesis"), dict) and c["hypothesis"].get("outcome"):
         head.append(f"outcome {c['hypothesis']['outcome']}")
-    lines = [f"{c.get('id')} [{_join(head)}]", f"  {c.get('statement', '')}"]
+    lines = [f"{c.get('id')} [{_join(head)}]{_ext(c)}", f"  {c.get('statement', '')}"]
     if c.get("scope"):
         lines.append(f"  scope: {_scope(c['scope'])}")
     for rel in c.get("relations") or []:
@@ -183,7 +196,7 @@ def _claim(c, inherited=()):
 
 def _table(eid, t):
     lines = [f"  {eid}.{t.get('id')} {t.get('description', '')}"
-             + (f" {_conditions(t.get('conditions'))}" if t.get("conditions") else "")]
+             + (f" {_conditions(t.get('conditions'))}" if t.get("conditions") else "") + _ext(t)]
     cols = [_column(c) for c in t.get("columns") or []]
     units = t.get("units")
     if isinstance(units, list):
@@ -206,7 +219,7 @@ def _evidence(e):
             head.append(f"{key} {_num(e[key])}")
     if e.get("preregistered"):
         head.append("preregistered")
-    lines = [f"{e.get('id')} [{_join(head)}] {e.get('description', '')}"]
+    lines = [f"{e.get('id')} [{_join(head)}] {e.get('description', '')}{_ext(e)}"]
     setup = e.get("setup") if isinstance(e.get("setup"), dict) else {}
     parts = [f"{role} {', '.join(str(d) for d in setup[role])}" for role in ("studied", "cases", "procedure", "lens", "context")
              if isinstance(setup.get(role), list) and setup[role]]
@@ -227,7 +240,7 @@ def _evidence(e):
                            f"n {_num(r['n'])}" if r.get("n") is not None else "", _conditions(r.get("conditions")),
                            f"read from {rf.get('artefact')}, precision {_s(rf.get('precision'))}" if rf else ""], " ")
             lines.append(f"  {e.get('id')}.{r.get('id')} {_s(r.get('variable'))} = {_val(r.get('value'))}"
-                         + (f" {extra}" if extra else ""))
+                         + (f" {extra}" if extra else "") + _ext(r))
     for t in e.get("tables") or []:
         if isinstance(t, dict):
             lines += _table(e.get("id"), t)
@@ -263,6 +276,8 @@ def render(doc):
     out.append(_join(meta))
     if p.get("declarations"):
         out.append("declarations " + _declarations(p["declarations"]))
+    if isinstance(doc.get("extensions"), dict) and doc["extensions"]:
+        out.append("extensions " + ", ".join(f"{k} {v}" for k, v in doc["extensions"].items()) + _ext(p))
     if isinstance(p.get("exploration"), dict):
         out.append("exploration " + json.dumps(p["exploration"], ensure_ascii=False, separators=(", ", ": ")))
 
@@ -285,13 +300,13 @@ def render(doc):
         ("WARRANTS", doc.get("warrants"),
          lambda w: [f"{w.get('id')} [{_join([w.get('reasoning'), ('premises ' + ', '.join(w['premises'])) if w.get('premises') else ''])}] {w.get('text', '')}"]),
         ("LIMITATIONS", doc.get("limitations"),
-         lambda l: [f"{l.get('id')} [{_join([l.get('category'), ('affects ' + ', '.join(l.get('affects') or [])), l.get('impact'), ('mitigation ' + l['mitigation']) if l.get('mitigation') else ''])}] {l.get('statement', '')}"]),
+         lambda l: [f"{l.get('id')} [{_join([l.get('category'), ('affects ' + ', '.join(l.get('affects') or [])), l.get('impact'), ('mitigation ' + l['mitigation']) if l.get('mitigation') else ''])}] {l.get('statement', '')}{_ext(l)}"]),
         ("OPEN QUESTIONS", doc.get("open_questions"),
          lambda q: [f"{q.get('id')}" + (f" [from {', '.join(q['claims'])}]" if q.get("claims") else "")
                     + f" {q.get('question', '')}"]),
         ("ARTEFACTS", [a for a in doc.get("artefacts") or [] if isinstance(a, dict) and a.get("description")],
          lambda a: [f"{a.get('id')} [{_join([a.get('kind'), a.get('function')], ', ')}] {a.get('description')}"
-                    + (f" shows {', '.join(_s(x) for x in a['shows'])}" if a.get("shows") else "")]),
+                    + (f" shows {', '.join(_s(x) for x in a['shows'])}" if a.get("shows") else "") + _ext(a)]),
         ("REFERENCES", doc.get("references"),
          lambda b: [f"{b.get('id')} {b.get('target')}" + (f" ({b['id_type']})" if b.get("id_type") not in (None, "reference") else "")]),
     ]

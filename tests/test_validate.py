@@ -1627,7 +1627,7 @@ class TestRulesV033(Base):
         definition(self.d, "D2").pop("assumptions")
         self.d["schema_version"] = "0.32"
         _, done, todo = migrate(self.d)
-        self.assertIn("schema_version 0.32 -> 0.37", done)
+        self.assertIn("schema_version 0.32 -> 0.38", done)
         self.assertTrue(any(t.startswith("C2: no longer inherits C3") for t in todo))
 
 

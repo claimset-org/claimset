@@ -26,8 +26,9 @@ def main():
     target = SRC / "versions" / f"v{major}_{minor}.py"
     if target.exists():
         sys.exit(f"{target.relative_to(ROOT)} exists: version {version} is frozen already")
-    if re.search(r"^\s*from \.(?!versions)", text, re.M):
-        sys.exit("validate.py imports from its package; adjust the imports for the frozen copy by hand")
+    # The copy lives one package level down (claimset.versions): its imports from the package go one level up.
+    text = re.sub(r"^(\s*)from \.(\w)", r"\1from ..\2", text, flags=re.M)
+    text = re.sub(r"^(\s*)from \. import", r"\1from .. import", text, flags=re.M)
     header = (f'"""Frozen validator of claimset specification v{version}. Never edit: it defines that version\'s '
               f'rules (spec §2.6)."""\n\n')
     target.write_text(header + text, encoding="utf-8")

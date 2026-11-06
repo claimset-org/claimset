@@ -4,6 +4,8 @@ Only what is mechanical is changed:
 - v0.30: the roles of each evidence `setup` are renamed (compared -> studied, data -> cases, design -> procedure,
   measures -> lens);
 - v0.32: the kind `measure` is renamed `variable`; a result's `quantity` is renamed `variable`;
+- v0.38: an excerpt's `gloss` moves to the linguistics extension (`ext.linguistics.gloss` on its result), and the
+  extension is declared;
 - `schema_version` is set to the current version.
 From v0.33 a claim inherits the assumptions of the methods studied only for its own subject (§3.2): the
 assumptions a claim inherited under v0.32 and no longer does are listed, to be added to its own `assumptions`
@@ -49,6 +51,17 @@ def migrate(doc):
                 rs.clear()
                 rs.update({("variable" if k == "quantity" else k): v for k, v in rs_items})
                 done.append(f"{e.get('id')}.{rs.get('id')}: quantity -> variable")
+        for rs in e.get("results") or []:
+            v = rs.get("value") if isinstance(rs, dict) else None
+            if isinstance(v, dict) and "gloss" in v:
+                gloss = v.pop("gloss")
+                ext = rs.setdefault("ext", {})
+                if isinstance(ext, dict):
+                    ext.setdefault("linguistics", {})["gloss"] = gloss
+                    exts = out.setdefault("extensions", {})
+                    if isinstance(exts, dict):
+                        exts.setdefault("linguistics", "0.1")
+                done.append(f"{e.get('id')}.{rs.get('id')}: gloss -> ext.linguistics.gloss")
         if "exemplars" in e:
             todo.append(f"{e.get('id')}: record each exemplar as a result whose value is the excerpt "
                         f"{{text, locator}}, then remove exemplars (rule 66)")

@@ -30,6 +30,11 @@ def spec_path(lab=False, revision=False):
     return path
 
 
+def _extension_specs():
+    """{path inside a skill: source} for the specifications of the extensions (spec §2.7)."""
+    return {f"references/extensions/{f.name}": f for f in sorted((DATA / "spec" / "extensions").glob("*.md"))}
+
+
 def _package_modules():
     """The package's Python files, relative to the package directory."""
     return [f.relative_to(PACKAGE) for f in sorted(PACKAGE.rglob("*.py")) if "__pycache__" not in f.parts]
@@ -46,6 +51,10 @@ def files(name):
                f"references/{lab.name}": lab}
         for ex in sorted((DATA / "examples").glob("*.json")):
             out[f"examples/{ex.name}"] = ex
+        for sub in ("extensions", "versions"):            # imported by the validator beside it
+            for f in sorted((PACKAGE / sub).glob("*.py")):
+                out[f"scripts/{sub}/{f.name}"] = f
+        out.update(_extension_specs())
         return out
     if name in ("claimset-lab", "claimset-revise", "claimset-review"):
         out = {"SKILL.md": DATA / "skills" / name / "SKILL.md",
@@ -54,6 +63,7 @@ def files(name):
                rev_name: rev}
         if name in ("claimset-revise", "claimset-review"):
             out[f"references/{spec.name.replace('claimset-v', 'spec-v')}"] = spec
+            out.update(_extension_specs())
         for rel in _package_modules():
             out[f"scripts/lib/claimset/{rel.as_posix()}"] = PACKAGE / rel
         return out

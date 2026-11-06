@@ -106,6 +106,17 @@ class TestFreezing(unittest.TestCase):
             old_errors, new_rules = json.loads(out.stdout)
             self.assertEqual(old_errors, 0)              # the old version: checked by its frozen rules
             self.assertEqual(new_rules, ["99"])          # the new version: the new rule applies
+            # the submit skill runs the validator as a script beside its extensions and versions folders
+            skill = tmp / "skill"
+            skill.mkdir()
+            shutil.copy(v, skill / "validate.py")
+            for sub in ("extensions", "versions"):
+                shutil.copytree(tmp / "src" / "claimset" / sub, skill / sub)
+            for f in sorted((COMPAT / SCHEMA_VERSION).glob("*.json")):
+                out = subprocess.run([sys.executable, "-I", str(skill / "validate.py"), str(f)] +
+                                     (["--published"] if f.name.startswith("published-") else []),
+                                     capture_output=True, text=True)
+                self.assertEqual(out.returncode, 0, f"{f.name}: {out.stdout}{out.stderr}")
             again = subprocess.run([sys.executable, str(tmp / "tools" / "freeze_validator.py")],
                                    capture_output=True, text=True)
             self.assertEqual(again.returncode, 0, again.stderr)   # freezes the new version in turn
