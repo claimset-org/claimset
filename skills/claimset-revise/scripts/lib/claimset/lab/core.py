@@ -444,6 +444,10 @@ def _name(body, field, etype, required=True):
 
 def check_init(state, body, by, eid):
     _req(body, "lab_spec_version", "init")
+    if version_tuple(body["lab_spec_version"]) > version_tuple(LAB_SPEC_VERSION):
+        raise LabError("L29", f"the record was begun under lab record specification {body['lab_spec_version']}, "
+                              f"newer than this tool ({LAB_SPEC_VERSION}), which does not know its rules. The "
+                              f"record may be valid: read it with a current tool (update the claimset package)")
     _req(body, "working_title", "init")
     _name(body, "study", "init", required=False)
 

@@ -1,10 +1,19 @@
-# Claimset — Specification v0.37 (draft)
+# Claimset — Specification v0.38 (draft)
 
-Status: working draft · Date: 2026-11-04 · Supersedes v0.36 (`spec/claimset-v0.36.md`) · Companions: lab record specification (`spec/lab-record-v0.19.md`), revision specification (`spec/claimset-revision-v0.5.md`)
+Status: working draft · Date: 2026-11-06 · Supersedes v0.37 (`spec/claimset-v0.37.md`) · Companions: lab record specification (`spec/lab-record-v0.19.md`), revision specification (`spec/claimset-revision-v0.6.md`), extensions (`spec/extensions/`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.36
+## Changes since v0.37
+
+The format becomes a core with extensions. The core holds what every field shares and what claims are compared by across fields: claims and their atoms, support, definitions, observations, assumptions, limitations, provenance and contributors. An extension adds the detail one kind of work needs (the glosses of linguistic examples, the structures of compounds, the endpoints of a trial), in blocks of its own on the objects it concerns. Extensions have their own versions, so one can be added or revised without a new version of the core, and a paper uses as many as it needs.
+
+- §2.7 (new): extensions. A file declares the extensions it uses in the top-level `extensions` (`{"linguistics": "0.1"}`); an object holds an extension's fields in its `ext` block (`"ext": {"linguistics": {...}}`). An extension adds fields; it never changes the meaning of a core field or adds values to a core list, and a file with every extension block removed is a valid core file. Extensions are specified in `spec/extensions/`.
+- New rule 80: extensions are declared, known to the validator and used only on the objects they allow. Rules of an extension are numbered within it (`linguistics.1`). New warning 33: a declared extension that no object uses.
+- §3.4, *Excerpts*: an excerpt's `gloss` (Leipzig glossing) moves to the linguistics extension, `ext.linguistics.gloss` on the result. `translation` stays in the core: any excerpt not in English may have one. `claimset migrate` moves glosses from v0.37 files.
+- §2.6: files of v0.37 stay valid, checked by the v0.37 rules (a frozen validator).
+
+## Changes in v0.37 (since v0.36)
 
 The platform is named EntryLib (entrylib.org), so its provisional identifier is renamed before any claimset is published with it.
 
@@ -18,6 +27,10 @@ Amended on 2026-11-05, for qualitative research kept in a lab record (lab record
 - §3.13, rule 51: a `url` reference may lack `archive_uri` when an artefact naming it holds a captured copy with its hash (a page behind a sign-in cannot be archived); new warning 32.
 - §3.4, qual profile: `analytic_approach` gains `content_analysis`: coding material against a codebook and counting the codes, as a lab record's counts do.
 - Appendices A and C give `schema_version` 0.37 (they still said 0.34 and 0.17).
+
+Amended on 2026-11-05, before the platform goes live, for compatibility between versions:
+
+- §2.6 (new): what `schema_version` means, and the compatibility promise. v0.37 is the baseline: a file valid under v0.37 or any later version stays valid under that version for good, checked by that version's rules, by every later validator. Rule 79 refuses a file following a version older than v0.37 (pointing to `claimset migrate`) and, with a message of its own, a file following a version newer than the validator, so the reader knows the validator is behind, not the file.
 
 ## Changes in v0.36 (since v0.35)
 
@@ -357,7 +370,7 @@ Top-level layout:
 
 ```json
 {
-  "schema_version": "0.37",
+  "schema_version": "0.38",
   "@context": "optional",
   "paper": {},
   "contributors": [],
@@ -369,7 +382,8 @@ Top-level layout:
   "limitations": [],
   "artefacts": [],
   "references": [],
-  "open_questions": []
+  "open_questions": [],
+  "extensions": {}
 }
 ```
 
@@ -434,6 +448,36 @@ data/
   - file types by extension, from this list: data and text `csv` `tsv` `json` `jsonl` `ndjson` `txt` `md` `xml` `yaml` `yml` `toml` `parquet` `feather` `arrow` `nc` `h5` `hdf5` `rds` `rda` `rdata` `dta` `sav` `xlsx` `ods`; documents `pdf` `tex` `bib`; images `png` `jpg` `jpeg` `gif` `webp` `tif` `tiff` `svg`; audio and video `wav` `mp3` `flac` `ogg` `m4a` `mp4` `webm` `mov`; code `r` `py` `jl` `m` `ipynb` `sql` `do` `sas` `stan` `c` `cpp` `h` `hpp` `f90` `java` `js` `ts` `rs` `go` `sh`; and any of these compressed with gzip (`results.csv.gz`). Archives (`zip`, `tar`, `7z`, `rar`) and executables are refused: a package lists its files, so each is checked and archived by itself.
   The platform serves every packaged file as a download; none is rendered or run.
 - A converted paper packages a file taken from its source (a figure, a supplementary table) only under the source's licence, which conversion already requires to permit derivatives (§3.1); the artefact names its `reference` and `locator` in the source.
+
+### 2.6 Specification versions and compatibility
+
+`schema_version` (required, top level) is the version of this specification the file follows: `"0.37"`.
+
+- **Baseline.** v0.37 is the first version the platform accepts. A file following an earlier version is refused (rule 79); `claimset migrate` brings it to the current version.
+- **Every version from the baseline is accepted, for good.** A file is checked by the rules of the version it follows, never by rules added later. A validator of a later version keeps the rules of every earlier version from the baseline and applies the ones the file's version calls for. A file valid under its version when it was published is valid under it in every later validator.
+- **A later version may** add optional fields, add values to lists, loosen rules, and add rules and required fields that apply to files following that version or later. **It may not** make a file valid under an earlier version invalid under that version, or change what a field of an earlier version means.
+- **Reading.** Every tool of a later version reads and renders files of every version from the baseline.
+- **A file newer than the validator** (its `schema_version` is later than the validator's own) is refused by rule 79: the validator cannot check rules it does not know. The file may be valid; check it with a current validator.
+
+### 2.7 Extensions
+
+The core of this specification is what every field shares and what claims are compared by across fields. An **extension** adds the detail that one kind of work needs and other kinds do not: the glosses of linguistic examples, the structures of compounds, the endpoints of a trial, the coordinates of a field site. Extensions are specified one per file in `spec/extensions/` (`linguistics-v0.1.md`), each with its own version, and listed in `spec/extensions/README.md`, the registry of extensions. A paper uses as many extensions as it needs, or none.
+
+**Declaring.** The top-level `extensions` names each extension the file uses and the version of it the file follows: `"extensions": {"linguistics": "0.1"}`. A name is lower-case letters, digits and hyphens, starting with a letter; a version is `<major>.<minor>`, as for the core (§2.6). A file that uses no extension leaves `extensions` out.
+
+**Using.** An object holds an extension's fields in its `ext` block, keyed by the extension's name: `{"id": "R3", "variable": "D2", "value": {…}, "ext": {"linguistics": {"gloss": "…"}}}`. Each extension says on which objects it may appear. Objects that may carry `ext`: `paper`, and each object in `contributors`, `models`, `definitions`, `claims`, `evidence`, `warrants`, `limitations`, `artefacts`, `references` and `open_questions`, and each result entry and table of an evidence object.
+
+**What an extension may do.**
+- It adds fields, inside its own blocks only. It never changes the meaning of a core field, adds values to a core list (a kind, a support kind, a profile, an artefact kind), or makes a core field required.
+- Its fields may point to the file's objects by ID (a definition, an artefact, a result).
+- It may have rules of its own, numbered within it (`linguistics.1`) and checked on its blocks, and warnings likewise (`linguistics.w1`).
+- What every field needs is not put in an extension: when two or more extensions would define the same thing, it belongs in the core.
+
+**The core stands alone.** A file with every `ext` block and `extensions` removed is a valid file of the core, and says everything the core says: claims, their support, their atoms and their observations never depend on an extension. A reader that knows no extension reads the whole core, and may show an extension's blocks as data or leave them out.
+
+**Versions of extensions.** Each extension follows the compatibility rule of §2.6 on its own: a block valid under a version of an extension stays valid under that version for good, checked by that version's rules. An extension's specification names the core versions it works with (its first, and no last).
+
+**Validation.** A validator checks the core, then each declared extension it knows, at the version declared. An extension it does not know, or a version later than it knows, is refused by rule 80 with a message of its own: the blocks may be valid, but this validator cannot check them; a current validator can. The core is still checked, so the report lists the core's errors too.
 
 ## 3. Object types
 
@@ -749,7 +793,7 @@ Common fields: `id`, `profile`, `description`, `artefacts` (list of artefact IDs
   - a number;
   - a category: the ID of a definition (an outcome the paper defines, such as `"upheld"`) or a short word or code (`"present"`, `"B"`);
   - a boolean (attested or not, significant or not);
-  - an **excerpt**, `{text, locator, language, gloss, translation}`: words from the data that are themselves the observation (an interview passage, a passage of a judgment, a linguistic example). `text` is the words as the source gives them; `locator` where they are: text (a transcript and line, a document and paragraph, a corpus and sentence ID) or, for words from a file the claimset lists as an artefact, `{artefact, start, end, lab_event}`: the artefact (a captured source, lab record §5.20), the characters of its text the words occupy (`start` inclusive, `end` exclusive, counted in Unicode code points from 0), and optionally the lab record event that recorded the passage (a coding, `CD3`) (rule 78); `language` a BCP 47 tag when not English; `gloss` and `translation` for linguistic examples (Leipzig glossing rules). Excerpts from people's data carry no personal data beyond what the participants consented to publish (`declarations.consent`).
+  - an **excerpt**, `{text, locator, language, translation}`: words from the data that are themselves the observation (an interview passage, a passage of a judgment, a linguistic example). `text` is the words as the source gives them; `locator` where they are: text (a transcript and line, a document and paragraph, a corpus and sentence ID) or, for words from a file the claimset lists as an artefact, `{artefact, start, end, lab_event}`: the artefact (a captured source, lab record §5.20), the characters of its text the words occupy (`start` inclusive, `end` exclusive, counted in Unicode code points from 0), and optionally the lab record event that recorded the passage (a coding, `CD3`) (rule 78); `language` a BCP 47 tag when not English; `translation` an English translation of words in another language. The interlinear gloss of a linguistic example is given by the linguistics extension (`ext.linguistics.gloss` on the result, §2.7). Excerpts from people's data carry no personal data beyond what the participants consented to publish (`declarations.consent`).
 - `unit`: optional; a UCUM code (`ms`, `%`, `mg/L`, `Cel`, `1` for a dimensionless ratio) or, where UCUM has none, text. `interval`: optional `{level, lower, upper}`. `n`: optional, the number of cases the value rests on.
 - `conditions`: the observation's coordinates: an object whose keys are dimensions and whose values are where the observation lies on each, e.g. `{"D26": "D9", "D5": "D14", "horizon": 12}`. A key is the ID of a definition or text. A value is the ID of a definition, a number, text or a boolean. When a key is a group (§3.2, *Groups*), its value is one of the group's members; when it is a `variable` or `setting` with a unit, its value is a literal in that unit.
 - `read_from`: optional `{artefact, precision}`, when the value was read off a figure or a recording rather than taken from data or a table: `artefact` is the figure or recording, `precision` how exactly it could be read (a number in the observation's unit, or text). Values read off a figure are recorded only with it, so a reader knows they are approximate.
@@ -782,7 +826,7 @@ Each cell is one observation: its variable is the column's; its conditions are t
 
 Here D26 is the group of compared methods (members D1, D2, D3), D5 the group of data sets, D14 the M3 monthly series, and D8 and D9 the error measures, of kind `variable`. The same form holds a table of a psychology experiment (rows: condition × group; columns: mean reaction time, its standard deviation), of a chemistry paper (rows: catalyst; columns: yield at each temperature, `{"variable": "D4", "conditions": {"D6": 350}}` with D6 the temperature in `Cel`), of a linguistic survey (rows: language; columns: whether each construction is attested, boolean values) or of a legal study (rows: court × year; columns: the number of appeals by outcome). A participant or sample flow (screened, excluded for each reason, analysed) is a table of counts whose rows are the stages, so a flow diagram is a figure that shows it (§3.6).
 
-**Excerpts and qualitative evidence.** A qualitative finding rests on excerpts. Each excerpt the paper gives for a theme is an observation whose variable is the theme's presence (or the theme itself), whose conditions name the participant or document, and whose value is the excerpt: `{"id": "R3", "variable": "D7", "conditions": {"participant": "P07", "D3": "D2"}, "value": {"text": "I used to be the stroke nurse. Here I'm just a nurse.", "locator": "transcript P07, lines 112-113"}}`. A linguistic example is an excerpt with its gloss and translation, a cited passage of a judgment an excerpt with its paragraph. (The `exemplars` of the `qual` profile until v0.31 are recorded this way.)
+**Excerpts and qualitative evidence.** A qualitative finding rests on excerpts. Each excerpt the paper gives for a theme is an observation whose variable is the theme's presence (or the theme itself), whose conditions name the participant or document, and whose value is the excerpt: `{"id": "R3", "variable": "D7", "conditions": {"participant": "P07", "D3": "D2"}, "value": {"text": "I used to be the stroke nurse. Here I'm just a nurse.", "locator": "transcript P07, lines 112-113"}}`. A linguistic example is an excerpt with its translation, and its gloss in the linguistics extension; a cited passage of a judgment is an excerpt with its paragraph. (The `exemplars` of the `qual` profile until v0.31 are recorded this way.)
 
 **Setup** (`setup`; recommended for evidence of every profile except `formal`): the frame of the study, its parts each recorded once as a definition (§3.2) and named here by role, so that claims, evidence objects, reviews and other papers can refer to each part on its own. `{studied, cases, procedure, lens, context}`, each a list of definition IDs; roles that do not apply are left out:
 - `studied`: what the study is about or compares: methods and models, interventions and exposures, the phenomenon of interest (in forecasting: the competing methods, each with the settings that define it; in a qualitative study: the experience or phenomenon explored).
@@ -1301,6 +1345,14 @@ The file records identifier type and venue facts for cited works only. Trust in 
 77. Package limits. A package (§2.5) keeps within the limits of §2.5: the number of files, the size of each file and of the payload, the form of every path, the manifest listing exactly the files of `data/`, and the file types. A zip is checked before it is unpacked: its entries' sizes and paths, and that it holds no links.
 78. Excerpt locators. A structured excerpt `locator` has only `artefact`, `start`, `end` and `lab_event`; `artefact` resolves to an artefact; `start` and `end` are integers with 0 ≤ `start` < `end`; `lab_event`, if present, is a lab record event ID (`CD3`, `AC2.CD3`). When the claimset is validated as part of a package and the artefact is a packaged text file, the excerpt's `text` is that file's characters `start` to `end`.
 
+### 10.25 Rules added in v0.37 (errors: file rejected)
+
+79. Specification version. `schema_version` names a version of this specification from v0.37 (the baseline) to the validator's own (§2.6). A file following an earlier version is refused, and `claimset migrate` brings it to the current one. A file following a later version is refused because its rules are not known to the validator: the file may be valid, and a current validator can check it.
+
+### 10.26 Rules added in v0.38 (errors: file rejected)
+
+80. Extensions (§2.7). `extensions`, if present, is an object whose keys are extension names (lower-case letters, digits and hyphens, starting with a letter) and whose values are versions (`<major>.<minor>`). Each declared extension, at the version declared, is known to the validator; one that is not is refused with a message saying that the validator does not know it, and that a current validator may. `ext` appears only on the objects listed in §2.7, is an object, and each of its keys is a declared extension whose specification allows it on that object; each block is an object. The rules of each extension apply to its blocks.
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -1335,6 +1387,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 30. A `data_plot` figure without `shows` or `underlying_data`; a `specimen` from which no observation is read (`read_from`); or a result whose `variable` or a table column whose variable is text equal, ignoring case, to the `term` of a definition in the file (give the ID).
 31. A converted paper lies in a `claimset/` folder and its file is not named `<name>.claimset.json` with the name made from its source's identifier (§2.4). The message gives the name.
 32. A `url` reference has no `archive_uri`, and an artefact naming it holds a captured copy (a page behind a sign-in, or not yet archived): the copy, with its hash, stands in for the archive; give `archive_uri` if the page can be archived.
+33. An extension is declared in `extensions` and no object has a block of it (§2.7).
 
 ## 11. Platform dependencies
 
@@ -1390,7 +1443,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.37",
+  "schema_version": "0.38",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -1489,7 +1542,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.37",
+  "schema_version": "0.38",
   "paper": {
     "id": "doi:10.0000/claimset.2026.000456",
     "title": "Example converted paper",

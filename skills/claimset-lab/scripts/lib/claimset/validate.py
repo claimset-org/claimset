@@ -23,7 +23,28 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.37"
+SCHEMA_VERSION = "0.38"
+#: The first specification version accepted (spec §2.6). Files of every version from it to SCHEMA_VERSION are
+#: valid for good; each is checked by its own version's rules (a frozen validator in claimset.versions).
+BASELINE_VERSION = "0.37"
+SCHEMA_VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+
+
+def _sibling(name):
+    """A module beside this file, when it runs as a script (the submit skill's scripts/validate.py)."""
+    import importlib
+    import os
+    here = os.path.dirname(os.path.abspath(__file__))
+    for d in (os.path.dirname(here), here):         # a frozen copy lives one folder down, in versions/
+        if d not in sys.path:
+            sys.path.insert(0, d)
+    return importlib.import_module(name)
+
+
+def schema_version_tuple(v):
+    """(major, minor) of a specification version such as "0.37", or None if `v` is not one."""
+    m = SCHEMA_VERSION_RE.match(v) if isinstance(v, str) else None
+    return (int(m.group(1)), int(m.group(2))) if m else None
 
 ENUM = {
     "status": {"active", "corrected", "retracted", "withdrawn", "expression_of_concern"},
@@ -360,12 +381,30 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
         r.err("2", "$", "top level must be a JSON object")
         return r
 
-    if doc.get("schema_version") != SCHEMA_VERSION:
-        got = doc.get("schema_version")
-        r.err("2", "schema_version", f"must be '{SCHEMA_VERSION}'" + (
-            f"; the file follows specification {got}, an earlier version with different rules. Read the "
-            f"current specification (`claimset spec`) and update the skills (`claimset skill install`)"
-            if isinstance(got, str) and got else ""))
+    got = doc.get("schema_version")
+    if got != SCHEMA_VERSION:
+        # Rule 79 (spec §2.6): every version from the baseline is checked by its own rules, by a frozen copy of
+        # that version's validator; a later version is unknown here.
+        gv = schema_version_tuple(got)
+        if gv is not None and gv > schema_version_tuple(SCHEMA_VERSION):
+            r.err("79", "schema_version", f"the file follows specification {got}, newer than this validator "
+                  f"({SCHEMA_VERSION}), which does not know its rules. The file may be valid: check it with a "
+                  f"current validator (update the claimset package)")
+            return r
+        if gv is not None and gv >= schema_version_tuple(BASELINE_VERSION):
+            try:
+                from .versions import frozen_validator
+            except ImportError:                     # run as a script beside its versions folder (the submit skill)
+                frozen_validator = _sibling("versions").frozen_validator
+            frozen = frozen_validator(got)
+            if frozen is not None:
+                return frozen.validate(doc, published=published, local_root=local_root, revision=revision,
+                                       file_name=file_name)
+        r.err("79", "schema_version", f"must be a specification version from {BASELINE_VERSION} to "
+              f"{SCHEMA_VERSION}" + (
+                  f"; the file follows specification {got}, an earlier version with different rules. Bring it "
+                  f"to the current one (`claimset migrate`), read the current specification (`claimset spec`) "
+                  f"and update the skills (`claimset skill install`)" if isinstance(got, str) and got else ""))
 
     for key in ("paper", "contributors", "models", "claims"):
         if key not in doc:
@@ -991,6 +1030,9 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
             if got_flags != exp_flags:
                 r.err("13", f"claims:{cid}.verifiability_flags",
                       f"expected {sorted(exp_flags)}, found {sorted(got_flags)}")
+
+    # ---------- Extensions (rule 80, warning 33; spec §2.7) ----------
+    check_extensions(r, doc)
     return r
 
 
@@ -1051,7 +1093,7 @@ DEF_ID_RE = re.compile(r"^D\d+$")
 SETUP_PART_KINDS = {"method", "intervention", "population", "data", "design", "variable"}
 CURIE_RE = re.compile(r"^[a-z][a-z0-9._-]*:\S+$")
 ROW_REF_RE = re.compile(r"^(A\d+)#row=(\d+)(?:-(\d+))?$")
-EXCERPT_FIELDS = {"text", "locator", "language", "gloss", "translation"}
+EXCERPT_FIELDS = {"text", "locator", "language", "translation"}
 ENCODING_KEYS = {"x", "y", "colour", "shape", "size", "panel"}
 LOCAL_RELATION_TYPES = {"supports", "contradicts", "refines", "explains", "qualifies"}
 #: Relation types for other works only (§3.7)
@@ -1428,7 +1470,7 @@ def _is_number(x):
 
 def value_ok(v):
     """A value of an observation (rule 66): a number, a non-empty string (a category: a definition ID or a code),
-    a boolean, or an excerpt {text, locator, language, gloss, translation}."""
+    a boolean, or an excerpt {text, locator, language, translation}."""
     if isinstance(v, bool) or _is_number(v):
         return True
     if isinstance(v, str):
@@ -1471,7 +1513,10 @@ def check_result(r, rw, rs, ref):
                                       "(`claimset migrate` renames it)")
     if not isinstance(rs.get("variable"), str) or not rs["variable"].strip():
         r.err("66", rw, "missing variable: what is observed (a definition ID or text)")
-    if not value_ok(rs.get("value")):
+    if isinstance(rs.get("value"), dict) and "gloss" in rs["value"]:
+        r.err("66", f"{rw}.value.gloss", "an excerpt's gloss is in the linguistics extension since v0.38: "
+                                         "ext.linguistics.gloss on the result (`claimset migrate` moves it)")
+    elif not value_ok(rs.get("value")):
         r.err("66", f"{rw}.value", "a number, a category, a boolean, or an excerpt {text, locator}")
     elif isinstance(rs.get("value"), dict) and isinstance(rs["value"].get("locator"), dict):
         check_locator(r, f"{rw}.value.locator", rs["value"]["locator"], ref)
@@ -2664,6 +2709,131 @@ def print_report(rep, published=False, as_json=False):
             for cid, v in rep.computed.items():
                 flags = ", ".join(v["verifiability_flags"]) or "no flags"
                 print(f"    {cid}: {v['verifiability']} ({flags})")
+
+
+# ---------- Extensions (spec §2.7, rule 80, warning 33) ----------
+
+def _extensions_registry():
+    try:
+        from . import extensions
+    except ImportError:                      # run as a script beside its extensions folder (the submit skill)
+        return _sibling("extensions")
+    return extensions
+
+
+def _extension_module(name, version):
+    return _extensions_registry().module(name, version)
+
+
+def _extension_versions(name):
+    return sorted(_extensions_registry().KNOWN.get(name, {}))
+
+
+EXT_NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
+EXT_VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+
+#: Where `ext` may appear (spec §2.7): top-level collections and their object type.
+EXT_COLLECTIONS = {"contributors": "contributor", "models": "model", "definitions": "definition", "claims": "claim",
+               "evidence": "evidence", "warrants": "warrant", "limitations": "limitation", "artefacts": "artefact",
+               "references": "reference", "open_questions": "open_question"}
+EXT_OBJECT_TYPES = {"paper", "result", "table", *EXT_COLLECTIONS.values()}
+
+
+def ext_objects(doc):
+    """Every object that may carry `ext`: [(where, object type, object)]."""
+    out = []
+    if isinstance(doc.get("paper"), dict):
+        out.append(("paper", "paper", doc["paper"]))
+    for coll, typ in EXT_COLLECTIONS.items():
+        for i, x in enumerate(doc.get(coll) if isinstance(doc.get(coll), list) else []):
+            if isinstance(x, dict):
+                where = f"{coll}:{x.get('id', i)}"
+                out.append((where, typ, x))
+                if coll == "evidence":
+                    for key, sub in (("results", "result"), ("tables", "table")):
+                        for j, y in enumerate(x.get(key) if isinstance(x.get(key), list) else []):
+                            if isinstance(y, dict):
+                                out.append((f"{where}.{key}:{y.get('id', j)}", sub, y))
+    return out
+
+
+def _stray_ext(doc):
+    """`ext` keys on objects where §2.7 does not allow them (one level down from the allowed objects)."""
+    allowed = {id(o) for _, _, o in ext_objects(doc)}
+    found = []
+
+    def walk(x, path):
+        if isinstance(x, dict):
+            if "ext" in x and id(x) not in allowed and x is not doc:
+                found.append(path)
+            for k, v in x.items():
+                if k != "ext":
+                    walk(v, f"{path}.{k}" if path else k)
+        elif isinstance(x, list):
+            for i, v in enumerate(x):
+                walk(v, f"{path}[{i}]")
+    walk(doc, "")
+    return found
+
+
+def check_extensions(r, doc):
+    """Rule 80 and warning 33, then each declared extension's own rules."""
+    declared = doc.get("extensions")
+    known = {}
+    if "ext" in doc:
+        r.err("80", "ext", "ext is not allowed at the top level: put each block on the object it concerns (§2.7)")
+    if declared is not None and not isinstance(declared, dict):
+        r.err("80", "extensions", "must be an object: {extension name: version}")
+        declared = {}
+    for name, version in (declared or {}).items():
+        where = f"extensions.{name}"
+        if not EXT_NAME_RE.match(name):
+            r.err("80", where, "an extension name is lower-case letters, digits and hyphens, starting with a letter")
+            continue
+        if not (isinstance(version, str) and EXT_VERSION_RE.match(version)):
+            r.err("80", where, "the version of an extension is <major>.<minor>, as a string, e.g. \"0.1\"")
+            continue
+        mod = _extension_module(name, version)
+        if mod is None:
+            versions = _extension_versions(name)
+            what = (f"version {version} of the extension {name} (this validator knows {', '.join(versions)})"
+                    if versions else f"the extension {name}")
+            r.err("80", where, f"this validator does not know {what}, so its blocks are not checked. The file may "
+                               f"be valid: check it with a current validator (update the claimset package), and "
+                               f"see spec/extensions/README.md for the registered extensions")
+            known[name] = None
+            continue
+        known[name] = mod
+    blocks = {name: [] for name in known}
+    for where, typ, obj in ext_objects(doc):
+        if "ext" not in obj:
+            continue
+        ext = obj["ext"]
+        if not isinstance(ext, dict):
+            r.err("80", f"{where}.ext", "must be an object: {extension name: block}")
+            continue
+        for name, block in ext.items():
+            w = f"{where}.ext.{name}"
+            if name not in known:
+                r.err("80", w, f"the extension {name} is not declared in the top-level extensions")
+                continue
+            mod = known[name]
+            if not isinstance(block, dict):
+                r.err("80", w, "an extension's block is an object")
+                continue
+            if mod is not None and typ not in mod.OBJECTS:
+                r.err("80", w, f"the extension {name} has no block on a {typ.replace('_', ' ')}; it allows "
+                               f"{', '.join(sorted(t.replace('_', ' ') for t in mod.OBJECTS))}")
+                continue
+            blocks[name].append((w, typ, obj, block))
+    for path in _stray_ext(doc):
+        r.err("80", path, "ext is allowed only on the paper, the objects of the top-level lists, and results and "
+                          "tables of evidence (§2.7)")
+    for name, mod in known.items():
+        if not blocks[name]:
+            r.warn("W33", f"extensions.{name}", f"the extension {name} is declared and no object has a block of it")
+        if mod is not None and blocks[name]:
+            mod.check(blocks[name], doc, r)
 
 
 if __name__ == "__main__":
