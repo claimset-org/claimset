@@ -1,13 +1,13 @@
 ---
 name: claimset-submit
-description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.38 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
+description: Turn a piece of research (draft paper, analysis, code, results) into a Claimset v0.39 submission file, validate it, and prepare it for the human guarantor. Use when asked to write, package, prepare, correct or submit research as a claimset or for Claimset.
 ---
 
 # Preparing a Claimset submission
 
 A claimset is a research paper written for LLM readers: a flat JSON file of atomic, self-contained claims plus the definitions, evidence, assumptions, limitations, warrants and artefacts that support, condition and limit them. You write every field. A human decides two things (guarantor and licence), and you ask them before you finish.
 
-The normative rules are in `references/spec-v0.38.md`. Extensions of the format, for detail that one kind of work needs (spec §2.7), are in `references/extensions/`: the registry `README.md` lists them. Use an extension only when the work has what it records (a glossed linguistic example: `linguistics`), declare it in the top-level `extensions`, and put its fields in `ext` blocks on the objects it names. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
+The normative rules are in `references/spec-v0.39.md`. Extensions of the format, for detail that one kind of work needs (spec §2.7), are in `references/extensions/`: the registry `README.md` lists them. Use an extension only when the work has what it records (a glossed linguistic example: `linguistics`), declare it in the top-level `extensions`, and put its fields in `ext` blocks on the objects it names. A valid submission is in `examples/submission-native.json`; `examples/published-native.json` shows the same paper after the platform has added its fields. The validator is `scripts/validate.py`. Read the submission example before starting; consult the spec whenever a field's meaning is unclear.
 
 **Versions.** This skill, its spec and its validator are one version. If the `claimset` package is installed, check that this skill matches it before starting: `claimset skill check`. If it reports the skill out of date, or `claimset validate` says a file follows an earlier specification, update the skill with `claimset skill install` (it replaces this folder with the version matching the package) and read the new spec; never mix rules from two versions.
 
@@ -56,7 +56,7 @@ If the work was done with a lab record (`claimset/<study>/lab/lab.jsonl`, or an 
 
 Then continue with the steps below to choose principal claims, review wording and scope, and ask the human.
 
-**Planned tests without a lab record.** If a claim was tested under a plan registered before the data were seen (for example a pre-registration), set `planning: confirmatory` (or `confirmatory_with_deviations`), `planned_at`, `planned_at_anchor`, and `test`: the framework, its parameters (for a significance test: `alpha`, `test`, `sides`, `correction`, `sample`), the `quantities` the rules use and the rules for `supported` and `not_supported`, exactly as registered, with the registration's URI in `registration`. `not_supported` means the registered refutation rule was met; otherwise a test that was not significant is `inconclusive`.
+**Planned tests without a lab record.** If a claim was tested under a plan registered before the data were seen (a preregistration on OSF or AsPredicted, a registered report's Stage 1 protocol, a trial registry entry), list the registration in `references` (its DOI, a trial number as a CURIE such as `clinicaltrials:NCT01234567`, or an archived URL) and give the claim `hypothesis: {outcome}` (no `lab_event`), `planning: confirmatory` (or `confirmatory_with_deviations`, with each departure from the registration a limitation of category `deviation`), `planned_at` (the registration's date), `planned_at_anchor: registry`, and `test`: the framework, its parameters (for a significance test: `alpha`, `test`, `sides`, `correction`, `sample`), the rules for `supported` and `not_supported` exactly as registered (expressions with `quantities` when the registration fixes thresholds, otherwise text with `verdict: judged`), and `registration`: the reference's ID. `not_supported` means the registered refutation rule was met; otherwise a test that was not significant is `inconclusive`. A hypothesis the paper states but did not register is `exploratory` (spec §3.3.3, *Tests registered outside a lab record*).
 
 ### 3. Write the claims first
 

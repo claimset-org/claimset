@@ -8,6 +8,8 @@ Only what is mechanical is changed:
   quantities name the result they bind by `variable` (was `quantity`); its flags `coded_before_plan` and
   `codebook_changed_after_plan`, and count quantities, move to the qualitative extension (`ext.qualitative` on the
   claim); the extensions used are declared;
+- v0.39: a test's `registration`, a URI until v0.38, becomes the ID of a reference listing the registration (a DOI
+  when the URI is one; otherwise a URL, whose archived copy is listed to give);
 - `schema_version` is set to the current version.
 From v0.33 a claim inherits the assumptions of the methods studied only for its own subject (§3.2): the
 assumptions a claim inherited under v0.32 and no longer does are listed, to be added to its own `assumptions`
@@ -137,6 +139,30 @@ def migrate(doc):
                 if isinstance(exts, dict):
                     exts.setdefault("qualitative", "0.1")
             done.append(f"{c.get('id')}: {', '.join(sorted(moved))} -> ext.qualitative")
+    refs = out.get("references") if isinstance(out.get("references"), list) else None
+    ref_ids = {as_dict(x).get("id") for x in refs or []}
+    for c in out.get("claims") or []:
+        test = c.get("test") if isinstance(c, dict) else None
+        reg = test.get("registration") if isinstance(test, dict) else None
+        if isinstance(reg, str) and reg.strip() and reg not in ref_ids:
+            if refs is None:
+                refs = out["references"] = []
+            target, id_type = registration_target(reg)
+            same = next((x for x in refs if as_dict(x).get("target") == target), None)
+            if same is None:
+                n = max([int(i[1:]) for i in ref_ids if isinstance(i, str) and i[1:].isdigit() and i[0] == "B"] or [0])
+                same = {"id": f"B{n + 1}", "target": target, "id_type": id_type}
+                refs.append(same)
+                ref_ids.add(same["id"])
+                if id_type == "url":
+                    todo.append(f"references:{same['id']}: give the archive_uri of the registration {target} "
+                                f"(rule 51)")
+            test["registration"] = same["id"]
+            done.append(f"{c.get('id')}.test.registration: {reg} -> reference {same['id']}")
+        if isinstance(c, dict) and c.get("planning") in ("confirmatory", "confirmatory_with_deviations") and \
+                isinstance(test, dict) and not test.get("lab_plan") and not test.get("registration"):
+            todo.append(f"{c.get('id')}: a confirmatory test names its plan, lab_plan or registration; with neither "
+                        f"the claim is exploratory (rule 81)")
     for c in out.get("claims") or []:
         if not isinstance(c, dict) or "about" in c or _is_assumption(c):
             continue
@@ -151,3 +177,12 @@ def migrate(doc):
         todo.append("paper.declarations: ask the guarantor for funding and competing interests, and record ethics "
                     "and consent where people took part (warning 29)")
     return out, done, todo
+
+
+def registration_target(uri):
+    """(target, id_type) of a registration given as a URI before v0.39: a DOI when it is one, otherwise a URL."""
+    import re
+    m = re.match(r"^(?:https?://(?:dx\.)?doi\.org/|doi:)?(10\.\d{4,9}/\S+)$", uri.strip(), re.I)
+    if m:
+        return m.group(1), "doi"
+    return uri.strip(), "url"

@@ -191,6 +191,12 @@ def _claim(c, inherited=()):
                                           f"not supported if {t['not_supported']}" if t.get("not_supported") else "",
                                           f"verdict {t['verdict']}" if t.get("verdict") else "",
                                           ("flags " + ", ".join(t["flags"])) if t.get("flags") else ""]))
+        plan = [f"lab plan {t['lab_plan']}" if t.get("lab_plan") else "",
+                f"registered {t['registration']}" if t.get("registration") else "",
+                f"planned {c['planned_at']}" if c.get("planned_at") else "",
+                f"anchor {c['planned_at_anchor']}" if c.get("planned_at_anchor") else ""]
+        if any(plan):
+            lines.append("  plan: " + _join(plan))
     return lines
 
 

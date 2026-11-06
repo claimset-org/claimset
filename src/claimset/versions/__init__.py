@@ -9,7 +9,7 @@ definition of its version's rules. Files of every version from the baseline (0.3
 import importlib
 
 #: Versions with a frozen validator here, earlier than the current one. Filled by tools/freeze_validator.py.
-FROZEN = ("0.37",)
+FROZEN = ("0.37", "0.38",)
 
 
 def frozen_validator(version):

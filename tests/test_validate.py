@@ -443,8 +443,9 @@ class TestLabRules(Base):
         self.assertRule(self.d, "47")      # its verdict is computed
 
     def test_47_text_rules_give_judged_verdicts(self):
+        plan = claim(self.d, "C2")["test"]["lab_plan"]
         claim(self.d, "C2")["test"] = {"framework": "formal", "supported": "A proof of the statement.",
-                                       "not_supported": "A counterexample.", "verdict": "judged"}
+                                       "not_supported": "A counterexample.", "verdict": "judged", "lab_plan": plan}
         self.assertValid(self.d)
 
     def test_47_verdict_source_required(self):
@@ -1627,7 +1628,7 @@ class TestRulesV033(Base):
         definition(self.d, "D2").pop("assumptions")
         self.d["schema_version"] = "0.32"
         _, done, todo = migrate(self.d)
-        self.assertIn("schema_version 0.32 -> 0.38", done)
+        self.assertIn("schema_version 0.32 -> 0.39", done)
         self.assertTrue(any(t.startswith("C2: no longer inherits C3") for t in todo))
 
 

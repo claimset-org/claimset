@@ -1,10 +1,22 @@
-# Claimset — Specification v0.38 (draft)
+# Claimset — Specification v0.39 (draft)
 
-Status: working draft · Date: 2026-11-06 · Supersedes v0.37 (`spec/claimset-v0.37.md`) · Companions: lab record specification (`spec/lab-record-v0.19.md`), revision specification (`spec/claimset-revision-v0.6.md`), extensions (`spec/extensions/`)
+Status: working draft · Date: 2026-11-06 · Supersedes v0.38 (`spec/claimset-v0.38.md`) · Companions: lab record specification (`spec/lab-record-v0.20.md`), revision specification (`spec/claimset-revision-v0.6.md`), extensions (`spec/extensions/`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.37
+## Changes since v0.38
+
+Tests planned outside a Claimset lab record can be reported as planned. A study preregistered on OSF or AsPredicted, a registered report and a trial in a trial registry report their hypotheses, outcomes and confirmatory tests in the same fields as a claimset exported from a lab record.
+
+- §3.3, §3.3.3: a claim's `hypothesis` may come from a registration or from the paper itself, not only from a lab record. `hypothesis.lab_event` is given for claims exported from a lab record, and only for them.
+- §3.3.3: a test's `registration` is the ID of the registration in `references` (§3.13), so it has an identifier type: the DOI of an OSF registration, a trial registry number as a CURIE, an archived URL. A confirmatory test names the plan it was planned under, `lab_plan` or `registration`. New rule 81.
+- §3.3.3: new `planned_at_anchor` value `registry`: `planned_at` is the date a public registry records for the registration.
+- §3.3.3, *Tests registered outside a lab record*: how a registered test is recorded, in native and converted papers. A rule the converter reconstructs is `inferred` in `field_provenance`.
+- §3.9: new limitation category `deviation`, a departure from the plan a test was planned under. New warning 34: a claim `confirmatory_with_deviations` without a limitation of that category.
+- Rules 42, 44 and 46 (revised): only claims exported from a lab record need `hypothesis.lab_event`, `paper.exploration` and its counts.
+- `claimset migrate` turns the registration URI of a v0.38 test into a reference.
+
+## Changes in v0.38 (since v0.37)
 
 The format becomes a core with extensions. The core holds what every field shares and what claims are compared by across fields: claims and their atoms, support, definitions, observations, assumptions, limitations, provenance and contributors. An extension adds the detail one kind of work needs (the glosses of linguistic examples, the structures of compounds, the endpoints of a trial), in blocks of its own on the objects it concerns. Extensions have their own versions, so one can be added or revised without a new version of the core, and a paper uses as many as it needs.
 
@@ -372,7 +384,7 @@ Top-level layout:
 
 ```json
 {
-  "schema_version": "0.38",
+  "schema_version": "0.39",
   "@context": "optional",
   "paper": {},
   "contributors": [],
@@ -658,10 +670,10 @@ A definition explains in full only a term the paper introduces or uses in its ow
 | `relations` | list | Typed links to claims or works outside this paper, and to other claims of this paper (§3.7); required for refutations and replications |
 | `verification` | enum | Formal claims proved or argued in this paper, required: `machine_checked` · `agent_checked` · `peer_checked` · `disputed` · `unchecked` (§5) |
 | `checks` | list | Independent checks of this claim and their outcomes (§5): re-derivations of formal claims, reproductions of empirical ones |
-| `hypothesis` | object | `{lab_event, outcome}`: the lab-record hypothesis this claim came from, and its outcome `supported` · `not_supported` · `inconclusive` (§3.3.3) |
+| `hypothesis` | object | `{lab_event, outcome}`: the hypothesis this claim tests, and its outcome `supported` · `not_supported` · `inconclusive`. `lab_event`, the hypothesis event of the lab record, only in claims exported from a lab record (§3.3.3) |
 | `planning` | enum | `confirmatory` · `confirmatory_with_deviations` · `exploratory` (§3.3.3) |
-| `planned_at` | datetime | When the plan that tested this claim was recorded (ISO 8601, UTC) |
-| `planned_at_anchor` | enum | Strength of `planned_at`: `platform` · `rfc3161` · `git_remote` · `none` |
+| `planned_at` | datetime | When the plan that tested this claim was recorded (ISO 8601, UTC): the lab-record plan's time, or the registration's date |
+| `planned_at_anchor` | enum | Strength of `planned_at`: `platform` · `rfc3161` · `registry` · `git_remote` · `none` |
 | `test` | object | The decision rule fixed before the test (§3.3.3); required for confirmatory claims |
 | `source_spans` | list | Locations in the source text; required for converted papers |
 | `provenance` | enum | Default for the claim: `author_stated` · `extracted` · `inferred` |
@@ -687,12 +699,12 @@ When `about.conditions` names a defined population, data set or setting (§3.3.5
 
 #### 3.3.3 Hypotheses, planning and negative results
 
-A claim exported from a lab record carries the hypothesis it came from (`hypothesis.lab_event`) and its outcome. A claim with outcome `not_supported` is a **negative result**: its statement says plainly what was not found ("Under conditions …, method M did not reduce …"), with scope, support and evidence like any other claim. Negative results belong in the same claimset as the positive results they qualify.
+A claim that tests a hypothesis carries it as `hypothesis`, with the test's outcome. The hypothesis comes from one of three places: a lab record (the claim is exported from the record, and `hypothesis.lab_event` is the hypothesis event); a registration outside the lab record (a preregistration on OSF or AsPredicted, the Stage 1 protocol of a registered report, a trial registry entry), which the test names in `registration`; or the paper itself, which states the hypothesis before its results without registering it. A claim with outcome `not_supported` is a **negative result**: its statement says plainly what was not found ("Under conditions …, method M did not reduce …"), with scope, support and evidence like any other claim. Negative results belong in the same claimset as the positive results they qualify.
 
 `planning` says whether the test was planned before it was run:
-- `confirmatory`: tested by a run under a plan, recorded before the run, that named the hypothesis, with no deviation.
-- `confirmatory_with_deviations`: as above, but the run deviated from the plan; the deviation is recorded as a limitation.
-- `exploratory`: every other case, including results found while exploring.
+- `confirmatory`: tested under a plan that named the hypothesis and was recorded before the data it was tested on were collected or seen, with no deviation. The plan is a lab-record plan (`test.lab_plan`) or a registration (`test.registration`).
+- `confirmatory_with_deviations`: as above, but the test deviated from the plan; each deviation is recorded as a limitation of category `deviation` (§3.9).
+- `exploratory`: every other case, including results found while exploring, and hypotheses the paper states without a lab-record plan or a registration, however early they were formed: nothing outside the paper records when.
 
 **Outcomes.** `supported` and `not_supported` are conclusive: each means that the rule stated for it in advance was met. A test that met neither rule is `inconclusive`. In particular, failing to reject a null hypothesis is `inconclusive`, not `not_supported`, unless the plan stated a rule for refutation (for example equivalence bounds).
 
@@ -729,11 +741,34 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
 - `quantities`: when the rules are expressions, the results they are evaluated on: `{name: {variable, conditions, field, run}}`. Each binds exactly one result: the one whose `variable` is the given one (§3.4) and whose `conditions` include every given key with the given value, read from `field`: `value` (default), `interval.lower` or `interval.upper`; with several deciding runs, `run` names the run (1 for the first). They correspond to results in the claim's evidence. (Files before v0.38 name the variable `quantity`.)
 - `supported`, `not_supported`: the two rules, each an expression over the quantities and numeric parameters, or text saying what observation decides. If neither rule holds, the outcome is `inconclusive`; if both hold, the rules overlap and the outcome is `inconclusive`. An **expression** is at most 1,000 characters long and uses finite numbers, names (quantities and numeric parameters), `+ - * /`, unary minus, `abs()`, comparisons (`< <= > >= == !=`, which may be chained: `0 < d < 1`), `and`, `or`, `not` and parentheses; nothing else. Every name is a quantity or a numeric parameter. A quantity that cannot be bound (no result matches, or several do) allows no conclusive outcome.
 - `verdict`: `computed` (the rules are expressions and the outcome was computed from the recorded results by the lab tool) · `judged` (the rules are text and the outcome was stated by the writer, who said which rule the evidence met).
-- `runs`: how many runs decided the test. `lab_plan`: the plan's lab-record ID, when there is one. `registration`: the URI of an external pre-registration, when there is one.
+- `runs`: how many runs decided the test. `lab_plan`: the plan's lab-record ID, when there is one. `registration`: the ID of the registration in `references` (§3.13), when the test was registered outside the lab record: `"B7"` (in files before v0.39, the registration's URI). A confirmatory test names its plan: `lab_plan`, `registration`, or both when a lab-record plan was also registered (rule 81).
 - `addresses`: optional list of the global IDs of review comments (`doi:…@v1/RV1.c6`) whose resolution test this test ran (revision §4.2). The test's rules are then the comment's: `supported` its `withdrawn` rule, `not_supported` its `upheld` rule.
 - `flags`: optional list of weaknesses of the test, as the lab record finds them (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs) · `reproduces_prompting_result` (a result the decision rule uses has the same quantity, conditions and value as a result of a run that suggested the hypothesis: the test may have repeated the exploration rather than tested the hypothesis on anything new) · `sources_captured_after_plan` (a deciding run read a captured source recorded after the plan: the plan did not fix the material tested). Flags of tests over coded material are in the qualitative extension (`ext.qualitative.test_flags`).
 
-`planned_at_anchor` says how far `planned_at` can be trusted (lab record §7): from strongest, `platform` (receipt from the Claimset platform), `rfc3161` (trusted timestamp authority), `git_remote` (pushed commit), to `none`.
+`planned_at_anchor` says how far `planned_at` can be trusted (lab record §7): from strongest, `platform` (receipt from the Claimset platform), `rfc3161` (trusted timestamp authority), `registry` (the date a public registry records for the registration the test names: OSF, AsPredicted, a trial registry), `git_remote` (pushed commit), to `none`.
+
+**Tests registered outside a lab record.** A registered study reports each registered hypothesis it tested as a claim with `hypothesis` (without `lab_event`), `planning`, `planned_at` and `test`, and lists the registration in `references`:
+
+```json
+"hypothesis": {"outcome": "inconclusive"},
+"planning": "confirmatory_with_deviations",
+"planned_at": "2018-03-12T00:00:00Z",
+"planned_at_anchor": "registry",
+"test": {"framework": "bayesian",
+         "parameters": {"prior": "Cauchy, scale 0.707", "threshold": "BF10 > 3 or BF10 < 1/3",
+                        "sample": "1,000 participants, fixed in advance"},
+         "supported": "BF10 above 3 for the effect of the manipulation on trust",
+         "not_supported": "BF10 below 1/3 for the effect of the manipulation on trust",
+         "verdict": "judged", "runs": 1, "registration": "B4"},
+"limitations": ["L3"]
+```
+
+with `{"id": "B4", "target": "10.17605/OSF.IO/ABCDE", "id_type": "doi"}` in `references` and L3, of category `deviation`, saying how the analysis departed from the registration. A trial registry entry is a CURIE (`{"target": "clinicaltrials:NCT01234567", "id_type": "curie"}`); a registration with no persistent identifier is a `url` with its `archive_uri` (§3.13).
+
+- `planned_at` is the registration's date as the registry records it, with `planned_at_anchor: registry`. A Stage 1 protocol accepted in principle is the registration of a registered report.
+- The rules are the registration's: expressions when it fixes thresholds (`alpha` 0.05, a Bayes factor of 10), otherwise text with `verdict: judged`. A hypothesis the registration did not name is `exploratory`, and so is every analysis it did not plan.
+- The platform cannot check that the registration says what the test records; the registration is public, and readers and reviewers can.
+- Converted papers: the rules are taken from the registration or from the paper's account of it. A rule the converter has to reconstruct (a threshold the paper applies but never states) is marked `inferred` in `field_provenance` (`{"test.supported": "inferred"}`); the outcome is the paper's.
 
 #### 3.3.4 What belongs in a claimset
 
@@ -980,7 +1015,7 @@ Limitations are threats to a claim *within its stated scope*. What the work did 
 | Field | Type | Values / notes |
 |---|---|---|
 | `id` | string | `L1` … |
-| `category` | enum | `sampling` · `sample_size` · `measurement` · `confounding` · `data_quality` · `model_specification` · `analytic_flexibility` · `researcher_position` · `computational` · `other` |
+| `category` | enum | `sampling` · `sample_size` · `measurement` · `confounding` · `data_quality` · `model_specification` · `analytic_flexibility` · `researcher_position` · `computational` · `deviation` (a departure from the lab-record plan or registration a confirmatory test was planned under, §3.3.3) · `other` |
 | `statement` | string | Specific and self-contained: names the dimension and the value (e.g. "Ratings were coded by a single coder") |
 | `affects` | list of claim IDs | At least one; paper-wide limitations are not allowed |
 | `impact` | enum | `could_reverse` · `could_bias_magnitude` · `reduces_precision` · `reduces_transferability` |
@@ -1073,11 +1108,11 @@ Each model used anywhere in the paper is defined once.
 
 ### 3.13 References
 
-Each work the paper cites is listed once, in the top-level `references`, and cited by its ID from support entries, relations, definitions and artefacts. `{id, target, id_type, archive_uri}`
+Each work the paper cites is listed once, in the top-level `references`, and cited by its ID from support entries, relations, definitions, artefacts and tests (`test.registration`, §3.3.3). `{id, target, id_type, archive_uri}`
 - `id`: `B1`, `B2`, ….
 - `target` and `id_type`: as for cited support (§4): an identifier (`doi`, `arxiv`, …), a global claim ID of a claimset (`id_type: claimset`), a paper or claim of the same repository not yet published (`id_type: claimset_local`, §2.4), or the reference as printed in the paper's reference list (`id_type: reference`).
 - `archive_uri`: required for `url` targets, unless the claimset holds a captured copy of the page: an artefact that names the entry in `reference` and whose `version` is the copy's hash (a captured source, lab record §5.20; private copies keep their hash in the record). Give one whenever the page can be archived (warning 32).
-Only works that a support entry, relation, definition or artefact points to are listed.
+Only works that a support entry, relation, definition, artefact or test points to are listed.
 
 ### 3.14 Open questions
 
@@ -1267,11 +1302,11 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 ### 10.7 Rules added in v0.11 (errors: file rejected)
 
-42. `hypothesis` present ⇒ `hypothesis.lab_event` and `hypothesis.outcome` present, and `planning` present.
+42. (Revised in v0.39.) `hypothesis` present ⇒ `hypothesis.outcome` and `planning` present. (Until v0.38: `hypothesis.lab_event` present as well.)
 43. `planning` is `confirmatory` or `confirmatory_with_deviations` ⇒ `planned_at` and `planned_at_anchor` present.
-44. Any claim has `hypothesis` ⇒ `paper.exploration` present, and `exploration.lab_record` is an artefact of kind `lab_record`.
+44. (Revised in v0.39.) Any claim has `hypothesis.lab_event` ⇒ `paper.exploration` present, and `exploration.lab_record` is an artefact of kind `lab_record`.
 45. (Revised in v0.12.) `exploration` counts are non-negative integers; `hypotheses.total` equals the sum of the other hypothesis counts (`open` included, 0 if absent); `tests.total`, if `tests` is present, equals the sum of its verdict counts; `runs.total` equals `confirmatory` + `exploratory`; `failed` ≤ `total`.
-46. (Revised in v0.12.) For each outcome (`supported`, `not_supported`, `inconclusive`): the number of claims with `test` reporting it does not exceed the corresponding `exploration.tests` count, and the number of distinct `hypothesis.lab_event` values among claims without `test` reporting it does not exceed the corresponding `exploration.hypotheses` count.
+46. (Revised in v0.12 and v0.39.) Among claims with `hypothesis.lab_event` (claims exported from a lab record), for each outcome (`supported`, `not_supported`, `inconclusive`): the number of claims with `test` reporting it does not exceed the corresponding `exploration.tests` count, and the number of distinct `hypothesis.lab_event` values among claims without `test` reporting it does not exceed the corresponding `exploration.hypotheses` count.
 
 ### 10.8 Rules added in v0.12 (errors: file rejected)
 
@@ -1365,6 +1400,10 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 80. Extensions (§2.7). `extensions`, if present, is an object whose keys are extension names (lower-case letters, digits and hyphens, starting with a letter) and whose values are versions (`<major>.<minor>`). Each declared extension, at the version declared, is known to the validator; one that is not is refused with a message saying that the validator does not know it, and that a current validator may. `ext` appears only on the objects listed in §2.7, is an object, and each of its keys is a declared extension whose specification allows it on that object; each block is an object. The rules of each extension apply to its blocks.
 
+### 10.27 Rules added in v0.39 (errors: file rejected)
+
+81. Plans of confirmatory tests. A claim with `planning` `confirmatory` or `confirmatory_with_deviations` has `hypothesis`, and its `test` names the plan: `lab_plan` or `registration`, or both. `test.registration`, if present, is the ID of an entry in `references`. `planned_at_anchor: registry` ⇒ `test.registration` present.
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -1400,6 +1439,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 31. A converted paper lies in a `claimset/` folder and its file is not named `<name>.claimset.json` with the name made from its source's identifier (§2.4). The message gives the name.
 32. A `url` reference has no `archive_uri`, and an artefact naming it holds a captured copy (a page behind a sign-in, or not yet archived): the copy, with its hash, stands in for the archive; give `archive_uri` if the page can be archived.
 33. An extension is declared in `extensions` and no object has a block of it (§2.7).
+34. A claim with `planning: confirmatory_with_deviations` lists no limitation of category `deviation`: record each departure from the plan (§3.3.3).
 
 ## 11. Platform dependencies
 
@@ -1455,7 +1495,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.38",
+  "schema_version": "0.39",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -1554,7 +1594,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.38",
+  "schema_version": "0.39",
   "paper": {
     "id": "doi:10.0000/claimset.2026.000456",
     "title": "Example converted paper",

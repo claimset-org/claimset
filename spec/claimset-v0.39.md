@@ -1,10 +1,33 @@
-# Claimset — Specification v0.37 (draft)
+# Claimset — Specification v0.39 (draft)
 
-Status: working draft · Date: 2026-11-04 · Supersedes v0.36 (`spec/claimset-v0.36.md`) · Companions: lab record specification (`spec/lab-record-v0.19.md`), revision specification (`spec/claimset-revision-v0.5.md`)
+Status: working draft · Date: 2026-11-06 · Supersedes v0.38 (`spec/claimset-v0.38.md`) · Companions: lab record specification (`spec/lab-record-v0.20.md`), revision specification (`spec/claimset-revision-v0.6.md`), extensions (`spec/extensions/`)
 
 Claimset is the name of both the open format and the platform.
 
-## Changes since v0.36
+## Changes since v0.38
+
+Tests planned outside a Claimset lab record can be reported as planned. A study preregistered on OSF or AsPredicted, a registered report and a trial in a trial registry report their hypotheses, outcomes and confirmatory tests in the same fields as a claimset exported from a lab record.
+
+- §3.3, §3.3.3: a claim's `hypothesis` may come from a registration or from the paper itself, not only from a lab record. `hypothesis.lab_event` is given for claims exported from a lab record, and only for them.
+- §3.3.3: a test's `registration` is the ID of the registration in `references` (§3.13), so it has an identifier type: the DOI of an OSF registration, a trial registry number as a CURIE, an archived URL. A confirmatory test names the plan it was planned under, `lab_plan` or `registration`. New rule 81.
+- §3.3.3: new `planned_at_anchor` value `registry`: `planned_at` is the date a public registry records for the registration.
+- §3.3.3, *Tests registered outside a lab record*: how a registered test is recorded, in native and converted papers. A rule the converter reconstructs is `inferred` in `field_provenance`.
+- §3.9: new limitation category `deviation`, a departure from the plan a test was planned under. New warning 34: a claim `confirmatory_with_deviations` without a limitation of that category.
+- Rules 42, 44 and 46 (revised): only claims exported from a lab record need `hypothesis.lab_event`, `paper.exploration` and its counts.
+- `claimset migrate` turns the registration URI of a v0.38 test into a reference.
+
+## Changes in v0.38 (since v0.37)
+
+The format becomes a core with extensions. The core holds what every field shares and what claims are compared by across fields: claims and their atoms, support, definitions, observations, assumptions, limitations, provenance and contributors. An extension adds the detail one kind of work needs (the glosses of linguistic examples, the structures of compounds, the endpoints of a trial), in blocks of its own on the objects it concerns. Extensions have their own versions, so one can be added or revised without a new version of the core, and a paper uses as many as it needs.
+
+- §2.7 (new): extensions. A file declares the extensions it uses in the top-level `extensions` (`{"linguistics": "0.1"}`); an object holds an extension's fields in its `ext` block (`"ext": {"linguistics": {...}}`). An extension adds fields; it never changes the meaning of a core field or adds values to a core list, and a file with every extension block removed is a valid core file. Extensions are specified in `spec/extensions/`.
+- New rule 80: extensions are declared, known to the validator and used only on the objects they allow. Rules of an extension are numbered within it (`linguistics.1`). New warning 33: a declared extension that no object uses.
+- §3.4, *Excerpts*: an excerpt's `gloss` (Leipzig glossing) moves to the linguistics extension, `ext.linguistics.gloss` on the result. `translation` stays in the core: any excerpt not in English may have one. `claimset migrate` moves glosses from v0.37 files.
+- §3.3.3: the test's frameworks and their required parameters are defined here (they were defined in the lab record, which now refers to this specification: the claimset specification is the vocabulary of the lab record). A quantity names the result it binds by `variable` (was `quantity`), as observations do.
+- The qualitative extension (`spec/extensions/qualitative-v0.1.md`) takes the codebook, the codings and the counts of coded material: a code's criteria are `ext.qualitative.code` on its definition; the test flags `coded_before_plan` and `codebook_changed_after_plan` and the counts a test is decided by are `ext.qualitative` on the claim. `claimset migrate` moves them.
+- §2.6: files of v0.37 stay valid, checked by the v0.37 rules (a frozen validator).
+
+## Changes in v0.37 (since v0.36)
 
 The platform is named EntryLib (entrylib.org), so its provisional identifier is renamed before any claimset is published with it.
 
@@ -361,7 +384,7 @@ Top-level layout:
 
 ```json
 {
-  "schema_version": "0.37",
+  "schema_version": "0.39",
   "@context": "optional",
   "paper": {},
   "contributors": [],
@@ -373,7 +396,8 @@ Top-level layout:
   "limitations": [],
   "artefacts": [],
   "references": [],
-  "open_questions": []
+  "open_questions": [],
+  "extensions": {}
 }
 ```
 
@@ -448,6 +472,28 @@ data/
 - **A later version may** add optional fields, add values to lists, loosen rules, and add rules and required fields that apply to files following that version or later. **It may not** make a file valid under an earlier version invalid under that version, or change what a field of an earlier version means.
 - **Reading.** Every tool of a later version reads and renders files of every version from the baseline.
 - **A file newer than the validator** (its `schema_version` is later than the validator's own) is refused by rule 79: the validator cannot check rules it does not know. The file may be valid; check it with a current validator.
+
+### 2.7 Extensions
+
+The core of this specification is what every field shares and what claims are compared by across fields. An **extension** adds the detail that one kind of work needs and other kinds do not: the glosses of linguistic examples, the structures of compounds, the endpoints of a trial, the coordinates of a field site. Extensions are specified one per file in `spec/extensions/` (`linguistics-v0.1.md`), each with its own version, and listed in `spec/extensions/README.md`, the registry of extensions. A paper uses as many extensions as it needs, or none.
+
+**Declaring.** The top-level `extensions` names each extension the file uses and the version of it the file follows: `"extensions": {"linguistics": "0.1"}`. A name is lower-case letters, digits and hyphens, starting with a letter; a version is `<major>.<minor>`, as for the core (§2.6). A file that uses no extension leaves `extensions` out.
+
+**Using.** An object holds an extension's fields in its `ext` block, keyed by the extension's name: `{"id": "R3", "variable": "D2", "value": {…}, "ext": {"linguistics": {"gloss": "…"}}}`. Each extension says on which objects it may appear. Objects that may carry `ext`: `paper`, and each object in `contributors`, `models`, `definitions`, `claims`, `evidence`, `warrants`, `limitations`, `artefacts`, `references` and `open_questions`, and each result entry and table of an evidence object.
+
+**What an extension may do.**
+- It adds fields, inside its own blocks only. It never changes the meaning of a core field, adds values to a core list (a kind, a support kind, a profile, an artefact kind), or makes a core field required.
+- Its fields may point to the file's objects by ID (a definition, an artefact, a result).
+- It may have rules of its own, numbered within it (`linguistics.1`) and checked on its blocks, and warnings likewise (`linguistics.w1`).
+- What every field needs is not put in an extension: when two or more extensions would define the same thing, it belongs in the core.
+
+**The core stands alone.** A file with every `ext` block and `extensions` removed is a valid file of the core, and says everything the core says: claims, their support, their atoms and their observations never depend on an extension. A reader that knows no extension reads the whole core, and may show an extension's blocks as data or leave them out.
+
+**Versions of extensions.** Each extension follows the compatibility rule of §2.6 on its own: a block valid under a version of an extension stays valid under that version for good, checked by that version's rules. An extension's specification names the core versions it works with (its first, and no last).
+
+**In the lab record.** An extension may also have a part for the lab record: blocks on lab events and event types of its own, which export carries into the claimset (lab record §2.1, §5.22). One extension covers both: what a kind of work records while it is done and what its claimset says.
+
+**Validation.** A validator checks the core, then each declared extension it knows, at the version declared. An extension it does not know, or a version later than it knows, is refused by rule 80 with a message of its own: the blocks may be valid, but this validator cannot check them; a current validator can. The core is still checked, so the report lists the core's errors too.
 
 ## 3. Object types
 
@@ -624,10 +670,10 @@ A definition explains in full only a term the paper introduces or uses in its ow
 | `relations` | list | Typed links to claims or works outside this paper, and to other claims of this paper (§3.7); required for refutations and replications |
 | `verification` | enum | Formal claims proved or argued in this paper, required: `machine_checked` · `agent_checked` · `peer_checked` · `disputed` · `unchecked` (§5) |
 | `checks` | list | Independent checks of this claim and their outcomes (§5): re-derivations of formal claims, reproductions of empirical ones |
-| `hypothesis` | object | `{lab_event, outcome}`: the lab-record hypothesis this claim came from, and its outcome `supported` · `not_supported` · `inconclusive` (§3.3.3) |
+| `hypothesis` | object | `{lab_event, outcome}`: the hypothesis this claim tests, and its outcome `supported` · `not_supported` · `inconclusive`. `lab_event`, the hypothesis event of the lab record, only in claims exported from a lab record (§3.3.3) |
 | `planning` | enum | `confirmatory` · `confirmatory_with_deviations` · `exploratory` (§3.3.3) |
-| `planned_at` | datetime | When the plan that tested this claim was recorded (ISO 8601, UTC) |
-| `planned_at_anchor` | enum | Strength of `planned_at`: `platform` · `rfc3161` · `git_remote` · `none` |
+| `planned_at` | datetime | When the plan that tested this claim was recorded (ISO 8601, UTC): the lab-record plan's time, or the registration's date |
+| `planned_at_anchor` | enum | Strength of `planned_at`: `platform` · `rfc3161` · `registry` · `git_remote` · `none` |
 | `test` | object | The decision rule fixed before the test (§3.3.3); required for confirmatory claims |
 | `source_spans` | list | Locations in the source text; required for converted papers |
 | `provenance` | enum | Default for the claim: `author_stated` · `extracted` · `inferred` |
@@ -653,12 +699,12 @@ When `about.conditions` names a defined population, data set or setting (§3.3.5
 
 #### 3.3.3 Hypotheses, planning and negative results
 
-A claim exported from a lab record carries the hypothesis it came from (`hypothesis.lab_event`) and its outcome. A claim with outcome `not_supported` is a **negative result**: its statement says plainly what was not found ("Under conditions …, method M did not reduce …"), with scope, support and evidence like any other claim. Negative results belong in the same claimset as the positive results they qualify.
+A claim that tests a hypothesis carries it as `hypothesis`, with the test's outcome. The hypothesis comes from one of three places: a lab record (the claim is exported from the record, and `hypothesis.lab_event` is the hypothesis event); a registration outside the lab record (a preregistration on OSF or AsPredicted, the Stage 1 protocol of a registered report, a trial registry entry), which the test names in `registration`; or the paper itself, which states the hypothesis before its results without registering it. A claim with outcome `not_supported` is a **negative result**: its statement says plainly what was not found ("Under conditions …, method M did not reduce …"), with scope, support and evidence like any other claim. Negative results belong in the same claimset as the positive results they qualify.
 
 `planning` says whether the test was planned before it was run:
-- `confirmatory`: tested by a run under a plan, recorded before the run, that named the hypothesis, with no deviation.
-- `confirmatory_with_deviations`: as above, but the run deviated from the plan; the deviation is recorded as a limitation.
-- `exploratory`: every other case, including results found while exploring.
+- `confirmatory`: tested under a plan that named the hypothesis and was recorded before the data it was tested on were collected or seen, with no deviation. The plan is a lab-record plan (`test.lab_plan`) or a registration (`test.registration`).
+- `confirmatory_with_deviations`: as above, but the test deviated from the plan; each deviation is recorded as a limitation of category `deviation` (§3.9).
+- `exploratory`: every other case, including results found while exploring, and hypotheses the paper states without a lab-record plan or a registration, however early they were formed: nothing outside the paper records when.
 
 **Outcomes.** `supported` and `not_supported` are conclusive: each means that the rule stated for it in advance was met. A test that met neither rule is `inconclusive`. In particular, failing to reject a null hypothesis is `inconclusive`, not `not_supported`, unless the plan stated a rule for refutation (for example equivalence bounds).
 
@@ -671,8 +717,8 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
   "framework": "frequentist",
   "parameters": {"alpha": 0.05, "test": "one-sided paired t-test on per-series MAE differences", "sides": "greater",
                  "correction": "none", "sample": "500 series, fixed in advance; no interim analysis"},
-  "quantities": {"p": {"quantity": "p-value, paired t-test of MAE difference"},
-                 "d_upper": {"quantity": "mean MAE difference", "field": "interval.upper"}},
+  "quantities": {"p": {"variable": "p-value, paired t-test of MAE difference"},
+                 "d_upper": {"variable": "mean MAE difference", "field": "interval.upper"}},
   "supported": "p < alpha",
   "not_supported": "d_upper < 0.01",
   "verdict": "computed",
@@ -682,16 +728,47 @@ A claim exported from a lab record carries the hypothesis it came from (`hypothe
 }
 ```
 
-- `framework`: `frequentist` · `equivalence` · `bayesian` · `deterministic` · `formal` · `qualitative`, as defined in the lab record specification §5.7.1.
-- `parameters`: required per framework: `frequentist`: `alpha`, `test`, `sides`, `correction`, `sample`; `equivalence`: `alpha`, `test`, `lower_bound`, `upper_bound`, `sample`; `bayesian`: `prior`, `threshold`, `sample`.
-- `quantities`: when the rules are expressions, the results they are evaluated on, each `{quantity, conditions, field, run}`; `quantity` is the `variable` of the results it binds (§3.4), and they correspond to results in the claim's evidence.
-- `supported`, `not_supported`: the two rules: expressions over quantities and numeric parameters (lab record §5.7.3), or text saying what observation decides.
-- `verdict`: `computed` (the rules are expressions and the outcome was computed from the recorded results by the lab tool) · `judged` (the rules are text and the outcome was stated by the writer, who said which rule the evidence met).
-- `runs`: how many runs decided the test. `lab_plan`: the plan's lab-record ID, when there is one. `registration`: the URI of an external pre-registration, when there is one.
-- `addresses`: optional list of the global IDs of review comments (`doi:…@v1/RV1.c6`) whose resolution test this test ran (revision §4.2). The test's rules are then the comment's: `supported` its `withdrawn` rule, `not_supported` its `upheld` rule.
-- `flags`: optional list of weaknesses of the test, from the lab record (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs) · `reproduces_prompting_result` (a result the decision rule uses has the same quantity, conditions and value as a result of a run that suggested the hypothesis: the test may have repeated the exploration rather than tested the hypothesis on anything new) · `sources_captured_after_plan` (a deciding run read a captured source recorded after the plan: the plan did not fix the material tested) · `coded_before_plan` (a deciding run read codings, of the codes the test counts, written before the plan: the material was coded before the test was fixed) · `codebook_changed_after_plan` (a code the test counts was redefined between the plan and the test).
+- `framework`: how the outcome is decided: `frequentist` (a null-hypothesis significance test) · `equivalence` (an equivalence test against stated bounds) · `bayesian` · `deterministic` (a measured quantity compared with fixed thresholds, without sampling uncertainty, e.g. a benchmark or a simulation with fixed seeds) · `formal` (proof or counterexample) · `qualitative` (a stated pattern in qualitative data).
+- `parameters`: the parameters the framework requires (below), and any others the analysis fixes in advance. Values are numbers or text; numeric parameters can be used in the rules by name.
 
-`planned_at_anchor` says how far `planned_at` can be trusted (lab record §7): from strongest, `platform` (receipt from the Claimset platform), `rfc3161` (trusted timestamp authority), `git_remote` (pushed commit), to `none`.
+| Framework | Required parameters |
+|---|---|
+| `frequentist` | `alpha` (significance level), `test`, `sides` (`two_sided` · `greater` · `less`), `correction` (for multiple tests within the plan: `none` · `bonferroni` · `holm` · `fdr_bh` or text), `sample` (planned sample size and stopping rule) |
+| `equivalence` | `alpha`, `test`, `lower_bound` and `upper_bound` (the equivalence margins: the smallest effect of interest), `sample` |
+| `bayesian` | `prior`, `threshold` (e.g. a Bayes factor or posterior probability that decides), `sample` |
+| `deterministic`, `formal`, `qualitative` | none |
+
+- `quantities`: when the rules are expressions, the results they are evaluated on: `{name: {variable, conditions, field, run}}`. Each binds exactly one result: the one whose `variable` is the given one (§3.4) and whose `conditions` include every given key with the given value, read from `field`: `value` (default), `interval.lower` or `interval.upper`; with several deciding runs, `run` names the run (1 for the first). They correspond to results in the claim's evidence. (Files before v0.38 name the variable `quantity`.)
+- `supported`, `not_supported`: the two rules, each an expression over the quantities and numeric parameters, or text saying what observation decides. If neither rule holds, the outcome is `inconclusive`; if both hold, the rules overlap and the outcome is `inconclusive`. An **expression** is at most 1,000 characters long and uses finite numbers, names (quantities and numeric parameters), `+ - * /`, unary minus, `abs()`, comparisons (`< <= > >= == !=`, which may be chained: `0 < d < 1`), `and`, `or`, `not` and parentheses; nothing else. Every name is a quantity or a numeric parameter. A quantity that cannot be bound (no result matches, or several do) allows no conclusive outcome.
+- `verdict`: `computed` (the rules are expressions and the outcome was computed from the recorded results by the lab tool) · `judged` (the rules are text and the outcome was stated by the writer, who said which rule the evidence met).
+- `runs`: how many runs decided the test. `lab_plan`: the plan's lab-record ID, when there is one. `registration`: the ID of the registration in `references` (§3.13), when the test was registered outside the lab record: `"B7"` (in files before v0.39, the registration's URI). A confirmatory test names its plan: `lab_plan`, `registration`, or both when a lab-record plan was also registered (rule 81).
+- `addresses`: optional list of the global IDs of review comments (`doi:…@v1/RV1.c6`) whose resolution test this test ran (revision §4.2). The test's rules are then the comment's: `supported` its `withdrawn` rule, `not_supported` its `upheld` rule.
+- `flags`: optional list of weaknesses of the test, as the lab record finds them (lab record §5.7.5): `code_changed_after_plan` (the analysis code changed between the plan and the test) · `holdout_used_elsewhere` (data held out for the test was also used in other runs) · `reproduces_prompting_result` (a result the decision rule uses has the same quantity, conditions and value as a result of a run that suggested the hypothesis: the test may have repeated the exploration rather than tested the hypothesis on anything new) · `sources_captured_after_plan` (a deciding run read a captured source recorded after the plan: the plan did not fix the material tested). Flags of tests over coded material are in the qualitative extension (`ext.qualitative.test_flags`).
+
+`planned_at_anchor` says how far `planned_at` can be trusted (lab record §7): from strongest, `platform` (receipt from the Claimset platform), `rfc3161` (trusted timestamp authority), `registry` (the date a public registry records for the registration the test names: OSF, AsPredicted, a trial registry), `git_remote` (pushed commit), to `none`.
+
+**Tests registered outside a lab record.** A registered study reports each registered hypothesis it tested as a claim with `hypothesis` (without `lab_event`), `planning`, `planned_at` and `test`, and lists the registration in `references`:
+
+```json
+"hypothesis": {"outcome": "inconclusive"},
+"planning": "confirmatory_with_deviations",
+"planned_at": "2018-03-12T00:00:00Z",
+"planned_at_anchor": "registry",
+"test": {"framework": "bayesian",
+         "parameters": {"prior": "Cauchy, scale 0.707", "threshold": "BF10 > 3 or BF10 < 1/3",
+                        "sample": "1,000 participants, fixed in advance"},
+         "supported": "BF10 above 3 for the effect of the manipulation on trust",
+         "not_supported": "BF10 below 1/3 for the effect of the manipulation on trust",
+         "verdict": "judged", "runs": 1, "registration": "B4"},
+"limitations": ["L3"]
+```
+
+with `{"id": "B4", "target": "10.17605/OSF.IO/ABCDE", "id_type": "doi"}` in `references` and L3, of category `deviation`, saying how the analysis departed from the registration. A trial registry entry is a CURIE (`{"target": "clinicaltrials:NCT01234567", "id_type": "curie"}`); a registration with no persistent identifier is a `url` with its `archive_uri` (§3.13).
+
+- `planned_at` is the registration's date as the registry records it, with `planned_at_anchor: registry`. A Stage 1 protocol accepted in principle is the registration of a registered report.
+- The rules are the registration's: expressions when it fixes thresholds (`alpha` 0.05, a Bayes factor of 10), otherwise text with `verdict: judged`. A hypothesis the registration did not name is `exploratory`, and so is every analysis it did not plan.
+- The platform cannot check that the registration says what the test records; the registration is public, and readers and reviewers can.
+- Converted papers: the rules are taken from the registration or from the paper's account of it. A rule the converter has to reconstruct (a threshold the paper applies but never states) is marked `inferred` in `field_provenance` (`{"test.supported": "inferred"}`); the outcome is the paper's.
 
 #### 3.3.4 What belongs in a claimset
 
@@ -763,7 +840,7 @@ Common fields: `id`, `profile`, `description`, `artefacts` (list of artefact IDs
   - a number;
   - a category: the ID of a definition (an outcome the paper defines, such as `"upheld"`) or a short word or code (`"present"`, `"B"`);
   - a boolean (attested or not, significant or not);
-  - an **excerpt**, `{text, locator, language, gloss, translation}`: words from the data that are themselves the observation (an interview passage, a passage of a judgment, a linguistic example). `text` is the words as the source gives them; `locator` where they are: text (a transcript and line, a document and paragraph, a corpus and sentence ID) or, for words from a file the claimset lists as an artefact, `{artefact, start, end, lab_event}`: the artefact (a captured source, lab record §5.20), the characters of its text the words occupy (`start` inclusive, `end` exclusive, counted in Unicode code points from 0), and optionally the lab record event that recorded the passage (a coding, `CD3`) (rule 78); `language` a BCP 47 tag when not English; `gloss` and `translation` for linguistic examples (Leipzig glossing rules). Excerpts from people's data carry no personal data beyond what the participants consented to publish (`declarations.consent`).
+  - an **excerpt**, `{text, locator, language, translation}`: words from the data that are themselves the observation (an interview passage, a passage of a judgment, a linguistic example). `text` is the words as the source gives them; `locator` where they are: text (a transcript and line, a document and paragraph, a corpus and sentence ID) or, for words from a file the claimset lists as an artefact, `{artefact, start, end, lab_event}`: the artefact (a captured source, lab record §5.20), the characters of its text the words occupy (`start` inclusive, `end` exclusive, counted in Unicode code points from 0), and optionally the lab record event that recorded the passage (a coding, `CD3`) (rule 78); `language` a BCP 47 tag when not English; `translation` an English translation of words in another language. The interlinear gloss of a linguistic example is given by the linguistics extension (`ext.linguistics.gloss` on the result, §2.7). Excerpts from people's data carry no personal data beyond what the participants consented to publish (`declarations.consent`).
 - `unit`: optional; a UCUM code (`ms`, `%`, `mg/L`, `Cel`, `1` for a dimensionless ratio) or, where UCUM has none, text. `interval`: optional `{level, lower, upper}`. `n`: optional, the number of cases the value rests on.
 - `conditions`: the observation's coordinates: an object whose keys are dimensions and whose values are where the observation lies on each, e.g. `{"D26": "D9", "D5": "D14", "horizon": 12}`. A key is the ID of a definition or text. A value is the ID of a definition, a number, text or a boolean. When a key is a group (§3.2, *Groups*), its value is one of the group's members; when it is a `variable` or `setting` with a unit, its value is a literal in that unit.
 - `read_from`: optional `{artefact, precision}`, when the value was read off a figure or a recording rather than taken from data or a table: `artefact` is the figure or recording, `precision` how exactly it could be read (a number in the observation's unit, or text). Values read off a figure are recorded only with it, so a reader knows they are approximate.
@@ -796,7 +873,7 @@ Each cell is one observation: its variable is the column's; its conditions are t
 
 Here D26 is the group of compared methods (members D1, D2, D3), D5 the group of data sets, D14 the M3 monthly series, and D8 and D9 the error measures, of kind `variable`. The same form holds a table of a psychology experiment (rows: condition × group; columns: mean reaction time, its standard deviation), of a chemistry paper (rows: catalyst; columns: yield at each temperature, `{"variable": "D4", "conditions": {"D6": 350}}` with D6 the temperature in `Cel`), of a linguistic survey (rows: language; columns: whether each construction is attested, boolean values) or of a legal study (rows: court × year; columns: the number of appeals by outcome). A participant or sample flow (screened, excluded for each reason, analysed) is a table of counts whose rows are the stages, so a flow diagram is a figure that shows it (§3.6).
 
-**Excerpts and qualitative evidence.** A qualitative finding rests on excerpts. Each excerpt the paper gives for a theme is an observation whose variable is the theme's presence (or the theme itself), whose conditions name the participant or document, and whose value is the excerpt: `{"id": "R3", "variable": "D7", "conditions": {"participant": "P07", "D3": "D2"}, "value": {"text": "I used to be the stroke nurse. Here I'm just a nurse.", "locator": "transcript P07, lines 112-113"}}`. A linguistic example is an excerpt with its gloss and translation, a cited passage of a judgment an excerpt with its paragraph. (The `exemplars` of the `qual` profile until v0.31 are recorded this way.)
+**Excerpts and qualitative evidence.** A qualitative finding rests on excerpts. Each excerpt the paper gives for a theme is an observation whose variable is the theme's presence (or the theme itself), whose conditions name the participant or document, and whose value is the excerpt: `{"id": "R3", "variable": "D7", "conditions": {"participant": "P07", "D3": "D2"}, "value": {"text": "I used to be the stroke nurse. Here I'm just a nurse.", "locator": "transcript P07, lines 112-113"}}`. A linguistic example is an excerpt with its translation, and its gloss in the linguistics extension; a cited passage of a judgment is an excerpt with its paragraph. (The `exemplars` of the `qual` profile until v0.31 are recorded this way.)
 
 **Setup** (`setup`; recommended for evidence of every profile except `formal`): the frame of the study, its parts each recorded once as a definition (§3.2) and named here by role, so that claims, evidence objects, reviews and other papers can refer to each part on its own. `{studied, cases, procedure, lens, context}`, each a list of definition IDs; roles that do not apply are left out:
 - `studied`: what the study is about or compares: methods and models, interventions and exposures, the phenomenon of interest (in forecasting: the competing methods, each with the settings that define it; in a qualitative study: the experience or phenomenon explored).
@@ -938,7 +1015,7 @@ Limitations are threats to a claim *within its stated scope*. What the work did 
 | Field | Type | Values / notes |
 |---|---|---|
 | `id` | string | `L1` … |
-| `category` | enum | `sampling` · `sample_size` · `measurement` · `confounding` · `data_quality` · `model_specification` · `analytic_flexibility` · `researcher_position` · `computational` · `other` |
+| `category` | enum | `sampling` · `sample_size` · `measurement` · `confounding` · `data_quality` · `model_specification` · `analytic_flexibility` · `researcher_position` · `computational` · `deviation` (a departure from the lab-record plan or registration a confirmatory test was planned under, §3.3.3) · `other` |
 | `statement` | string | Specific and self-contained: names the dimension and the value (e.g. "Ratings were coded by a single coder") |
 | `affects` | list of claim IDs | At least one; paper-wide limitations are not allowed |
 | `impact` | enum | `could_reverse` · `could_bias_magnitude` · `reduces_precision` · `reduces_transferability` |
@@ -1031,11 +1108,11 @@ Each model used anywhere in the paper is defined once.
 
 ### 3.13 References
 
-Each work the paper cites is listed once, in the top-level `references`, and cited by its ID from support entries, relations, definitions and artefacts. `{id, target, id_type, archive_uri}`
+Each work the paper cites is listed once, in the top-level `references`, and cited by its ID from support entries, relations, definitions, artefacts and tests (`test.registration`, §3.3.3). `{id, target, id_type, archive_uri}`
 - `id`: `B1`, `B2`, ….
 - `target` and `id_type`: as for cited support (§4): an identifier (`doi`, `arxiv`, …), a global claim ID of a claimset (`id_type: claimset`), a paper or claim of the same repository not yet published (`id_type: claimset_local`, §2.4), or the reference as printed in the paper's reference list (`id_type: reference`).
 - `archive_uri`: required for `url` targets, unless the claimset holds a captured copy of the page: an artefact that names the entry in `reference` and whose `version` is the copy's hash (a captured source, lab record §5.20; private copies keep their hash in the record). Give one whenever the page can be archived (warning 32).
-Only works that a support entry, relation, definition or artefact points to are listed.
+Only works that a support entry, relation, definition, artefact or test points to are listed.
 
 ### 3.14 Open questions
 
@@ -1225,11 +1302,11 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 ### 10.7 Rules added in v0.11 (errors: file rejected)
 
-42. `hypothesis` present ⇒ `hypothesis.lab_event` and `hypothesis.outcome` present, and `planning` present.
+42. (Revised in v0.39.) `hypothesis` present ⇒ `hypothesis.outcome` and `planning` present. (Until v0.38: `hypothesis.lab_event` present as well.)
 43. `planning` is `confirmatory` or `confirmatory_with_deviations` ⇒ `planned_at` and `planned_at_anchor` present.
-44. Any claim has `hypothesis` ⇒ `paper.exploration` present, and `exploration.lab_record` is an artefact of kind `lab_record`.
+44. (Revised in v0.39.) Any claim has `hypothesis.lab_event` ⇒ `paper.exploration` present, and `exploration.lab_record` is an artefact of kind `lab_record`.
 45. (Revised in v0.12.) `exploration` counts are non-negative integers; `hypotheses.total` equals the sum of the other hypothesis counts (`open` included, 0 if absent); `tests.total`, if `tests` is present, equals the sum of its verdict counts; `runs.total` equals `confirmatory` + `exploratory`; `failed` ≤ `total`.
-46. (Revised in v0.12.) For each outcome (`supported`, `not_supported`, `inconclusive`): the number of claims with `test` reporting it does not exceed the corresponding `exploration.tests` count, and the number of distinct `hypothesis.lab_event` values among claims without `test` reporting it does not exceed the corresponding `exploration.hypotheses` count.
+46. (Revised in v0.12 and v0.39.) Among claims with `hypothesis.lab_event` (claims exported from a lab record), for each outcome (`supported`, `not_supported`, `inconclusive`): the number of claims with `test` reporting it does not exceed the corresponding `exploration.tests` count, and the number of distinct `hypothesis.lab_event` values among claims without `test` reporting it does not exceed the corresponding `exploration.hypotheses` count.
 
 ### 10.8 Rules added in v0.12 (errors: file rejected)
 
@@ -1319,6 +1396,14 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 79. Specification version. `schema_version` names a version of this specification from v0.37 (the baseline) to the validator's own (§2.6). A file following an earlier version is refused, and `claimset migrate` brings it to the current one. A file following a later version is refused because its rules are not known to the validator: the file may be valid, and a current validator can check it.
 
+### 10.26 Rules added in v0.38 (errors: file rejected)
+
+80. Extensions (§2.7). `extensions`, if present, is an object whose keys are extension names (lower-case letters, digits and hyphens, starting with a letter) and whose values are versions (`<major>.<minor>`). Each declared extension, at the version declared, is known to the validator; one that is not is refused with a message saying that the validator does not know it, and that a current validator may. `ext` appears only on the objects listed in §2.7, is an object, and each of its keys is a declared extension whose specification allows it on that object; each block is an object. The rules of each extension apply to its blocks.
+
+### 10.27 Rules added in v0.39 (errors: file rejected)
+
+81. Plans of confirmatory tests. A claim with `planning` `confirmatory` or `confirmatory_with_deviations` has `hypothesis`, and its `test` names the plan: `lab_plan` or `registration`, or both. `test.registration`, if present, is the ID of an entry in `references`. `planned_at_anchor: registry` ⇒ `test.registration` present.
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -1353,6 +1438,8 @@ The file records identifier type and venue facts for cited works only. Trust in 
 30. A `data_plot` figure without `shows` or `underlying_data`; a `specimen` from which no observation is read (`read_from`); or a result whose `variable` or a table column whose variable is text equal, ignoring case, to the `term` of a definition in the file (give the ID).
 31. A converted paper lies in a `claimset/` folder and its file is not named `<name>.claimset.json` with the name made from its source's identifier (§2.4). The message gives the name.
 32. A `url` reference has no `archive_uri`, and an artefact naming it holds a captured copy (a page behind a sign-in, or not yet archived): the copy, with its hash, stands in for the archive; give `archive_uri` if the page can be archived.
+33. An extension is declared in `extensions` and no object has a block of it (§2.7).
+34. A claim with `planning: confirmatory_with_deviations` lists no limitation of category `deviation`: record each departure from the plan (§3.3.3).
 
 ## 11. Platform dependencies
 
@@ -1408,7 +1495,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.37",
+  "schema_version": "0.39",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -1507,7 +1594,7 @@ What the agent submits. No identifier, version, date, status, classification IDs
 
 ```json
 {
-  "schema_version": "0.37",
+  "schema_version": "0.39",
   "paper": {
     "id": "doi:10.0000/claimset.2026.000456",
     "title": "Example converted paper",
