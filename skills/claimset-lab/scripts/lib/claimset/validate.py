@@ -23,7 +23,7 @@ import math
 import re
 import sys
 
-SCHEMA_VERSION = "0.38"
+SCHEMA_VERSION = "0.39"
 #: The first specification version accepted (spec §2.6). Files of every version from it to SCHEMA_VERSION are
 #: valid for good; each is checked by its own version's rules (a frozen validator in claimset.versions).
 BASELINE_VERSION = "0.37"
@@ -64,7 +64,7 @@ ENUM = {
              "lab_events_withheld", "unanchored_plan", "availability_not_stated"},
     "outcome": {"supported", "not_supported", "inconclusive"},
     "planning": {"confirmatory", "confirmatory_with_deviations", "exploratory"},
-    "anchor": {"platform", "rfc3161", "git_remote", "none"},
+    "anchor": {"platform", "rfc3161", "registry", "git_remote", "none"},
     "framework": {"frequentist", "equivalence", "bayesian", "deterministic", "formal", "qualitative"},
     "verdict": {"computed", "judged"},
     "test_flag": {"code_changed_after_plan", "holdout_used_elsewhere", "reproduces_prompting_result",
@@ -90,7 +90,7 @@ ENUM = {
                  "addresses", "explains", "qualifies"},
     "limitation_category": {"sampling", "sample_size", "measurement", "confounding", "data_quality",
                             "model_specification", "analytic_flexibility", "researcher_position",
-                            "computational", "other"},
+                            "computational", "deviation", "other"},
     "impact": {"could_reverse", "could_bias_magnitude", "reduces_precision", "reduces_transferability"},
     "mitigation": {"none", "partial", "addressed"},
     "level": {"public", "platform", "audit", "author_only", "unavailable", "not_stated"},
@@ -559,6 +559,8 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
             c = as_dict(c)
             pointed |= {as_dict(s).get("reference") for s in as_list(c.get("support"))}
             pointed |= {as_dict(x).get("reference") for x in as_list(c.get("relations"))}
+            if isinstance(as_dict(c.get("test")).get("registration"), str):
+                pointed.add(c["test"]["registration"])
         pointed |= {as_dict(d).get("source") for d in coll["definitions"] if isinstance(as_dict(d).get("source"), str)}
         pointed |= {as_dict(a).get("reference") for a in coll["artefacts"]}
         for b in coll["references"]:
@@ -922,7 +924,8 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
 
     # ---------- Lab record and exploration (rules 42-46) ----------
     lab = {"level": None, "withheld": set()}
-    hyp_claims = [c for c in claims.values() if c.get("hypothesis")]
+    # only claims exported from a lab record (a hypothesis with lab_event) need the exploration summary (v0.39)
+    hyp_claims = [c for c in claims.values() if as_dict(c.get("hypothesis")).get("lab_event")]
     exp = paper.get("exploration")
     if hyp_claims and not exp:
         r.err("44", "paper.exploration", "required when claims carry a hypothesis from a lab record")
@@ -1006,7 +1009,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
     # ---------- Computed verifiability (rule 13) ----------
     for cid, c in claims.items():
         exp_v, exp_flags, notes = compute_verifiability(c, by_id, read_from_artefacts(coll))
-        if c.get("hypothesis") and not is_assumption(c):
+        if as_dict(c.get("hypothesis")).get("lab_event") and not is_assumption(c):
             if lab["level"] not in (None, "public"):
                 exp_flags.add("lab_record_withheld")
             linked = {as_dict(c["hypothesis"]).get("lab_event")}
@@ -1434,6 +1437,25 @@ def table_echo(c, support, by_id):
         if token not in out and not m.group(4) and any(number_matches(v, token) for v in cells):
             out.append(token)
     return out
+
+
+def check_plan(r, c, w, by_id):
+    """Rule 81: a confirmatory claim tests a hypothesis and names the plan it was tested under: a lab-record plan or
+    a registration listed in references (§3.3.3)."""
+    if not c.get("hypothesis"):
+        r.err("81", f"{w}.hypothesis", "a confirmatory claim tests a hypothesis: give it, with the test's outcome")
+    test = as_dict(c.get("test"))
+    reg = test.get("registration")
+    if not test.get("lab_plan") and not reg:
+        r.err("81", f"{w}.test", "a confirmatory test names the plan it was tested under: lab_plan (a lab-record plan) "
+                                 "or registration (the ID of the registration in references); a hypothesis with "
+                                 "neither is exploratory")
+    if reg is not None and (not isinstance(reg, str) or by_id(reg, "references") is None):
+        r.err("81", f"{w}.test.registration", f"the ID of the registration in references (B1, B2, …), not {reg!r}: "
+                                              f"list the registration there with its identifier (§3.13)")
+    if c.get("planned_at_anchor") == "registry" and not reg:
+        r.err("81", f"{w}.planned_at_anchor", "registry: the date a registry records for the registration the test "
+                                              "names; give test.registration")
 
 
 def check_test(r, test, w):
@@ -2352,8 +2374,10 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
     hyp = c.get("hypothesis")
     if hyp is not None:
         hyp = as_dict(hyp)
-        if not hyp.get("lab_event"):
-            r.err("42", f"{w}.hypothesis.lab_event", "missing")
+        if "lab_event" in hyp and not (isinstance(hyp["lab_event"], str) and hyp["lab_event"].strip()):
+            r.err("42", f"{w}.hypothesis.lab_event", "the hypothesis event of the lab record the claim is exported "
+                                                     "from; leave it out for a hypothesis registered elsewhere or "
+                                                     "stated in the paper")
         check_enum(r, "42", f"{w}.hypothesis.outcome", hyp.get("outcome"), "outcome", required=True)
         if not c.get("planning"):
             r.err("42", f"{w}.planning", "required when the claim carries a hypothesis")
@@ -2364,6 +2388,11 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
                 r.err("43", f"{w}.planned_at", "required for confirmatory claims")
             check_enum(r, "43", f"{w}.planned_at_anchor", c.get("planned_at_anchor"), "anchor", required=True)
             check_test(r, c.get("test"), f"{w}.test")
+            check_plan(r, c, w, by_id)
+        if c.get("planning") == "confirmatory_with_deviations" and not any(
+                as_dict(by_id(l, "limitations")).get("category") == "deviation" for l in as_list(c.get("limitations"))):
+            r.warn("W34", w, "confirmatory with deviations, but no limitation of category deviation: record each "
+                             "departure from the plan as a limitation and list it on the claim")
         if c.get("planning") == "exploratory" and c.get("role") == "principal":
             r.warn("W13", w, "exploratory principal claim: say so in the assessment rationale")
     ver = c.get("verification")
