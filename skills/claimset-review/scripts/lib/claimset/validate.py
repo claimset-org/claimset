@@ -1529,13 +1529,39 @@ def _is_number(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
 
 
+def _level_ok(x):
+    return _is_number(x) and 0 < x < 1
+
+
+LIMIT_FIELDS = {"bound", "limit", "level"}
+RANGE_FIELDS = {"min", "max", "level"}
+
+
+def limit_ok(v):
+    """A limit {bound, limit, level} (§3.4): the value is known only to lie below (bound upper) or above (bound
+    lower) the number `limit`; `level` the confidence of a statistical limit."""
+    return (set(v) <= LIMIT_FIELDS and v.get("bound") in ("upper", "lower") and _is_number(v.get("limit"))
+            and ("level" not in v or _level_ok(v["level"])))
+
+
+def range_ok(v):
+    """A range {min, max, level} (§3.4): the value spans min to max."""
+    return (set(v) <= RANGE_FIELDS and _is_number(v.get("min")) and _is_number(v.get("max"))
+            and v["min"] <= v["max"] and ("level" not in v or _level_ok(v["level"])))
+
+
 def value_ok(v):
     """A value of an observation (rule 66): a number, a non-empty string (a category: a definition ID or a code),
-    a boolean, or an excerpt {text, locator, language, translation}."""
+    a boolean, an excerpt {text, locator, language, translation}, a limit {bound, limit, level} or a range
+    {min, max, level} (the last two from v0.39)."""
     if isinstance(v, bool) or _is_number(v):
         return True
     if isinstance(v, str):
         return bool(v.strip())
+    if isinstance(v, dict) and "bound" in v:
+        return limit_ok(v)
+    if isinstance(v, dict) and ("min" in v or "max" in v):
+        return range_ok(v)
     if isinstance(v, dict):
         loc = v.get("locator")
         return (set(v) <= EXCERPT_FIELDS and isinstance(v.get("text"), str) and v["text"].strip() != ""
@@ -1547,14 +1573,10 @@ def value_ok(v):
 #: What an observation measures besides its variable: the fields a lab record's result carries (lab record §5.10).
 OBSERVATION_MEASURES = ("value", "unit", "interval", "uncertainty", "conditions")
 #: Where a test quantity reads a result from (§3.3.3, `field`).
-QUANTITY_FIELDS = ("value", "interval.lower", "interval.upper") + tuple(
+QUANTITY_FIELDS = ("value", "value.limit", "value.min", "value.max", "interval.lower", "interval.upper") + tuple(
     f"uncertainty.{k}" for k in sorted(ENUM["uncertainty_kind"]))
 INTERVAL_FIELDS = {"level", "lower", "upper", "kind"}
 UNCERTAINTY_FIELDS = {"kind", "value", "plus", "minus", "level", "label"}
-
-
-def _level_ok(x):
-    return _is_number(x) and 0 < x < 1
 
 
 def measure_problems(obj, number, parts=("interval", "uncertainty")):
@@ -1646,7 +1668,8 @@ def check_result(r, rw, rs, ref):
         r.err("66", f"{rw}.value.gloss", "an excerpt's gloss is in the linguistics extension since v0.38: "
                                          "ext.linguistics.gloss on the result (`claimset migrate` moves it)")
     elif not value_ok(rs.get("value")):
-        r.err("66", f"{rw}.value", "a number, a category, a boolean, or an excerpt {text, locator}")
+        r.err("66", f"{rw}.value", "a number, a category, a boolean, an excerpt {text, locator}, a limit {bound: "
+                                   "upper or lower, limit, level} or a range {min, max, level} with min <= max")
     elif isinstance(rs.get("value"), dict) and isinstance(rs["value"].get("locator"), dict):
         check_locator(r, f"{rw}.value.locator", rs["value"]["locator"], ref)
     if "unit" in rs and rs["unit"] is not None and not (isinstance(rs["unit"], str) and rs["unit"].strip()):
@@ -1753,8 +1776,8 @@ def check_tables(r, w, e, ref):
                     if value_ok(v):
                         any_value = True
                     else:
-                        r.err("48", f"{rw}.values", f"'{v}' is not a value (number, category, boolean or excerpt) "
-                                                    f"or null")
+                        r.err("48", f"{rw}.values", f"'{v}' is not a value (number, category, boolean, excerpt, "
+                                                    f"limit or range) or null")
         if rows and not any_value:
             r.err("48", tw, "the table has no value")
         if t.get("artefact"):

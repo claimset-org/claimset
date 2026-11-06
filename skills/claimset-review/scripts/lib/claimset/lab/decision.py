@@ -356,11 +356,14 @@ def bind(decision, results):
 
 
 def read_field(result, field):
-    """The number a quantity reads from a result: its value, a bound of its interval, or the symmetric uncertainty
-    of the one component of a kind (`uncertainty.se`); None when there is no such number."""
+    """The number a quantity reads from a result: its value, the limit or an end of a value that is a limit or a
+    range, a bound of its interval, or the symmetric uncertainty of the one component of a kind (`uncertainty.se`);
+    None when there is no such number."""
     if field == "value":
         return result.get("value")
     part, _, key = str(field).partition(".")
+    if part == "value":                                       # value.limit, value.min, value.max
+        return (result.get("value") if isinstance(result.get("value"), dict) else {}).get(key)
     if part == "interval":
         return (result.get("interval") if isinstance(result.get("interval"), dict) else {}).get(key)
     if part == "uncertainty":

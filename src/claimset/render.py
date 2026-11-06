@@ -63,6 +63,13 @@ def _val(v):
         return "yes" if v else "no"
     if isinstance(v, (int, float)):
         return _num(v)
+    if isinstance(v, dict) and "bound" in v:
+        level = f", {_num(v['level'] * 100)}%" if isinstance(v.get("level"), (int, float)) else ""
+        sign = "<" if v.get("bound") == "upper" else ">"
+        return f"{sign} {_num(v.get('limit'))} ({v.get('bound')} limit{level})"
+    if isinstance(v, dict) and ("min" in v or "max" in v):
+        level = f", {_num(v['level'] * 100)}%" if isinstance(v.get("level"), (int, float)) else ""
+        return f"{_num(v.get('min'))} to {_num(v.get('max'))} (range{level})"
     if isinstance(v, dict) and "text" in v:
         out = f"\"{v.get('text')}\""
         if v.get("language"):
