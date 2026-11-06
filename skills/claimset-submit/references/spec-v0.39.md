@@ -41,6 +41,7 @@ Smaller gaps from the field trials:
 - §3.4, *Dimensions*: a control or baseline lies on a group's dimension without being a member, when it is of the group's kind (a mock transfection beside four knockdowns). Rule 66 revised.
 - §3.6: material in a paper's supplementary information, and material behind a subscription, is `public`; the `comment` says which.
 - Rule 6 revised: an interpretive claim's warrant may be the one on its argument support entry, not given twice.
+- §2.6: the baseline is set when the platform launches; until then only the current version is accepted (rule 79 revised), and files of v0.37 and v0.38 are brought over with `claimset migrate`.
 - New rule 86: every field has the type this specification gives it. The validator reports a value of the wrong type (a list where one ID belongs) instead of failing on it, in files of every version.
 
 ## Changes in v0.38 (since v0.37)
@@ -492,10 +493,10 @@ data/
 
 ### 2.6 Specification versions and compatibility
 
-`schema_version` (required, top level) is the version of this specification the file follows: `"0.37"`.
+`schema_version` (required, top level) is the version of this specification the file follows: `"0.39"`.
 
-- **Baseline.** v0.37 is the first version the platform accepts. A file following an earlier version is refused (rule 79); `claimset migrate` brings it to the current version.
-- **Every version from the baseline is accepted, for good.** A file is checked by the rules of the version it follows, never by rules added later. A validator of a later version keeps the rules of every earlier version from the baseline and applies the ones the file's version calls for. A file valid under its version when it was published is valid under it in every later validator.
+- **Baseline.** The baseline is the first version the platform accepts. It is set when the platform launches; until then, only the current version is accepted, and a file following an earlier one is refused (rule 79) and brought to the current version by `claimset migrate`. Once set, a file following a version before the baseline is refused in the same way.
+- **Every version from the baseline is accepted, for good,** once the baseline is set. A file is checked by the rules of the version it follows, never by rules added later. A validator of a later version keeps the rules of every earlier version from the baseline and applies the ones the file's version calls for. A file valid under its version when it was published is valid under it in every later validator.
 - **A later version may** add optional fields, add values to lists, loosen rules, and add rules and required fields that apply to files following that version or later. **It may not** make a file valid under an earlier version invalid under that version, or change what a field of an earlier version means.
 - **Reading.** Every tool of a later version reads and renders files of every version from the baseline.
 - **A file newer than the validator** (its `schema_version` is later than the validator's own) is refused by rule 79: the validator cannot check rules it does not know. The file may be valid; check it with a current validator.
@@ -1455,7 +1456,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 ### 10.25 Rules added in v0.37 (errors: file rejected)
 
-79. Specification version. `schema_version` names a version of this specification from v0.37 (the baseline) to the validator's own (§2.6). A file following an earlier version is refused, and `claimset migrate` brings it to the current one. A file following a later version is refused because its rules are not known to the validator: the file may be valid, and a current validator can check it.
+79. Specification version. `schema_version` names a version of this specification from the baseline to the validator's own; until the baseline is set, the validator's own version (§2.6). A file following an earlier version is refused, and `claimset migrate` brings it to the current one. A file following a later version is refused because its rules are not known to the validator: the file may be valid, and a current validator can check it.
 
 ### 10.26 Rules added in v0.38 (errors: file rejected)
 

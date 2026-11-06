@@ -83,11 +83,6 @@ class TestRule82(unittest.TestCase):
         d["evidence"][0]["tables"][0]["columns"][1]["conditions"]["uncertainty"] = "standard deviation"
         self.assertEqual(rules(validate(d)), ["82"])
 
-    def test_a_v038_file_is_not_checked_by_rule_82(self):
-        d, _ = with_result({"interval": {"level": 0.95, "lower": 2, "upper": 1}})
-        d["schema_version"] = "0.38"
-        self.assertNotIn("82", rules(validate(d)))
-
 
 class TestWarning35(unittest.TestCase):
     def test_native_papers_say_what_kind(self):

@@ -24,9 +24,15 @@ import re
 import sys
 
 SCHEMA_VERSION = "0.39"
-#: The first specification version accepted (spec §2.6). Files of every version from it to SCHEMA_VERSION are
-#: valid for good; each is checked by its own version's rules (a frozen validator in claimset.versions).
-BASELINE_VERSION = "0.37"
+#: The first specification version accepted (spec §2.6), set when the platform launches. Files of every version from
+#: it to SCHEMA_VERSION are then valid for good, each checked by its own version's rules (a frozen validator in
+#: claimset.versions). None until then: only SCHEMA_VERSION is accepted, and earlier files are migrated.
+BASELINE_VERSION = None
+
+
+def baseline_version():
+    """The first version accepted: BASELINE_VERSION once set, the current version until then."""
+    return BASELINE_VERSION or SCHEMA_VERSION
 SCHEMA_VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
 
@@ -424,7 +430,7 @@ def _validate(doc, published=False, local_root=None, revision=False, file_name=N
                   f"({SCHEMA_VERSION}), which does not know its rules. The file may be valid: check it with a "
                   f"current validator (update the claimset package)")
             return r
-        if gv is not None and gv >= schema_version_tuple(BASELINE_VERSION):
+        if gv is not None and gv >= schema_version_tuple(baseline_version()):
             try:
                 from .versions import frozen_validator
             except ImportError:                     # run as a script beside its versions folder (the submit skill)
@@ -433,8 +439,9 @@ def _validate(doc, published=False, local_root=None, revision=False, file_name=N
             if frozen is not None:
                 return frozen.validate(doc, published=published, local_root=local_root, revision=revision,
                                        file_name=file_name)
-        r.err("79", "schema_version", f"must be a specification version from {BASELINE_VERSION} to "
-              f"{SCHEMA_VERSION}" + (
+        r.err("79", "schema_version", (f"must be a specification version from {baseline_version()} to "
+                                       f"{SCHEMA_VERSION}" if baseline_version() != SCHEMA_VERSION else
+                                       f"must be {SCHEMA_VERSION}, the current specification version") + (
                   f"; the file follows specification {got}, an earlier version with different rules. Bring it "
                   f"to the current one (`claimset migrate`), read the current specification (`claimset spec`) "
                   f"and update the skills (`claimset skill install`)" if isinstance(got, str) and got else ""))

@@ -14,7 +14,7 @@ from claimset.migrate import migrate  # noqa: E402
 from claimset.render import render  # noqa: E402
 from claimset.validate import validate  # noqa: E402
 
-BASE = json.loads((ROOT / "tests" / "compat" / "0.38" / "submission-linguistics.json").read_text(encoding="utf-8"))
+BASE = json.loads((ROOT / "tests" / "compat" / "0.39" / "submission-linguistics.json").read_text(encoding="utf-8"))
 
 
 def doc():
@@ -158,12 +158,9 @@ class TestGlossMoved(unittest.TestCase):
         r["value"]["gloss"] = r.pop("ext")["linguistics"]["gloss"]
         return d
 
-    def test_a_v037_file_with_a_gloss_stays_valid(self):
-        self.assertEqual(validate(self.v037()).errors, [])
-
-    def test_a_gloss_in_the_excerpt_is_refused_from_v038(self):
+    def test_a_gloss_in_the_excerpt_is_refused(self):
         d = self.v037()
-        d["schema_version"] = "0.38"
+        d["schema_version"] = "0.39"
         r = validate(d)
         self.assertEqual(rules(r), ["66"])
         self.assertIn("ext.linguistics.gloss", r.errors[0]["message"])

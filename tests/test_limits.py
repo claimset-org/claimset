@@ -57,11 +57,6 @@ class TestRule66(unittest.TestCase):
         d["evidence"][0]["tables"][0]["rows"][1]["values"] = [{"bound": "lower", "limit": 45}]
         self.assertEqual(validate(d).errors, [])
 
-    def test_a_v038_file_has_no_limits(self):
-        d = with_value(LIMIT)
-        d["schema_version"] = "0.38"
-        self.assertIn("66", rules(validate(d)))
-
 
 class TestNoIntervalOnALimit(unittest.TestCase):
     def test_rule_82(self):

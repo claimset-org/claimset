@@ -158,14 +158,6 @@ class TestEarlierVersions(unittest.TestCase):
         next(x for x in d["limitations"] if x["id"] == "L2")["category"] = "other"
         return d
 
-    def test_a_v038_file_keeps_its_rules(self):
-        d = self.v038()
-        self.assertIn("42", rules(validate(d)))          # v0.38 required a lab event
-        d["claims"] = [c for c in d["claims"] if c["id"] != "C2"] + [
-            {k: v for k, v in next(c for c in d["claims"] if c["id"] == "C2").items()
-             if k not in ("hypothesis", "planning", "planned_at", "planned_at_anchor", "test")}]
-        self.assertEqual(validate(d).errors, [])
-
     def test_migrate_turns_the_uri_into_a_reference(self):
         d = self.v038()
         out, done, todo = migrate(d)

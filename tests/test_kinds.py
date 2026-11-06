@@ -58,11 +58,6 @@ class TestKinds(unittest.TestCase):
         self.assertEqual(rules(r), ["63"])
         self.assertIn("biological_material", r.errors[0]["message"])
 
-    def test_a_v038_file_keeps_its_kinds(self):
-        d = with_term("substance", in_setup=True)
-        d["schema_version"] = "0.38"
-        self.assertIn("63", rules(validate(d)))
-
 
 class TestLab(unittest.TestCase):
     def test_terms_may_have_the_new_kinds(self):

@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.37",
+  "schema_version": "0.39",
   "paper": {
     "title": "Method M against the seasonal naive benchmark on UK monthly retail sales",
     "licence": "CC-BY-4.0",
@@ -217,7 +217,8 @@
       "interval": {
         "level": 0.95,
         "lower": 0.05,
-        "upper": 0.11
+        "upper": 0.11,
+        "kind": "confidence"
       },
       "n": 1200,
       "data_origin": "secondary",
@@ -227,7 +228,25 @@
       ],
       "availability": {
         "level": "public"
-      }
+      },
+      "results": [
+        {
+          "id": "R9",
+          "variable": "a Swahili verb form with subject, tense and object marking",
+          "value": {
+            "text": "nitakupenda",
+            "locator": "fieldnotes 2019, p. 14",
+            "language": "sw",
+            "translation": "I will love you"
+          },
+          "ext": {
+            "linguistics": {
+              "segmented": "ni-ta-ku-penda",
+              "gloss": "1SG-FUT-2SG.OBJ-love"
+            }
+          }
+        }
+      ]
     }
   ],
   "warrants": [],
@@ -265,5 +284,8 @@
       },
       "description": "Mean relative MASE reduction of method M by forecast horizon, 1 to 12 months."
     }
-  ]
+  ],
+  "extensions": {
+    "linguistics": "0.1"
+  }
 }
