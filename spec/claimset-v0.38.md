@@ -4,6 +4,13 @@ Status: working draft · Date: 2026-11-06 · Supersedes v0.37 (`spec/claimset-v0
 
 Claimset is the name of both the open format and the platform.
 
+## Errata
+
+Bugs are corrected in the text of a version and in its validator, frozen or not; a correction never makes a valid file invalid (§2.6).
+
+- 2026-11-06. The validator failed, instead of reporting, on a value of the wrong type where one ID or text belongs (a list in `limitations[].mitigation_evidence`, an object as an ID or a kind). It now reports the value under the rule of its field, or under rule 86 of v0.39 (every field has the type this specification gives it) where no rule names its type.
+- 2026-11-06. Warnings 12 and 17 read a percentage in a statement only as a fraction, so a result of 76.7 with unit `%` did not match "76.7%". A percentage now matches a value given either way.
+
 ## Changes since v0.37
 
 The format becomes a core with extensions. The core holds what every field shares and what claims are compared by across fields: claims and their atoms, support, definitions, observations, assumptions, limitations, provenance and contributors. An extension adds the detail one kind of work needs (the glosses of linguistic examples, the structures of compounds, the endpoints of a trial), in blocks of its own on the objects it concerns. Extensions have their own versions, so one can be added or revised without a new version of the core, and a paper uses as many as it needs.
@@ -1378,7 +1385,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 9. An artefact without `licence`, unless it names the cited work it is taken from (`reference`) and is not a file of the submission package (§2.5). (Revised in v0.33.)
 10. An agent contributor that is not an `author` has the AI task `writing`; agents that produced the paper's content are authors.
 11. A check was made by an agent that runs on the same model as an `author` agent.
-12. A number in a claim's statement cannot be matched to the results the claim cites, at the precision stated (heuristic; percentages are compared as fractions). Applies to cited result entries; cited tables and rows are not checked.
+12. A number in a claim's statement cannot be matched to the results the claim cites, at the precision stated (heuristic; a percentage matches a value given as a fraction, 0.767, or in percent, 76.7: corrected 2026-11-06, see *Errata*). Applies to cited result entries; cited tables and rows are not checked.
 13. `planning: exploratory` on a principal claim: exploratory findings can be principal, but readers should be told so in the claim's assessment rationale.
 14. `id_type: reference` in a native paper: give the cited work's identifier.
 15. A `supporting` claim that no principal claim rests on, directly or through other claims (by `depends_on` or `assumptions`, including the assumptions of the evidence a principal claim cites and the assumptions it inherits from the terms it rests on, §3.2 *Assumptions of a term*): link it to the claim that rests on it, or make it `secondary`. (Revised in v0.32 and v0.33.)
