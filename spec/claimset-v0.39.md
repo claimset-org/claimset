@@ -41,6 +41,7 @@ Smaller gaps from the field trials:
 - §3.4, *Dimensions*: a control or baseline lies on a group's dimension without being a member, when it is of the group's kind (a mock transfection beside four knockdowns). Rule 66 revised.
 - §3.6: material in a paper's supplementary information, and material behind a subscription, is `public`; the `comment` says which.
 - Rule 6 revised: an interpretive claim's warrant may be the one on its argument support entry, not given twice.
+- New rule 86: every field has the type this specification gives it. The validator reports a value of the wrong type (a list where one ID belongs) instead of failing on it, in files of every version.
 
 ## Changes in v0.38 (since v0.37)
 
@@ -1472,6 +1473,8 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 85. `paper.collaborations`, if present, is a non-empty list; each entry has a non-empty `name` and optionally `identifiers`, a non-empty list of compact identifiers; no other fields.
 
+86. Types. Every field has the type this specification gives it: one ID or a piece of text is a string, a list is a list, an object an object. A value of another type is an error under the rule of its field and, where no rule names that field's type, under this rule. This rule states what every version assumed, and applies to files of every version.
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -1485,7 +1488,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 9. An artefact without `licence`, unless it names the cited work it is taken from (`reference`) and is not a file of the submission package (§2.5). (Revised in v0.33.)
 10. An agent contributor that is not an `author` has the AI task `writing`; agents that produced the paper's content are authors.
 11. A check was made by an agent that runs on the same model as an `author` agent.
-12. A number in a claim's statement cannot be matched to the results the claim cites, at the precision stated (heuristic; percentages are compared as fractions). Applies to cited result entries; cited tables and rows are not checked.
+12. A number in a claim's statement cannot be matched to the results the claim cites, at the precision stated (heuristic; a percentage matches a value given as a fraction, 0.767, or in percent, 76.7). Applies to cited result entries; cited tables and rows are not checked.
 13. `planning: exploratory` on a principal claim: exploratory findings can be principal, but readers should be told so in the claim's assessment rationale.
 14. `id_type: reference` in a native paper: give the cited work's identifier.
 15. A `supporting` claim that no principal claim rests on, directly or through other claims (by `depends_on` or `assumptions`, including the assumptions of the evidence a principal claim cites and the assumptions it inherits from the terms it rests on, §3.2 *Assumptions of a term*): link it to the claim that rests on it, or make it `secondary`. (Revised in v0.32 and v0.33.)

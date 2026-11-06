@@ -170,12 +170,23 @@ def as_dict(x):
     return x if isinstance(x, dict) else {}
 
 
+def _h(x):
+    """x when it can be looked up in a set or dict; otherwise a string that matches no ID or value, so that the
+    rule checking the field reports it instead of the validator failing on it."""
+    return x if isinstance(x, (str, int, float, bool, type(None))) else "<" + json.dumps(x, sort_keys=True) + ">"
+
+
+def _text(x):
+    """x when it is text; otherwise "" (the rule checking the field reports the wrong type)."""
+    return x if isinstance(x, str) else ""
+
+
 def check_enum(r, rule, where, value, enum_name, required=False):
     if value is None:
         if required:
             r.err(rule, where, "missing required value")
         return
-    if value not in ENUM[enum_name]:
+    if _h(value) not in ENUM[enum_name]:
         r.err(rule, where, f"'{value}' is not one of {sorted(ENUM[enum_name])}")
 
 
@@ -250,7 +261,7 @@ def check_local(r, doc, published, local_root):
             r.err("57", where, f"{m.group(1)}/{m.group(2)}.claimset.json is not a readable claimset in "
                                f"{local_root}")
             continue
-        if m.group(3) and m.group(3) not in {as_dict(c).get("id") for c in as_list(as_dict(other).get("claims"))}:
+        if m.group(3) and m.group(3) not in {_h(as_dict(c).get("id")) for c in as_list(as_dict(other).get("claims"))}:
             r.err("57", where, f"{m.group(1)}/{m.group(2)}.claimset.json has no claim {m.group(3)}")
 
 
@@ -431,16 +442,19 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
             ids[oid] = (k, obj)
 
     def by_id(oid, kind):
-        hit = ids.get(oid)
+        hit = ids.get(oid) if isinstance(oid, str) else None   # a list or object where an ID belongs is no ID
         return hit[1] if hit and hit[0] == kind else None
 
     def ref(rule, where, oid, kind):
+        if not isinstance(oid, str):
+            r.err(rule, where, f"one ID of an object in {kind}, as a string; not {json.dumps(oid)}")
+            return None
         if by_id(oid, kind) is None:
             r.err(rule, where, f"reference '{oid}' does not resolve to an object in {kind}")
             return None
         return by_id(oid, kind)
 
-    claims = {c["id"]: c for c in coll["claims"] if isinstance(c, dict) and "id" in c}
+    claims = {_h(c["id"]): c for c in coll["claims"] if isinstance(c, dict) and "id" in c}
     origin = paper.get("origin")
     converted = origin == "converted"
 
@@ -537,7 +551,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
                     r.err("49", f"{w}.field", f"'{fld}' does not begin with the ID of an object in the file")
 
     # ---------- References (rule 51) ----------
-    captured = {a.get("reference") for a in coll["artefacts"] if isinstance(a, dict)
+    captured = {_h(a.get("reference")) for a in coll["artefacts"] if isinstance(a, dict)
                 and isinstance(a.get("version"), str) and a["version"].startswith("sha256:")}
     for b in coll["references"]:
         if not isinstance(b, dict):
@@ -545,7 +559,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
         bw = f"references:{b.get('id')}"
         if not isinstance(b.get("target"), str) or not b["target"].strip():
             r.err("51", bw, "missing target")
-        if b.get("id_type") not in ENUM["id_type"] | ENUM["rel_id_type"]:
+        if _h(b.get("id_type")) not in ENUM["id_type"] | ENUM["rel_id_type"]:
             r.err("51", f"{bw}.id_type", f"'{b.get('id_type')}' is not an identifier type for cited works")
         if b.get("id_type") == "url" and not b.get("archive_uri"):
             if b.get("id") in captured:     # a captured copy, held with its hash (v0.37, amended)
@@ -559,17 +573,17 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
         pointed = set()
         for c in coll["claims"]:
             c = as_dict(c)
-            pointed |= {as_dict(s).get("reference") for s in as_list(c.get("support"))}
-            pointed |= {as_dict(x).get("reference") for x in as_list(c.get("relations"))}
-        pointed |= {as_dict(d).get("source") for d in coll["definitions"] if isinstance(as_dict(d).get("source"), str)}
-        pointed |= {as_dict(a).get("reference") for a in coll["artefacts"]}
+            pointed |= {_h(as_dict(s).get("reference")) for s in as_list(c.get("support"))}
+            pointed |= {_h(as_dict(x).get("reference")) for x in as_list(c.get("relations"))}
+        pointed |= {_h(as_dict(d).get("source")) for d in coll["definitions"] if isinstance(as_dict(d).get("source"), str)}
+        pointed |= {_h(as_dict(a).get("reference")) for a in coll["artefacts"]}
         for b in coll["references"]:
-            if isinstance(b, dict) and b.get("id") and b["id"] not in pointed:
+            if isinstance(b, dict) and b.get("id") and _h(b["id"]) not in pointed:
                 r.err("51", f"references:{b['id']}", "listed but never cited: list only works that are cited")
 
     # ---------- Roles and what the contributions rest on (warnings 15 and 16) ----------
-    defs_by_id = {d.get("id"): d for d in coll["definitions"] if isinstance(d, dict)}
-    evidence_by_id = {e.get("id"): e for e in coll["evidence"] if isinstance(e, dict)}
+    defs_by_id = {_h(d.get("id")): d for d in coll["definitions"] if isinstance(d, dict)}
+    evidence_by_id = {_h(e.get("id")): e for e in coll["evidence"] if isinstance(e, dict)}
 
     def rests_on(c):
         """Claims this claim rests on: depends_on, assumptions, and the assumptions of the evidence it cites."""
@@ -595,9 +609,9 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
             continue
         support = [as_dict(s) for s in as_list(c.get("support"))]
         if not support or any(s.get("warrant") for s in support) or \
-                not {s.get("kind") for s in support} <= {"argument", "consensus", "expert_judgement", "unstated"}:
+                not {_h(s.get("kind")) for s in support} <= {"argument", "consensus", "expert_judgement", "unstated"}:
             continue
-        words = rhetoric_cues(c.get("statement"))
+        words = rhetoric_cues(_text(c.get("statement")))
         why = f"; it also uses {', '.join(words)}" if words else ""
         if converted:
             r.warn("W23", f"claims:{cid}", f"no evidence or citation supports it and no claim rests on it{why}: "
@@ -614,7 +628,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
     for dfn in coll["definitions"]:
         dfn = as_dict(dfn)
         did, text = dfn.get("id"), dfn.get("definition")
-        if did in marked_formal and not dfn.get("source") and isinstance(text, str) and "$" not in text \
+        if _h(did) in marked_formal and not dfn.get("source") and isinstance(text, str) and "$" not in text \
                 and "```" not in text:
             r.warn("W26", f"definitions:{did}", "a term of the paper's own that a formal claim names, with no "
                                               "mathematics: if it is the paper's method or model, give its "
@@ -890,7 +904,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
     for p in coll["contributors"]:
         if isinstance(p, dict) and p.get("type") == "agent" and "author" in as_list(p.get("positions")):
             for m in as_list(p.get("models")):
-                author_models.add(model_key(by_id(as_dict(m).get("model"), "models"), as_dict(m).get("model")))
+                author_models.add(model_key(by_id(as_dict(m).get("model"), "models"), _h(as_dict(m).get("model"))))
     for cid, c in claims.items():
         validate_claim(r, c, cid, ids, by_id, ref, converted, author_models)
 
@@ -935,7 +949,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
             if la.get("kind") != "lab_record":
                 r.err("44", "paper.exploration.lab_record", "must point to an artefact of kind lab_record")
             lab["level"] = as_dict(la.get("availability")).get("level")
-            lab["withheld"] = {as_dict(x).get("event") for x in as_list(la.get("withheld_events"))}
+            lab["withheld"] = {_h(as_dict(x).get("event")) for x in as_list(la.get("withheld_events"))}
             for i, x in enumerate(as_list(la.get("withheld_events"))):
                 x = as_dict(x)
                 if not x.get("event"):
@@ -976,7 +990,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
             if rn["failed"] > rn["total"]:
                 r.err("45", "paper.exploration.runs.failed", "cannot exceed total")
         for oc in ("supported", "not_supported", "inconclusive"):
-            n = len({as_dict(c["hypothesis"]).get("lab_event") for c in hyp_claims
+            n = len({_h(as_dict(c["hypothesis"]).get("lab_event")) for c in hyp_claims
                      if as_dict(c["hypothesis"]).get("outcome") == oc and not c.get("test")})
             if nonneg(hy.get(oc)) and n > hy[oc]:
                 r.err("46", "paper.exploration.hypotheses", f"{n} distinct hypotheses reported as {oc} outside "
@@ -1011,11 +1025,11 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
         if c.get("hypothesis") and not is_assumption(c):
             if lab["level"] not in (None, "public"):
                 exp_flags.add("lab_record_withheld")
-            linked = {as_dict(c["hypothesis"]).get("lab_event")}
+            linked = {_h(as_dict(c["hypothesis"]).get("lab_event"))}
             for s_ in as_list(c.get("support")):
                 ev = by_id(as_dict(s_).get("evidence"), "evidence") if as_dict(s_).get("evidence") else None
                 if ev is not None:
-                    linked |= set(as_list(ev.get("lab_runs")))
+                    linked |= {_h(x) for x in as_list(ev.get("lab_runs"))}
             if linked & lab["withheld"]:
                 exp_flags.add("lab_events_withheld")
             if c.get("planning") in ("confirmatory", "confirmatory_with_deviations") and c.get("planned_at_anchor") == "none":
@@ -1112,7 +1126,7 @@ def check_frame(r, coll, claims, by_id):
         names = set()
         for ids_ in as_dict(e.get("setup")).values():
             names |= {d for d in as_list(ids_) if isinstance(d, str)}
-        in_setup[e.get("id")] = names
+        in_setup[_h(e.get("id"))] = names
         framed |= names
     terms = {}
     for d in coll["definitions"]:
@@ -1122,7 +1136,7 @@ def check_frame(r, coll, claims, by_id):
         if d.get("kind") == "measure":
             r.err("68", f"definitions:{d.get('id')}.kind", "renamed in v0.32: the kind measure is now variable "
                                                           "(`claimset migrate` renames it)")
-        elif "kind" in d and d["kind"] not in ENUM["definition_kind"]:
+        elif "kind" in d and _h(d["kind"]) not in ENUM["definition_kind"]:
             r.err("63", f"definitions:{d.get('id')}.kind",
                   f"'{d['kind']}' is not a kind: {', '.join(sorted(ENUM['definition_kind']))}")
 
@@ -1187,8 +1201,8 @@ def check_frame(r, coll, claims, by_id):
                     slots.append((f"conditions[{i}]", v))
                 else:
                     r.err("64", f"{w}.about.conditions[{i}]", "a definition ID or a short text")
-        marked = set(TERM_RE.findall(c.get("statement") or "")) if isinstance(c.get("statement"), str) else set()
-        cited = {as_dict(s).get("evidence") for s in as_list(c.get("support"))} - {None}
+        marked = set(TERM_RE.findall(_text(c.get("statement")))) if isinstance(c.get("statement"), str) else set()
+        cited = {_h(as_dict(s).get("evidence")) for s in as_list(c.get("support"))} - {None}
         # only evidence that can have a setup counts: formal evidence has none (rule 61)
         cited = {eid for eid in cited if as_dict(by_id(eid, "evidence")).get("profile") not in ("formal", None)}
 
@@ -1219,7 +1233,7 @@ def check_frame(r, coll, claims, by_id):
                 if v not in marked:
                     r.err("64", f"{w}.about.{path}", f"{v} is not marked in the statement: write [[{v}:{d.get('term')}]] "
                                                      f"where the statement names it")
-                if (cited and d.get("kind") in SETUP_PART_KINDS
+                if (cited and _h(d.get("kind")) in SETUP_PART_KINDS
                         and not any(named_in(v, eid) for eid in cited)):
                     r.warn("W28", f"{w}.about.{path}", f"{v} ({d.get('kind')}) is part of the study the claim rests on "
                                                        f"but no setup of its evidence ({', '.join(sorted(cited))}) "
@@ -1234,7 +1248,7 @@ def check_frame(r, coll, claims, by_id):
                                                       "(§3.2)")
 
     # Groups (rule 65): members are other definitions of the group's kind; no group contains itself
-    defs = {as_dict(d).get("id"): as_dict(d) for d in coll["definitions"]}
+    defs = {_h(as_dict(d).get("id")): as_dict(d) for d in coll["definitions"]}
     for d in defs.values():
         if "members" not in d:
             continue
@@ -1332,11 +1346,12 @@ def number_matches(value, statement):
         exp = int(m.group(3)) if m.group(3) else 0
         tv = t * (10 ** exp)
         tol = 0.5 * 10 ** (exp - dec)
-        if m.group(4):
-            tv, tol = tv / 100, tol / 100
+        # a percentage matches a value given as a fraction (0.767) or in percent (76.7, unit %)
+        readings = [(tv, tol), (tv / 100, tol / 100)] if m.group(4) else [(tv, tol)]
         for v in (value, abs(value)):
-            if abs(v - tv) <= tol * (1 + 1e-9) + 1e-15:
-                return True
+            for x, xt in readings:
+                if abs(v - x) <= xt * (1 + 1e-9) + 1e-15:
+                    return True
     return False
 
 
@@ -1381,7 +1396,7 @@ def unsourced_numbers(c, support, by_id):
     cited evidence's results (values, intervals, conditions) and table cells and conditions, the test's
     parameters, the claim's scope, and the definitions the statement references. Evidence descriptions do not
     count: a number a statement reports should be a recorded result."""
-    if not {s.get("kind") for s in support} & {"empirical_quant", "simulation"}:
+    if not {_h(s.get("kind")) for s in support} & {"empirical_quant", "simulation"}:
         return []
     sources = []
     for s in support:
@@ -1397,7 +1412,7 @@ def unsourced_numbers(c, support, by_id):
                          [as_dict(row).get("label") for row in as_list(t.get("rows"))]], sources)
         _numbers_in([e.get("estimate"), e.get("interval"), e.get("n")], sources)
     _numbers_in([as_dict(c.get("test")).get("parameters"), c.get("scope")], sources)
-    stmt = c.get("statement") or ""
+    stmt = _text(c.get("statement"))
     for m in re.finditer(r"\[\[(D\d+):", stmt):
         d = by_id(m.group(1), "definitions")
         if d is not None:
@@ -1431,7 +1446,7 @@ def table_echo(c, support, by_id):
     if not cells:
         return []
     out = []
-    for m in NUM_RE.finditer(NUMBER_SKIP.sub(" ", c.get("statement") or "")):
+    for m in NUM_RE.finditer(NUMBER_SKIP.sub(" ", _text(c.get("statement")))):
         token = m.group(0).strip()
         if token not in out and not m.group(4) and any(number_matches(v, token) for v in cells):
             out.append(token)
@@ -1449,7 +1464,7 @@ def check_test(r, test, w):
         if not isinstance(test.get(outcome), str) or not test[outcome].strip():
             r.err("47", f"{w}.{outcome}", "the rule for this outcome is required")
     params = test.get("parameters") if isinstance(test.get("parameters"), dict) else {}
-    for key in TEST_PARAMETERS.get(fw, ()):
+    for key in TEST_PARAMETERS.get(_h(fw), ()):
         if params.get(key) in (None, ""):
             r.err("47", f"{w}.parameters.{key}", f"required by the {fw} framework")
     check_enum(r, "47", f"{w}.verdict", test.get("verdict"), "verdict", required=True)
@@ -1692,7 +1707,7 @@ def inherited_assumptions(c, defs, evid):
     subjects = [subject.strip()] + members(subject.strip()) if isinstance(subject, str) else []
     start = []
     for s in as_list(c.get("support")):
-        e = evid.get(as_dict(s).get("evidence"))
+        e = evid.get(_h(as_dict(s).get("evidence")))
         for role, ids in as_dict(as_dict(e).get("setup")).items():
             ids = [i for i in as_list(ids) if isinstance(i, str)]
             if about is None or role != "studied":
@@ -1785,7 +1800,7 @@ def check_artefact_v032(r, w, a, ref, by_id, coll):
 def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
     """Rules 66 (terms of observations), 68, 69, 70 (published files), 71 (cycles), 72 (cycles), 73, 74;
     warnings 29 and 30 (spec v0.32)."""
-    defs = {as_dict(d).get("id"): as_dict(d) for d in coll["definitions"]}
+    defs = {_h(as_dict(d).get("id")): as_dict(d) for d in coll["definitions"]}
 
     def members_of(g, seen=()):
         out = set()
@@ -1934,7 +1949,7 @@ def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
     for cid in claims:
         if cyc(explains, cid):
             r.err("71", f"claims:{cid}.relations", "explains forms a cycle among the paper's claims")
-    derived = {as_dict(e).get("id"): [as_dict(x).get("evidence") for x in as_list(as_dict(e).get("derived_from"))]
+    derived = {_h(as_dict(e).get("id")): [as_dict(x).get("evidence") for x in as_list(as_dict(e).get("derived_from"))]
                for e in coll["evidence"]}
     for eid in derived:
         if cyc(derived, eid):
@@ -2166,8 +2181,8 @@ def result_ref_resolves(ref_id, evidence_id, e, by_id=None):
         return False
     rm = ROW_REF_RE.match(ref_id)
     if rm:
-        held = set(as_list(e.get("artefacts"))) | {as_dict(x).get("artefact") for x in as_list(e.get("results"))} \
-            | {as_dict(t).get("artefact") for t in as_list(e.get("tables"))}
+        held = set(as_list(e.get("artefacts"))) | {_h(as_dict(x).get("artefact")) for x in as_list(e.get("results"))} \
+            | {_h(as_dict(t).get("artefact")) for t in as_list(e.get("tables"))}
         if rm.group(1) not in held:
             return False
         a = by_id(rm.group(1), "artefacts") if by_id else None
@@ -2178,11 +2193,11 @@ def result_ref_resolves(ref_id, evidence_id, e, by_id=None):
     if not m or m.group(1) != evidence_id:
         return False
     if m.group(2).startswith("R"):
-        return m.group(3) is None and m.group(2) in {as_dict(x).get("id") for x in as_list(e.get("results"))}
+        return m.group(3) is None and m.group(2) in {_h(as_dict(x).get("id")) for x in as_list(e.get("results"))}
     table = next((t for t in as_list(e.get("tables")) if isinstance(t, dict) and t.get("id") == m.group(2)), None)
     if table is None:
         return False
-    return m.group(3) is None or m.group(3) in {as_dict(x).get("id") for x in as_list(table.get("rows"))}
+    return m.group(3) is None or m.group(3) in {_h(as_dict(x).get("id")) for x in as_list(table.get("rows"))}
 
 
 def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozenset()):
@@ -2228,7 +2243,7 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
                                                f"observations or the definition it shows")
         profile_for = {"empirical_quant": "quant", "empirical_qual": "qual",
                        "simulation": "simulation", "formal_proof": "formal"}
-        if k in profile_for:
+        if _h(k) in profile_for:
             e = ref("10", f"{sw}.evidence", s.get("evidence"), "evidence")
             if e is not None and e.get("profile") != profile_for[k]:
                 r.err("10", f"{sw}.evidence", f"{k} must point to evidence with profile {profile_for[k]}")
@@ -2411,12 +2426,12 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
             r.err("36", f"{w}.verification", f"'{ver}' is inconsistent with the recorded checks (§5)")
 
     # numbers in the statement vs cited results (W12)
-    stmt = c.get("statement") or ""
+    stmt = _text(c.get("statement"))
     for s in support:
         e = by_id(s.get("evidence"), "evidence") if s.get("evidence") else None
         if e is None:
             continue
-        rmap = {as_dict(x).get("id"): as_dict(x) for x in as_list(e.get("results"))}
+        rmap = {_h(as_dict(x).get("id")): as_dict(x) for x in as_list(e.get("results"))}
         for ref_id in as_list(s.get("results")):
             rid = str(ref_id).split(".")[-1]
             val = rmap.get(rid, {}).get("value")
@@ -2438,7 +2453,7 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
         r.warn("W22", f"{w}.statement", f"cites results of {', '.join(with_results)}: if the statement reports a "
                                         f"result of each, it may hold more than one claim; split it if one part could "
                                         f"be true and another false")
-    kinds = {s.get("kind") for s in support}
+    kinds = {_h(s.get("kind")) for s in support}
     if c.get("novelty") == "no_prior_found" and kinds == {"consensus"}:
         r.warn("W19", w, "novelty no_prior_found, but the only support is established knowledge (consensus): if the claim is "
                          "itself known, cite it or relate to it; if it is new, give the support that shows it")
@@ -2508,7 +2523,7 @@ def compute_verifiability(c, by_id, read_from=frozenset()):
     seen = set()
     queue = list(artefact_ids)
     while queue:
-        aid = queue.pop()
+        aid = _h(queue.pop())
         if aid in seen:
             continue
         seen.add(aid)
@@ -2650,7 +2665,7 @@ def validate_contributors(r, contributors, paper, ref, converted):
                 r.err("17", f"paper.converted_from.{f}", "missing required field")
         if len(has("guarantor")) > 1:
             r.err("17", "contributors", "a converted paper has at most one guarantor, a source author who claimed it")
-        source_orcids = {as_dict(a).get("orcid") for a in as_list(cf.get("source_authors"))} - {None}
+        source_orcids = {_h(as_dict(a).get("orcid")) for a in as_list(cf.get("source_authors"))} - {None}
         for g in has("guarantor"):
             if g.get("orcid") not in source_orcids:
                 r.err("17", f"contributors:{g.get('id')}", "in converted papers a guarantor must be a source author (by ORCID)")
