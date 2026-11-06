@@ -184,7 +184,7 @@ class TestMerge(AgentCase):
 
     def test_conflicting_merge_is_refused_whole(self):
         rn = self.lab.append("run", run_body(), by=self.human)["id"]
-        rs = self.lab.append("result", {"run": rn, "quantity": "q", "value": 1, "source": "results.json"},
+        rs = self.lab.append("result", {"run": rn, "variable": "q", "value": 1, "source": "results.json"},
                              by=self.human)["id"]
         self.lab.agent_log_path(self.a).unlink()          # restart A from the current head
         self.lab.start_agent(self.a)

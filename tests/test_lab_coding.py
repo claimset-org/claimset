@@ -6,7 +6,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from claimset.lab import sources
+from claimset.lab import qualitative, sources
 from claimset.lab.core import LabError, verify
 from claimset.lab.export import export
 from claimset.lab.run import run_command
@@ -19,7 +19,7 @@ import json, os
 data = json.load(open(os.environ["CLAIMSET_CODINGS"], encoding="utf-8"))
 code = {c["term"]: c["id"] for c in data["codes"]}["arrange for ensemble"]
 threads = {c["source"] for c in data["codings"] if code in c["codes"]}
-json.dump([{"quantity": "threads coded arrange for ensemble", "value": len(threads)}],
+json.dump([{"variable": "threads coded arrange for ensemble", "value": len(threads)}],
           open(os.environ["CLAIMSET_RESULTS"], "w"))
 """
 
@@ -70,23 +70,23 @@ class TestCodings(CodingCase):
         self.assertEqual(self.lab.state().get(cd)["body"]["quote"]["start"],
                          sources.text_of(self.lab, self.sr).index("arrange a piano"))
 
-    def test_L27_codes_are_terms_with_a_code_part(self):
+    def test_qualitative_L1_codes_are_terms_with_a_code_part(self):
         plain = self.add("term", {"term": "MuseScore", "kind": "method", "definition": "the notation program"})
         for codes in ([plain], ["TM99"], []):
             with self.assertRaises(LabError) as cm:
                 self.coding(codes=codes, code_versions=None)
-            self.assertIn(cm.exception.rule, ("L27", "L12", "schema"), codes)
+            self.assertIn(cm.exception.rule, ("qualitative.L1", "L12", "schema"), codes)
         with self.assertRaises(LabError) as cm:
             self.coding(codes=[plain], code_versions=None)
-        self.assertEqual(cm.exception.rule, "L27")
+        self.assertEqual(cm.exception.rule, "qualitative.L1")
 
-    def test_L25_a_quote_that_is_not_in_the_source_breaks_verify(self):
+    def test_qualitative_L2_a_quote_that_is_not_in_the_source_breaks_verify(self):
         cd = self.coding()
         body = dict(self.lab.state().get(cd)["body"])
         body["quote"] = dict(body["quote"], exact="arrange a piano score for a string quartet")
         self.add("coding", body, supersedes=cd)
         errors = verify(self.lab)["errors"]
-        self.assertEqual([e["rule"] for e in errors], ["L25"])
+        self.assertEqual([e["rule"] for e in errors], ["qualitative.L2"])
 
     def test_recoding_and_withdrawing_are_corrections(self):
         cd = self.coding()
@@ -94,9 +94,9 @@ class TestCodings(CodingCase):
                                   "code": {"include": "asks to flag notes out of an instrument's range"}})
         cd2 = self.coding(codes=[other], code_versions={other: other})
         st = self.lab.state()
-        self.assertEqual(len(sources.current_codings(st)), 2)
+        self.assertEqual(len(qualitative.current_codings(st)), 2)
         self.add("coding", {"source": self.sr["id"], "codes": [], "withdrawn": True}, supersedes=cd2)
-        self.assertEqual([c["id"] for c in sources.current_codings(self.lab.state())], [cd])
+        self.assertEqual([c["id"] for c in qualitative.current_codings(self.lab.state())], [cd])
         with self.assertRaises(LabError):
             self.add("coding", {"source": self.sr["id"], "codes": []})                # no codes, not a withdrawal
 
@@ -108,9 +108,10 @@ class TestRunsReadCodings(CodingCase):
         script.write_text(COUNT)
         out = run_command(self.lab, self.agent, [sys.executable, str(script)], echo=False, cwd=self.tmp.name)
         run = out["run"]["body"]
-        self.assertEqual((run["exit_status"], run["codings"]["count"], run["codings"]["path"]),
+        codings = run["ext"]["qualitative"]["codings"]
+        self.assertEqual((run["exit_status"], codings["count"], codings["path"]),
                          ("success", 1, "codings.json"))
-        self.assertIn({"path": "codings.json", "hash": run["codings"]["hash"]}, run["outputs"])
+        self.assertIn({"path": "codings.json", "hash": codings["hash"]}, run["outputs"])
         self.assertEqual(out["results"][0]["body"]["value"], 1)
         snap = json.loads((self.lab.root / "runs" / out["run"]["id"] / "codings.json").read_text())
         self.assertEqual(snap["sources"][0]["venue"], "musescore.org")
@@ -123,6 +124,7 @@ class TestRunsReadCodings(CodingCase):
         script.write_text("pass\n")
         out = run_command(self.lab, self.agent, [sys.executable, str(script)], echo=False, cwd=self.tmp.name)
         self.assertNotIn("codings", out["run"]["body"])
+        self.assertNotIn("ext", out["run"]["body"])
 
 
 class TestExport(CodingCase):
@@ -132,8 +134,9 @@ class TestExport(CodingCase):
         out = export(self.lab)
         defs = {d["term"]: d for d in out["draft"]["definitions"]}
         code = defs["arrange for ensemble"]
-        self.assertIn("Coded when: asks for automatic arranging for named instruments.", code["definition"])
-        self.assertIn("Not coded when: manual tools such as explode/implode.", code["definition"])
+        self.assertEqual(code["ext"]["qualitative"]["code"]["include"], "asks for automatic arranging for named instruments")
+        self.assertEqual(code["ext"]["qualitative"]["code"]["exclude"], "manual tools such as explode/implode")
+        self.assertNotIn("Coded when", code["definition"])
         self.assertEqual(code["broader"], [defs["arranging"]["id"]])
         todo = " | ".join(t["what"] for t in out["completion"])
         self.assertIn("1 quoted codings", todo)

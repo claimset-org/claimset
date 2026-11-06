@@ -17,17 +17,17 @@ from test_lab import LabCase, TestCli, ticking_clock
 SCRIPT = """
 import json, os, sys
 d, lo, hi, p = (float(x) for x in sys.argv[1:5])
-json.dump([{"quantity": "mean difference", "value": d, "interval": {"level": 0.95, "lower": lo, "upper": hi}},
-           {"quantity": "p-value", "value": p}], open(os.environ["CLAIMSET_RESULTS"], "w"))
+json.dump([{"variable": "mean difference", "value": d, "interval": {"level": 0.95, "lower": lo, "upper": hi}},
+           {"variable": "p-value", "value": p}], open(os.environ["CLAIMSET_RESULTS"], "w"))
 sys.exit(int(sys.argv[5]) if len(sys.argv) > 5 else 0)
 """
 
 FREQ = {"framework": "frequentist",
         "parameters": {"alpha": 0.05, "test": "one-sided t-test", "sides": "greater", "correction": "none",
                        "sample": "200 series, fixed"},
-        "quantities": {"p": {"quantity": "p-value"},
-                       "d": {"quantity": "mean difference"},
-                       "upper": {"quantity": "mean difference", "field": "interval.upper"}},
+        "quantities": {"p": {"variable": "p-value"},
+                       "d": {"variable": "mean difference"},
+                       "upper": {"variable": "mean difference", "field": "interval.upper"}},
         "supported": "p < alpha and d > 0",
         "not_supported": "upper < 0.01"}
 
@@ -75,7 +75,7 @@ class TestRuleChecks(unittest.TestCase):
 
     def test_required_parameters_per_framework(self):
         for fw, needed in dec.REQUIRED.items():
-            text = " ".join(dec.problems({"framework": fw, "quantities": {"x": {"quantity": "q"}},
+            text = " ".join(dec.problems({"framework": fw, "quantities": {"x": {"variable": "q"}},
                                           "supported": "x > 0", "not_supported": "x < 0"}))
             for key in needed:
                 self.assertIn(f"'{key}'", text, (fw, key))
@@ -87,7 +87,7 @@ class TestRuleChecks(unittest.TestCase):
         self.assertIn("sides", text)
         eq = {"framework": "equivalence", "parameters": {"alpha": 0.05, "test": "TOST", "lower_bound": 0.1,
                                                          "upper_bound": -0.1, "sample": "n"},
-              "quantities": {"x": {"quantity": "q"}}, "supported": "x > 0", "not_supported": "x < 0"}
+              "quantities": {"x": {"variable": "q"}}, "supported": "x > 0", "not_supported": "x < 0"}
         self.assertIn("lower_bound must be below upper_bound", " ".join(dec.problems(eq)))
 
     def test_rules_allow_only_arithmetic_and_logic(self):
@@ -103,14 +103,14 @@ class TestRuleChecks(unittest.TestCase):
         no_q = {k: v for k, v in FREQ.items() if k != "quantities"}
         self.assertEqual(dec.problems(no_q), [])            # text rules, judged verdict
         self.assertFalse(dec.computed(no_q))
-        clash = dict(FREQ, quantities=dict(FREQ["quantities"], alpha={"quantity": "x"}))
+        clash = dict(FREQ, quantities=dict(FREQ["quantities"], alpha={"variable": "x"}))
         self.assertIn("both a quantity and a parameter", " ".join(dec.problems(clash)))
-        bad_field = dict(FREQ, quantities={"p": {"quantity": "p-value", "field": "interval.middle"}})
+        bad_field = dict(FREQ, quantities={"p": {"variable": "p-value", "field": "interval.middle"}})
         self.assertTrue(any("field" in x for x in dec.problems(bad_field)))
         self.assertTrue(dec.problems({"framework": "qualitative", "supported": "", "not_supported": "x"}))
 
     def test_verdicts(self):
-        res = [{"quantity": "p-value", "value": 0.01}, {"quantity": "mean difference", "value": 0.2,
+        res = [{"variable": "p-value", "value": 0.01}, {"variable": "mean difference", "value": 0.2,
                                                          "interval": {"lower": 0.1, "upper": 0.3}}]
         self.assertEqual(dec.verdict(FREQ, res)["verdict"], "supported")
         res[0]["value"] = 0.2
@@ -120,19 +120,19 @@ class TestRuleChecks(unittest.TestCase):
 
     def test_overlap_and_binding_problems_are_inconclusive(self):
         overlap = dict(FREQ, not_supported="d > 0")
-        res = [{"quantity": "p-value", "value": 0.01}, {"quantity": "mean difference", "value": 0.2,
+        res = [{"variable": "p-value", "value": 0.01}, {"variable": "mean difference", "value": 0.2,
                                                          "interval": {"lower": 0.1, "upper": 0.3}}]
         out = dec.verdict(overlap, res)
         self.assertEqual(out["verdict"], "inconclusive")
         self.assertIn("overlap", out["problems"][0])
-        out = dec.verdict(FREQ, res + [{"quantity": "p-value", "value": 0.5}])
+        out = dec.verdict(FREQ, res + [{"variable": "p-value", "value": 0.5}])
         self.assertEqual(out["verdict"], "inconclusive")
         self.assertIn("matches 2 results", out["problems"][0])
 
     def test_conditions_select_results(self):
-        rule = {"framework": "deterministic", "quantities": {"m": {"quantity": "q", "conditions": {"k": 2}}},
+        rule = {"framework": "deterministic", "quantities": {"m": {"variable": "q", "conditions": {"k": 2}}},
                 "supported": "m > 1", "not_supported": "m <= 1"}
-        res = [{"quantity": "q", "value": 0, "conditions": {"k": 1}}, {"quantity": "q", "value": 5, "conditions": {"k": 2}}]
+        res = [{"variable": "q", "value": 0, "conditions": {"k": 1}}, {"variable": "q", "value": 5, "conditions": {"k": 2}}]
         self.assertEqual(dec.verdict(rule, res)["verdict"], "supported")
 
 
@@ -169,9 +169,9 @@ class TestDecidingRuns(RuleCase):
         self.verdict_status("not_supported", rs, pl)
 
     def test_several_deciding_runs(self):
-        self.refused("L15", self.plan, rule=dict(FREQ, quantities={"p": {"quantity": "p-value"}},
+        self.refused("L15", self.plan, rule=dict(FREQ, quantities={"p": {"variable": "p-value"}},
                                                  supported="p < alpha", not_supported="p > 0.5"), runs=2)
-        rule = dict(FREQ, quantities={"p1": {"quantity": "p-value", "run": 1}, "p2": {"quantity": "p-value", "run": 2}},
+        rule = dict(FREQ, quantities={"p1": {"variable": "p-value", "run": 1}, "p2": {"variable": "p-value", "run": 2}},
                     supported="p1 < alpha and p2 < alpha", not_supported="p1 > 0.5 and p2 > 0.5")
         pl = self.plan(rule=rule, runs=2)
         rn1, rs1 = self.run_(plan=pl)
@@ -303,7 +303,7 @@ class TestVerdicts(RuleCase):
         self.assertIn("not had its deciding runs", msg)
 
     def test_binding_failure_allows_only_inconclusive(self):
-        rule = dict(FREQ, quantities=dict(FREQ["quantities"], p={"quantity": "missing quantity"}))
+        rule = dict(FREQ, quantities=dict(FREQ["quantities"], p={"variable": "missing quantity"}))
         pl = self.plan(rule=rule)
         rn, rs = self.run_(plan=pl)
         msg = self.refused("L17", self.verdict_status, "supported", rs, pl)
@@ -444,8 +444,8 @@ class TestCliRules(TestCli):
         code, _, err = self.run_cli(
             "lab", "plan", "--kind", "confirmatory", "--hypotheses", "H1", "--design", "d", "--analysis", "a",
             "--decision", str(rule_file), "--parameter", "alpha=0.05", "--parameter", "sample=200 series",
-            "--quantity", "p=p-value", "--quantity", 'd={"quantity": "mean difference", "field": "value"}',
-            "--quantity", 'upper={"quantity": "mean difference", "field": "interval.upper"}',
+            "--quantity", "p=p-value", "--quantity", 'd={"variable": "mean difference", "field": "value"}',
+            "--quantity", 'upper={"variable": "mean difference", "field": "interval.upper"}',
             "--supported", "p < alpha and d > 0", "--not-supported", "upper < 0.01")
         self.assertEqual(code, 0, err)
         code, out, _ = self.run_cli("lab", "verdict", "PL1")

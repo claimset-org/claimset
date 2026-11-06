@@ -238,7 +238,7 @@ class TestKeptApart(StudyRepo):
         self.assertEqual(cfg["hooks"]["SessionStart"][0]["hooks"][0]["command"], "claimset studies")
 
 
-DECISION = {"framework": "deterministic", "quantities": {"q": {"quantity": "q"}},
+DECISION = {"framework": "deterministic", "quantities": {"q": {"variable": "q"}},
             "supported": "q > 0", "not_supported": "q < 0"}
 
 

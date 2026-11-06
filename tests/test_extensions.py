@@ -186,3 +186,77 @@ class TestReadingView(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestQualitative(unittest.TestCase):
+    """The qualitative extension in a claimset (spec/extensions/qualitative-v0.1.md §1)."""
+
+    def doc(self):
+        d = json.loads((ROOT / "examples" / "submission-from-lab.json").read_text(encoding="utf-8"))
+        d["extensions"] = {"qualitative": "0.1"}
+        d["definitions"].append({"id": "D90", "term": "arrange for ensemble", "kind": "concept",
+                                 "definition": "A request to arrange music for named instruments.",
+                                 "ext": {"qualitative": {"code": {"include": "asks for automatic arranging"}}}})
+        claim = next(c for c in d["claims"] if c.get("test"))
+        claim["test"]["quantities"]["n"] = {"variable": "count: n"}
+        claim["ext"] = {"qualitative": {"test_flags": ["coded_before_plan"],
+                                        "counts": {"n": {"codes": ["D90"], "distinct_by": "year"}}}}
+        return d, claim
+
+    def test_valid(self):
+        d, _ = self.doc()
+        self.assertEqual(validate(d).errors, [])
+
+    def test_rule_1_fields(self):
+        d, claim = self.doc()
+        claim["ext"]["qualitative"]["theme"] = "x"
+        self.assertEqual(rules(validate(d)), ["qualitative.1"])
+
+    def test_rule_2_codes(self):
+        d, _ = self.doc()
+        d["definitions"][-1]["kind"] = "variable"
+        self.assertEqual(rules(validate(d)), ["qualitative.2"])
+        d, _ = self.doc()
+        d["definitions"][-1]["ext"]["qualitative"]["code"] = {"exclude": "x"}
+        self.assertEqual(rules(validate(d)), ["qualitative.2"])
+
+    def test_rule_3_test_flags(self):
+        d, claim = self.doc()
+        claim["ext"]["qualitative"]["test_flags"] = ["code_changed_after_plan"]
+        self.assertEqual(rules(validate(d)), ["qualitative.3"])
+
+    def test_rule_4_counts(self):
+        d, claim = self.doc()
+        claim["ext"]["qualitative"]["counts"]["n"]["codes"] = ["D1"]           # not a code
+        self.assertEqual(rules(validate(d)), ["qualitative.4"])
+        d, claim = self.doc()
+        del claim["test"]["quantities"]["n"]                                  # not bound by the test
+        self.assertEqual(rules(validate(d)), ["qualitative.4"])
+        d, claim = self.doc()
+        claim["ext"]["qualitative"]["counts"]["n"]["unit"] = "page"
+        self.assertEqual(rules(validate(d)), ["qualitative.4"])
+
+    def test_rule_47_quantities_name_their_variable(self):
+        d, claim = self.doc()
+        claim["test"]["quantities"]["n"] = {"quantity": "count: n"}
+        self.assertIn("47", rules(validate(d)))
+
+    def test_migrate_moves_flags_counts_and_quantities(self):
+        d, claim = self.doc()
+        d["schema_version"] = "0.37"
+        del d["extensions"], claim["ext"]
+        claim["test"]["flags"] = ["coded_before_plan"]
+        claim["test"]["quantities"] = {k: ({"quantity": v["variable"]} if "variable" in v and k != "n" else v)
+                                       for k, v in claim["test"]["quantities"].items()}
+        claim["test"]["quantities"]["n"] = {"count": {"codes": ["D90"], "distinct_by": "year"}}
+        del d["definitions"][-1]["ext"]
+        out, done, _ = migrate(d)
+        c = next(x for x in out["claims"] if x["id"] == claim["id"])
+        self.assertEqual(c["ext"]["qualitative"], {"test_flags": ["coded_before_plan"],
+                                                   "counts": {"n": {"codes": ["D90"], "distinct_by": "year"}}})
+        self.assertEqual(c["test"]["quantities"]["n"], {"variable": "count: n"})
+        self.assertNotIn("flags", c["test"])
+        self.assertTrue(all("quantity" not in q for q in c["test"]["quantities"].values()))
+        self.assertEqual(out["extensions"], {"qualitative": "0.1"})
+        out["definitions"][-1]["ext"] = {"qualitative": {"code": {"include": "asks for automatic arranging"}}}
+        self.assertEqual(validate(out).errors, [])

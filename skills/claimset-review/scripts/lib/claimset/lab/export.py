@@ -12,16 +12,16 @@ import subprocess
 from pathlib import Path
 
 from .. import LAB_SPEC_VERSION, SPEC_VERSION, __version__
+from .. import validate as _claimset
 from .anchor import covers, read_anchors
 from . import decision as _decision
 from . import record as _record
-from .core import (RENAMED_KINDS, SETUP_ROLES, TERM_ID_RE, TERM_MARK_RE, LabError, State, agent_base, file_hash, final_statuses,
+from .core import (FLAGS, RENAMED_KINDS, SETUP_ROLES, TERM_ID_RE, TERM_MARK_RE, LabError, State, agent_base, file_hash, final_statuses,
                    is_withheld, plan_flags, verify)
 
 FINAL = {"supported", "not_supported", "inconclusive", "revised", "abandoned"}
 OUTCOMES = ("supported", "not_supported", "inconclusive")
-ARTEFACT_KINDS = {"code", "data", "protocol", "proof", "model", "software", "figure", "table", "prompt",
-                  "trace", "manuscript", "other"}
+ARTEFACT_KINDS = _claimset.ENUM["artefact_kind"]
 
 
 BLOB_PATTERNS = (
@@ -268,8 +268,10 @@ class _Exporter:
                 refs[res["id"]] = f"{eid}.{rid}"
                 entry = {"id": rid}
                 entry.update({("variable" if k == "quantity" else k): res["body"][k]
-                              for k in ("quantity", "value", "unit", "interval", "conditions")
+                              for k in ("variable", "quantity", "value", "unit", "interval", "conditions")
                               if res["body"].get(k) is not None})
+                if isinstance(res["body"].get("ext"), dict):
+                    entry["ext"] = dict(res["body"]["ext"])      # an observation's extension blocks (§9)
                 results.append(entry)
         visible = [r for r in runs if not is_withheld(r)]
         plans = []
@@ -325,11 +327,13 @@ class _Exporter:
     def coded_sources(self, runs):
         """The sources whose codings the runs read (from their codings.json), or None if none read codings."""
         out, any_coded = [], False
+        from .qualitative import run_codings
         for r in runs:
-            if not isinstance(r["body"].get("codings"), dict):
+            codings = run_codings(r["body"])
+            if not isinstance(codings, dict):
                 continue
             any_coded = True
-            path = self.lab.root / "runs" / r["id"] / str(r["body"]["codings"].get("path"))
+            path = self.lab.root / "runs" / r["id"] / str(codings.get("path"))
             try:
                 snap = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
@@ -403,6 +407,39 @@ class _Exporter:
                                    f"claim a replication or extension of it")
         return claim, cited_runs
 
+    def ext_block(self, obj, name):
+        """The block of extension `name` on a claimset object, created if needed."""
+        return obj.setdefault("ext", {}).setdefault(name, {})
+
+    def flag_owner(self, flag):
+        """The declared extension whose test flag this is."""
+        for name, _impl, mod in self.st.declared():
+            if mod is not None and flag in getattr(mod, "TEST_FLAGS", ()):
+                return name
+        raise LabError("schema", f"export: no declared extension has the test flag {flag}")
+
+    def test_quantities(self, claim, pv):
+        """A claim's test quantities bind results by `variable` (claimset §3.3.3); counts of coded material go to
+        the qualitative block of the claim (qualitative §2.7), their codes renamed with the definitions."""
+        quantities = claim["test"].get("quantities")
+        if not isinstance(quantities, dict):
+            return
+        from ..extensions.qualitative_count import result_variable
+        from .qualitative import count_specs
+        counts = count_specs(pv["body"])
+        out = {}
+        for name, q in quantities.items():
+            if not isinstance(q, dict):
+                out[name] = q
+                continue
+            q = {("variable" if k == "quantity" else k): v for k, v in q.items() if k != "count"}
+            if name in counts:
+                q["variable"] = result_variable(name)
+                self.ext_block(claim, "qualitative").setdefault("counts", {})[name] = json.loads(
+                    json.dumps(counts[name]))
+            out[name] = q
+        claim["test"]["quantities"] = out
+
     def add_deviation_limitation(self, claim, run, plan_version, dv):
         lid = f"L{len(self.limitations) + 1}"
         self.limitations.append({
@@ -454,9 +491,14 @@ class _Exporter:
                                                    if k in used}
                 claim["test"].update({"verdict": "computed" if _decision.computed(rule) else "judged",
                                       "runs": pv["body"].get("runs", 1), "lab_plan": pv["id"]})
+                self.test_quantities(claim, pv)
                 flags = plan_flags(st, pv, runs)
-                if flags:
-                    claim["test"]["flags"] = flags
+                core = [f for f in flags if f in FLAGS]
+                if core:
+                    claim["test"]["flags"] = core
+                for f in flags:
+                    if f not in core:                 # an extension's flag goes into its block on the claim
+                        self.ext_block(claim, self.flag_owner(f)).setdefault("test_flags", []).append(f)
                 if pv["body"].get("addresses"):
                     claim["test"]["addresses"] = list(pv["body"]["addresses"])
                 for r, dv in devs:
@@ -612,6 +654,8 @@ class _Exporter:
                                           ("description", b.get("description"))) if v})
             if art["kind"] in ("figure", "table") and "description" not in art:
                 self.todo(f"artefacts.{aid}.description", f"describe what {aid} shows, self-contained")
+            if isinstance(cur["body"].get("ext"), dict):
+                art["ext"] = json.loads(json.dumps(cur["body"]["ext"]))   # an event's blocks are its artefact's (§9)
             self.artefacts.append(art)
         self.export_sources()
         lab_aid = f"A{len(self.artefacts) + 1}"
@@ -710,6 +754,8 @@ class _Exporter:
                               f"since a page at a URL can change or disappear")
                 self.references.append(ref)
                 art["reference"] = bid
+            if isinstance(cur["body"].get("ext"), dict):
+                art["ext"] = json.loads(json.dumps(cur["body"]["ext"]))   # an event's blocks are its artefact's (§9)
             self.artefacts.append(art)
         art_of = {sr: aid for aid, sr in self.mapping.items() if isinstance(sr, str) and sr.startswith("SR")}
         self.exported_quotes = set()
@@ -726,7 +772,7 @@ class _Exporter:
     def coded_evidence(self, ev, srcs, art_of):
         """Evidence from runs that read codings: the quoted passages of its sources as excerpts, how the coding
         was done as a limitation, and what did the counting (§9)."""
-        from .sources import current_codings
+        from .qualitative import current_codings
         dmap = getattr(self, "dmap", {})
         codings = [c for c in current_codings(self.st) if c["body"].get("source") in srcs]
         results = ev.setdefault("results", [])
@@ -769,7 +815,7 @@ class _Exporter:
 
     def excerpt_todo(self):
         """Codings with a quote, as the excerpts a claim can give (claimset §3.4, rule 78)."""
-        from .sources import current_codings
+        from .qualitative import current_codings
         art_of = {sr: aid for aid, sr in self.mapping.items() if isinstance(sr, str) and sr.startswith("SR")}
         quoted = [c for c in current_codings(self.st) if isinstance(c["body"].get("quote"), dict)
                   and c["id"] not in getattr(self, "exported_quotes", set())]
@@ -888,10 +934,12 @@ class _Exporter:
             kind = cur["body"].get("kind")
             d = {"id": did, "term": cur["body"].get("term"), "kind": RENAMED_KINDS.get(kind, kind),
                  "definition": cur["body"].get("definition")}
-            code = cur["body"].get("code")
-            if isinstance(code, dict):          # a code of the codebook: its criteria are part of what it means
-                d["definition"] = (f"{d['definition'].rstrip()} Coded when: {code.get('include', '').rstrip('.')}."
-                                   + (f" Not coded when: {code['exclude'].rstrip('.')}." if code.get("exclude") else ""))
+            from .qualitative import code_of
+            if isinstance(cur["body"].get("ext"), dict):
+                d["ext"] = json.loads(json.dumps(cur["body"]["ext"]))   # a term's blocks are its definition's (§9)
+            code = code_of(cur["body"])
+            if isinstance(code, dict):          # a code of the codebook (records before v0.20 had it on the term)
+                self.ext_block(d, "qualitative")["code"] = code
             if cur["body"].get("broader"):
                 d["_broader"] = list(cur["body"]["broader"])
             if cur["body"].get("source"):
@@ -918,9 +966,9 @@ class _Exporter:
 
         for c in self.claims:
             c["statement"] = marks(c.get("statement"))
-            for q in ((c.get("test") or {}).get("quantities") or {}).values():
-                if isinstance(q, dict) and isinstance(q.get("count"), dict):
-                    q["count"] = dict(q["count"], codes=[swap(x) for x in q["count"].get("codes") or []])
+            for spec in (((c.get("ext") or {}).get("qualitative") or {}).get("counts") or {}).values():
+                if isinstance(spec, dict):
+                    spec["codes"] = [swap(x) for x in spec.get("codes") or []]
             ab = c.get("about")
             if isinstance(ab, dict):
                 c["about"] = {"subject": swap(ab.get("subject")), "relation": ab.get("relation"),
@@ -968,7 +1016,27 @@ class _Exporter:
                  "warrants": [], "limitations": self.limitations, "artefacts": self.artefacts}
         if self.references:
             draft["references"] = self.references
+        used = self.extensions_used(draft)
+        if used:
+            draft["extensions"] = used
         return {"draft": draft, "completion": self.completion, "mapping": self.mapping}
+
+    def extensions_used(self, draft):
+        """{name: version} of the extensions whose blocks the draft has, at the versions the record declared."""
+        names = set()
+
+        def walk(x):
+            if isinstance(x, dict):
+                if isinstance(x.get("ext"), dict):
+                    names.update(x["ext"])
+                for v in x.values():
+                    walk(v)
+            elif isinstance(x, list):
+                for v in x:
+                    walk(v)
+        walk(draft)
+        from .. import extensions as _ext
+        return {n: self.st.extensions.get(n) or _ext.latest(n) for n in sorted(names)}
 
 
 def export(lab, paper=None):

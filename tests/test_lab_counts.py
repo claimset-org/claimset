@@ -7,8 +7,8 @@ import sys
 import unittest
 from pathlib import Path
 
-from claimset.lab import count as counter
-from claimset.lab import sources
+from claimset.extensions import qualitative_count as counter
+from claimset.lab import qualitative, sources
 from claimset.lab.core import LabError, plan_flags, verify
 from claimset.lab.export import _blob_pattern, export
 from claimset.lab.run import count_run
@@ -61,7 +61,7 @@ class CountCase(LabCase):
 
 class TestCounter(CountCase):
     def snapshot(self):
-        return sources.codings_snapshot(self.lab.state())
+        return qualitative.codings_snapshot(self.lab.state())
 
     def test_counts_follow_broader_codes_and_distinct_keys(self):
         self.code_all()
@@ -98,7 +98,7 @@ class TestCountedTests(CountCase):
         self.code_all()
         pl = self.plan()
         out = count_run(self.lab, self.agent, plan=pl)
-        vals = {r["body"]["quantity"]: r["body"]["value"] for r in out["results"]}
+        vals = {r["body"]["variable"]: r["body"]["value"] for r in out["results"]}
         self.assertEqual((vals["count: years"], vals["count: authors"]), (4, 4))
         self.assertEqual(out["run"]["body"]["label"], "confirmatory")
         st = self.lab.state()
@@ -109,12 +109,14 @@ class TestCountedTests(CountCase):
         flags = plan_flags(st, st.plan_rule_version(pl), [out["run"]])
         self.assertIn("coded_before_plan", flags)                 # coded, then planned: the flag says so
         claim = next(c for c in export(self.lab)["draft"]["claims"] if c.get("hypothesis", {}).get("lab_event") == h)
-        self.assertEqual(claim["test"]["quantities"]["years"]["count"]["distinct_by"], "year")
-        self.assertIn("coded_before_plan", claim["test"]["flags"])
-        self.assertNotIn("code_changed_after_plan", claim["test"]["flags"])     # the counter is the tool's code
+        self.assertEqual(claim["test"]["quantities"]["years"], {"variable": "count: years"})
+        self.assertEqual(claim["ext"]["qualitative"]["counts"]["years"]["distinct_by"], "year")
+        self.assertIn("coded_before_plan", claim["ext"]["qualitative"]["test_flags"])   # the extension's flag
+        self.assertNotIn("code_changed_after_plan", claim["test"].get("flags", []))  # the counter is the tool's code
+        self.assertEqual(export(self.lab)["draft"]["extensions"], {"qualitative": "0.1"})
         draft = export(self.lab)["draft"]
         defs = {d["term"]: d["id"] for d in draft["definitions"]}
-        self.assertEqual(claim["test"]["quantities"]["years"]["count"]["codes"], [defs["arranging"]])
+        self.assertEqual(claim["ext"]["qualitative"]["counts"]["years"]["codes"], [defs["arranging"]])
         ev = next(e for e in draft["evidence"] if e["id"] == claim["support"][0]["evidence"])
         self.assertEqual((claim["support"][0]["kind"], ev["profile"], ev["analytic_approach"], ev["data_sources"],
                           ev["n_participants_or_cases"]), ("empirical_qual", "qual", "content_analysis", ["document"], 6))
@@ -143,7 +145,7 @@ class TestCountedTests(CountCase):
                               "decision": {"framework": "qualitative",
                                            "quantities": {"n": {"count": {"codes": [plain]}}},
                                            "supported": "n >= 5", "not_supported": "n < 2"}})
-        self.assertEqual(cm.exception.rule, "L27")
+        self.assertEqual(cm.exception.rule, "qualitative.L3")
 
     def test_L15_a_broken_count_is_refused(self):
         with self.assertRaises(LabError) as cm:
@@ -151,7 +153,7 @@ class TestCountedTests(CountCase):
                               "decision": {"framework": "qualitative",
                                            "quantities": {"n": {"count": {"codes": [self.arr], "unit": "post"}}},
                                            "supported": "n >= 5", "not_supported": "n < 2"}})
-        self.assertEqual(cm.exception.rule, "L15")
+        self.assertEqual(cm.exception.rule, "qualitative.L3")
 
     def test_an_exploratory_count(self):
         self.code_all()
@@ -190,6 +192,21 @@ class TestCountCli(TestCli):
         self.assertEqual(code, 0, err)
         self.assertIn("count: n = 1", out)
         self.assertIn("RN1 (exploratory, success)", err)
+        self.run_cli("lab", "question", "Do people ask for arranging?")
+        self.run_cli("lab", "hypothesis", "People ask for arranging.", "--question", "Q1")
+        code, out, err = self.run_cli("lab", "plan", "--kind", "confirmatory", "--hypotheses", "H1", "--design", "d",
+                                      "--analysis", "a", "--framework", "qualitative",
+                                      "--quantity", 'n={"count": {"codes": ["TM1"]}}',
+                                      "--supported", "n >= 1", "--not-supported", "n < 1")
+        self.assertEqual(code, 0, err)
+        from claimset.lab.core import Lab
+        lab = Lab(Path(os.environ["CLAIMSET_LAB"]) if os.environ.get("CLAIMSET_LAB") else Path("lab"))
+        plan = lab.state().get("PL1")["body"]
+        self.assertEqual(plan["decision"]["quantities"], {"n": {"variable": "count: n"}})
+        self.assertEqual(plan["ext"], {"qualitative": {"counts": {"n": {"codes": ["TM1"]}}}})
+        code, out, err = self.run_cli("lab", "count", "--plan", "PL1")
+        self.assertEqual(code, 0, err)
+        self.assertIn("count: n = 1", out)
 
 
 if __name__ == "__main__":
@@ -209,7 +226,7 @@ class TestTrialFixes(CountCase):
         self.add("coding", {"source": other["id"], "codes": [], "none_apply": True, "unit": "thread"})
         with self.assertRaises(LabError):
             self.add("coding", {"source": other["id"], "codes": [self.arr], "none_apply": True})
-        snap = sources.codings_snapshot(self.lab.state())
+        snap = qualitative.codings_snapshot(self.lab.state())
         self.assertEqual(len({c["source"] for c in snap["codings"]}), 7)
         self.assertEqual(counter.count(snap, {"codes": [self.arr]})["value"], 5)    # not counted for any code
 

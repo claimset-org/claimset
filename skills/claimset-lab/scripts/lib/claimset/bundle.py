@@ -63,7 +63,7 @@ def files(name):
                rev_name: rev}
         if name in ("claimset-revise", "claimset-review"):
             out[f"references/{spec.name.replace('claimset-v', 'spec-v')}"] = spec
-            out.update(_extension_specs())
+        out.update(_extension_specs())
         for rel in _package_modules():
             out[f"scripts/lib/claimset/{rel.as_posix()}"] = PACKAGE / rel
         return out

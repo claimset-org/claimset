@@ -13,15 +13,15 @@ import math
 import operator
 import re
 
-FRAMEWORKS = ("frequentist", "equivalence", "bayesian", "deterministic", "formal", "qualitative")
-REQUIRED = {
-    "frequentist": ("alpha", "test", "sides", "correction", "sample"),
-    "equivalence": ("alpha", "test", "lower_bound", "upper_bound", "sample"),
-    "bayesian": ("prior", "threshold", "sample"),
-}
+from .. import validate as _claimset
+
+# The frameworks, their required parameters and the outcomes are the claimset's (claimset §3.3.3).
+FRAMEWORKS = tuple(sorted(_claimset.ENUM["framework"]))
+REQUIRED = _claimset.TEST_PARAMETERS
 SIDES = ("two_sided", "greater", "less")
 FIELDS = ("value", "interval.lower", "interval.upper")
-OUTCOMES = ("supported", "not_supported", "inconclusive")
+OUTCOMES = ("supported", "not_supported", "inconclusive")          # the order verdicts are reported in
+assert set(OUTCOMES) == _claimset.ENUM["outcome"]
 TEXT_RULE_OUTCOME = {"supported": "supported", "not_supported": "not_supported", "neither": "inconclusive"}
 NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 MAX_RULE_LENGTH = 1000
@@ -225,23 +225,24 @@ def problems(decision, runs=1, hypotheses=None, same=None):
     names = set(numeric_parameters(decision))
     q = decision.get("quantities")
     if q is not None and not isinstance(q, dict):
-        out.append("quantities must be an object {name: {quantity, conditions, field, run}}")
+        out.append("quantities must be an object {name: {variable, conditions, field, run}}")
     elif q:
         for name, spec in q.items():
             if not NAME_RE.match(str(name)):
                 out.append(f"quantity name '{name}' must start with a letter and use only letters, digits and _")
             elif name in names:
                 out.append(f"'{name}' is both a quantity and a parameter")
-            if isinstance(spec, dict) and "count" in spec:     # a count over the codings (§5.21.1)
-                from . import count as _count
-                if "quantity" in spec:
-                    out.append(f"quantity '{name}' is a count or a result's quantity, not both")
+            if isinstance(spec, dict) and "count" in spec:
+                # a count over the codings, as records begun before lab record v0.20 wrote it (qualitative §2.4)
+                from ..extensions.qualitative_count import spec_problems
+                if "quantity" in spec or "variable" in spec:
+                    out.append(f"quantity '{name}' is a count or binds a result's variable, not both")
                 bad = sorted(set(spec) - {"count", "run"})
                 if bad:
                     out.append(f"quantity '{name}' is a count: it has only count and run, not {', '.join(bad)}")
-                out += _count.spec_problems(name, spec["count"])
-            elif not isinstance(spec, dict) or not isinstance(spec.get("quantity"), str) or not spec["quantity"].strip():
-                out.append(f"quantity '{name}' needs the text of the result's quantity")
+                out += spec_problems(name, spec["count"])
+            elif not isinstance(spec, dict) or not isinstance(bound_variable(spec), str) or not bound_variable(spec).strip():
+                out.append(f"quantity '{name}' needs the variable of the result it binds")
                 continue
             if spec.get("conditions") is not None and not isinstance(spec["conditions"], dict):
                 out.append(f"conditions of quantity '{name}' must be an object")
@@ -305,6 +306,17 @@ def _by_run(results):
     return [list(results)]
 
 
+def bound_variable(spec):
+    """The variable a quantity binds (claimset §3.3.3): `variable`, or `quantity` in records begun before lab record
+    v0.20."""
+    return spec.get("variable", spec.get("quantity")) if isinstance(spec, dict) else None
+
+
+def observed(result):
+    """What a result observes: its `variable`, or `quantity` in records begun before lab record v0.20."""
+    return result.get("variable", result.get("quantity")) if isinstance(result, dict) else None
+
+
 def bind(decision, results):
     """Bind each quantity to one result. Returns (values, problems).
 
@@ -322,11 +334,11 @@ def bind(decision, results):
         run = spec.get("run")
         pool = per_run[run - 1] if isinstance(run, int) and 1 <= run <= len(per_run) else \
             [r for rs in per_run for r in rs]
-        want = spec.get("quantity")
-        if "count" in spec:
-            from .count import result_quantity
-            want = result_quantity(name)
-        matches = [r for r in pool if isinstance(r, dict) and r.get("quantity") == want
+        want = bound_variable(spec)
+        if "count" in spec:                     # records begun before lab record v0.20
+            from ..extensions.qualitative_count import result_variable
+            want = result_variable(name)
+        matches = [r for r in pool if isinstance(r, dict) and observed(r) == want
                    and all((r.get("conditions") if isinstance(r.get("conditions"), dict) else {}).get(k) == v
                            for k, v in cond.items())]
         if len(matches) != 1:

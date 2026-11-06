@@ -263,8 +263,8 @@ class TestFixtureLab(unittest.TestCase):
 SCRIPT = """
 import json, os, sys
 d = float(sys.argv[1])
-json.dump([{"quantity": "mean difference", "value": d, "interval": {"level": 0.95, "lower": d - 0.05, "upper": d + 0.05}},
-           {"quantity": "p-value", "value": round(d / 10, 6)}], open(os.environ["CLAIMSET_RESULTS"], "w"))
+json.dump([{"variable": "mean difference", "value": d, "interval": {"level": 0.95, "lower": d - 0.05, "upper": d + 0.05}},
+           {"variable": "p-value", "value": round(d / 10, 6)}], open(os.environ["CLAIMSET_RESULTS"], "w"))
 """
 
 
@@ -329,7 +329,7 @@ class TestLabChecks(RuleCase):
         self.assertEqual(uncounted_exclusions(st, pv, runs), ["edge"])
         self.script.write_text(SCRIPT.replace('"value": round(d / 10, 6)}',
                                               '"value": round(d / 10, 6)}, '
-                                              '{"quantity": "models excluded by edge", "value": 3}'))
+                                              '{"variable": "models excluded by edge", "value": 3}'))
         pl2 = self.plan(rule=rule, exclusions=[{"name": "edge", "rule": "within edge_band of 1"}])
         self.go(0.1, plan=pl2)
         st = self.lab.state()

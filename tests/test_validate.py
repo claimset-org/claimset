@@ -2087,9 +2087,16 @@ class TestExcerptLocators(Base):
     def test_qualitative_test_flags_are_valid(self):
         d = load("submission-from-lab.json")
         claim = next(c for c in d["claims"] if c.get("test"))
-        for flag in ("sources_captured_after_plan", "coded_before_plan", "codebook_changed_after_plan"):
+        claim["test"]["flags"] = ["sources_captured_after_plan"]
+        self.assertNotIn("47", self.rules(d)[0])
+        for flag in ("coded_before_plan", "codebook_changed_after_plan"):   # the qualitative extension's (v0.38)
             claim["test"]["flags"] = [flag]
-            self.assertNotIn("47", self.rules(d)[0], flag)
+            self.assertRule(d, "47")
+            del claim["test"]["flags"]
+            claim["ext"] = {"qualitative": {"test_flags": [flag]}}
+            d["extensions"] = {"qualitative": "0.1"}
+            self.assertEqual(self.rules(d)[0] & {"47", "80", "qualitative.3"}, set(), flag)
+            del claim["ext"], d["extensions"]
         claim["test"]["flags"] = ["read_the_answers_first"]
         self.assertRule(d, "47")
 

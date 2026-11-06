@@ -68,7 +68,7 @@ ENUM = {
     "framework": {"frequentist", "equivalence", "bayesian", "deterministic", "formal", "qualitative"},
     "verdict": {"computed", "judged"},
     "test_flag": {"code_changed_after_plan", "holdout_used_elsewhere", "reproduces_prompting_result",
-                  "sources_captured_after_plan", "coded_before_plan", "codebook_changed_after_plan"},
+                  "sources_captured_after_plan"},
     "assumption_category": {"theoretical", "statistical", "methodological", "data", "axiom",
                             "theorem_condition", "paradigmatic"},
     "check": {"tested", "sensitivity_analysed", "unchecked", "untestable"},
@@ -1452,9 +1452,28 @@ def check_test(r, test, w):
             r.err("47", f"{w}.parameters.{key}", f"required by the {fw} framework")
     check_enum(r, "47", f"{w}.verdict", test.get("verdict"), "verdict", required=True)
     for i, f in enumerate(as_list(test.get("flags"))):
+        if f in ("coded_before_plan", "codebook_changed_after_plan"):
+            r.err("47", f"{w}.flags[{i}]", f"{f} is a flag of the qualitative extension since v0.38: "
+                                           f"ext.qualitative.test_flags on the claim (`claimset migrate` moves it)")
+            continue
         check_enum(r, "47", f"{w}.flags[{i}]", f, "test_flag", required=True)
     if test.get("verdict") == "computed" and not test.get("quantities"):
         r.err("47", f"{w}.quantities", "a computed verdict needs the quantities the rules were evaluated on")
+    quantities = test.get("quantities")
+    if quantities is not None and not isinstance(quantities, dict):
+        r.err("47", f"{w}.quantities", "an object {name: {variable, conditions, field, run}}")
+    for name, q in (quantities.items() if isinstance(quantities, dict) else []):
+        if not isinstance(q, dict):
+            r.err("47", f"{w}.quantities.{name}", "an object {variable, conditions, field, run}")
+        elif "quantity" in q:
+            r.err("47", f"{w}.quantities.{name}.quantity", "renamed in v0.38: the result a quantity binds is named "
+                                                          "by its variable (`claimset migrate` renames it)")
+        elif "count" in q:
+            r.err("47", f"{w}.quantities.{name}.count", "a count over codings is in the qualitative extension "
+                                                       "since v0.38: ext.qualitative.counts on the claim, and the "
+                                                       "quantity binds its variable \"count: <name>\"")
+        elif not isinstance(q.get("variable"), str) or not q["variable"].strip():
+            r.err("47", f"{w}.quantities.{name}.variable", "the variable of the result the quantity binds")
     if "addresses" in test:
         if not isinstance(test["addresses"], list) or not test["addresses"]:
             r.err("59", f"{w}.addresses", "a non-empty list of review comments' global IDs")

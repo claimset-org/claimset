@@ -114,7 +114,7 @@ Novelty comments never lower a credibility score.
  "requested_action": "Run the check of smooth 4.6.0 from CRAN on the models of C1 and compare its decisions with per_lag_max().",
  "resolution_test": {"procedure": "Load smooth 4.6.0 from CRAN; on the 3042 ETS(A,N,A) and 200 GUM models of C1, compare its check's decisions with those of per_lag_max().",
                      "framework": "deterministic", "parameters": {},
-                     "quantities": {"diff": {"quantity": "models whose admissibility decision differs, smooth 4.6.0 against per_lag_max()"}},
+                     "quantities": {"diff": {"variable": "models whose admissibility decision differs, smooth 4.6.0 against per_lag_max()"}},
                      "upheld": "diff > 0", "withdrawn": "diff == 0"}}
 ```
 

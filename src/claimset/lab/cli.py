@@ -18,6 +18,7 @@ from . import guard as _guard
 from . import protect as _protect
 from . import layout as _layout
 from . import record as _record
+from .. import validate as _claimset
 
 #: Commands that only read the record: they are allowed anywhere and never commit.
 READERS = {"summary", "list", "show", "verify", "verdict", "guard", "studies", "quote"}
@@ -223,12 +224,38 @@ def _about_from_args(args):
             "comparator": args.comparator, "conditions": list(args.condition or [])}
 
 
+def _extension(args, name, by=None):
+    """Declare an extension the command needs, unless the record has it (§5.22). Returns the record's view."""
+    from .. import extensions as _ext
+    lab = _lab(args)
+    by = _actor(args) if by is None else by
+    st = lab.view(by)
+    if name not in st.extensions:
+        if st.owner:
+            raise LabError("L30", f"the {name} extension is declared in the main log, before agent logs that use "
+                                  f"it start: `claimset lab extension {name}` there, after merging this log")
+        version = _ext.latest(name)
+        event = lab.append("extension", {"name": name, "version": version}, by=by)
+        _emit(args, event)
+        st = lab.view(by)
+    return st
+
+
+def cmd_extension(args):
+    from .. import extensions as _ext
+    version = args.version or _ext.latest(args.name)
+    if version is None:
+        raise LabError("L30", f"extension: this tool does not know the extension {args.name}; "
+                              f"spec/extensions/README.md lists the extensions")
+    return _write(args, "extension", {"name": args.name, "version": version})
+
+
 def cmd_term(args):
-    code = None
+    body = {"term": args.term, "kind": args.kind, "definition": args.definition, "source": args.source,
+            "broader": args.broader or None}
     if args.include or args.exclude or args.example:
-        code = _clean({"include": args.include, "exclude": args.exclude, "examples": args.example or None})
-    return _write(args, "term", {"term": args.term, "kind": args.kind, "definition": args.definition,
-                                 "source": args.source, "code": code, "broader": args.broader or None})
+        body["code"] = _clean({"include": args.include, "exclude": args.exclude, "examples": args.example or None})
+    return _write(args, "term", _record_forms(args, "term", _clean(body)))
 
 
 def cmd_code(args):
@@ -420,7 +447,7 @@ def _decision_from_args(args):
             raise LabError("schema", f"--quantity '{q}': use name=\"quantity text\" or name='{{json}}'")
         name, spec = q.split("=", 1)
         spec = _json_or_text(spec)
-        d.setdefault("quantities", {})[name] = spec if isinstance(spec, dict) else {"quantity": str(spec)}
+        d.setdefault("quantities", {})[name] = spec if isinstance(spec, dict) else {"variable": str(spec)}
     for outcome, given in (("supported", args.supported), ("not_supported", args.not_supported)):
         for text in given or []:
             m = RULE_FOR_RE.match(text)
@@ -429,6 +456,15 @@ def _decision_from_args(args):
             else:
                 d[outcome] = text
     return d or None
+
+
+def _record_forms(args, etype, body):
+    """The body in the record's forms, declaring the extensions it needs first (core.record_forms)."""
+    from .core import record_forms
+    body, needs = record_forms(_view(args), etype, body)
+    for name in sorted(needs):
+        _extension(args, name)
+    return body
 
 
 def cmd_plan(args):
@@ -472,6 +508,7 @@ def cmd_plan(args):
             "decision": decision, "requires_approval": True if args.requires_approval else None,
             "runs": args.runs, "criterion": args.criterion, "data": data, "holdout": holdout,
             "code_version": commit, "dirty": dirty if commit is not None else None}
+    body = _record_forms(args, "plan", body)
     warnings = plan_warnings(_view(args), body)
     code = _write(args, "plan", body)
     for w in warnings:
@@ -563,7 +600,8 @@ def _parse_param(p):
 
 
 def cmd_count(args):
-    """A run of the built-in counter (§5.21.1): the plan's counts, or one exploratory count from the options."""
+    """A run of the qualitative extension's counter (qualitative §2.4): the plan's counts, or one exploratory count
+    from the options."""
     from .run import count_run
     lab = _lab(args)
     by = _actor(args)
@@ -849,9 +887,8 @@ def add_parser(subparsers):
     p = cmd("term", cmd_term, "record a term: a method, data set, population, design, variable, concept or "
                               "theory the study names (the claimset's definitions are exported from these)")
     p.add_argument("term", help="the term as the study writes it, e.g. \"MASE\"")
-    p.add_argument("--kind", required=True,
-                   choices=["method", "intervention", "population", "data", "setting", "design", "variable",
-                            "concept", "theory", "other"])
+    p.add_argument("--kind", required=True, choices=sorted(_claimset.ENUM["definition_kind"]),
+                   help="a kind of definition (claimset §3.2)")
     p.add_argument("--definition", required=True,
                    help="what the term means here; for the study's own method, every defining equation")
     p.add_argument("--source", help="where a borrowed term is defined: a DOI, arXiv ID or citation")
@@ -860,6 +897,11 @@ def add_parser(subparsers):
     p.add_argument("--exclude", help="a code's exclusion criteria: what does not count, though it may look alike")
     p.add_argument("--example", action="append", metavar="TEXT", help="a typical passage for the code; repeat")
     p.add_argument("--broader", nargs="+", metavar="TM", help="the broader terms (codes, themes) this is a kind of")
+
+    p = cmd("extension", cmd_extension, "declare an extension of the claimset format the record uses (lab record "
+                                        "§5.22); commands that need one declare it themselves")
+    p.add_argument("name", help="the extension, as registered (spec/extensions/README.md): e.g. qualitative")
+    p.add_argument("--version", help="the version to follow (default: the latest this tool knows)")
 
     p = cmd("count", cmd_count, "count coded material from the codings in force: a plan's counts (its deciding "
                                 "run) or an exploratory count")
@@ -969,8 +1011,7 @@ def add_parser(subparsers):
     p = cmd("artefact", cmd_artefact, "register a file or resource (hashed if it is a local file)")
     p.add_argument("path_or_uri")
     p.add_argument("--kind", required=True,
-                   choices=["code", "data", "protocol", "proof", "model", "software", "figure", "table",
-                            "prompt", "trace", "manuscript", "other"])
+                   choices=sorted(_claimset.ENUM["artefact_kind"]), help="an artefact kind (claimset §3.6)")
     p.add_argument("--description", required=True)
     p.add_argument("--licence")
     p.add_argument("--hash")

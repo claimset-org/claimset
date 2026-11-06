@@ -28,7 +28,7 @@ def published_v1():
 TEST_RHO = {"procedure": "Compute the correlation of method M's forecast errors between every pair of the 1,200 "
                          "series of E1; report the largest absolute value.",
             "framework": "deterministic", "parameters": {},
-            "quantities": {"rho": {"quantity": "largest absolute cross-series correlation of forecast errors"}},
+            "quantities": {"rho": {"variable": "largest absolute cross-series correlation of forecast errors"}},
             "upheld": "rho > 0.3", "withdrawn": "rho <= 0.3"}
 
 
