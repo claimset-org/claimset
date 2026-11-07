@@ -50,6 +50,10 @@ From the second round of field trials:
 - §3.2: a `variable` or `setting` may give the `unit` of its values, so that a condition keyed by it has a unit (`{"D9": 126.5}` in GeV); an `intervention` may say what it `targets` (the gene a knockdown acts on). New kind `process` (a reaction, a decay, a pathway). New rule 88.
 - §3.4: `se` covers the posterior standard deviation of a Bayesian estimate. §3.3.3: a trial registry entry's CURIE uses the prefix the Bioregistry gives the registry.
 
+Evidence that is direct observation:
+
+- §3.4, *Profile `observation`* (new), and §4: support kind `empirical_obs`, pointing to evidence of profile `observation`, for claims that rest on what an instrument or an observer recorded and the paper shows: an image (a micrograph, a blot, a telescope image), a spectrum, a determined structure, a described specimen, a recording. The evidence lists its `records`, each `{kind, artefact, description}`, and what was seen is its results. *Choosing the profile* separates it from `quant` and `qual`. New rule 89, warning 37; warnings 8, 17 and 25 apply to it as to `quant`.
+
 ## Changes in v0.38 (since v0.37)
 
 The format becomes a core with extensions. The core holds what every field shares and what claims are compared by across fields: claims and their atoms, support, definitions, observations, assumptions, limitations, provenance and contributors. An extension adds the detail one kind of work needs (the glosses of linguistic examples, the structures of compounds, the endpoints of a trial), in blocks of its own on the objects it concerns. Extensions have their own versions, so one can be added or revised without a new version of the core, and a paper uses as many as it needs.
@@ -990,6 +994,17 @@ The keys of v0.23 to v0.29 map to these: `compared` → `studied`, `data` → `c
 **Profile `qual`**
 `data_sources` (list: `interview` · `focus_group` · `ethnography` · `observation` · `document` · `other`), `n_participants_or_cases`, `sampling`, `analytic_approach` (`thematic` · `grounded_theory` · `ipa` · `discourse` · `framework` · `case_study` · `content_analysis` (coding material against a codebook and counting the codes) · `source_criticism` (establishing a primary source's origin, author, date, purpose and reliability, and reading it in its context) · `other`), `reflexivity` (text). Excerpts are results (above).
 
+**Profile `observation`**
+`records` (required): what was recorded, each `{kind, artefact, description}`. `kind`: `image` (a micrograph, a photograph, a gel or blot, a telescope image) · `spectrum` (any signal over a frequency, mass or energy axis: NMR, IR, mass spectrum, X-ray diffraction pattern) · `structure` (a crystal or molecular structure determined from data) · `specimen` (a physical specimen examined and described: a type specimen, a fossil, an object) · `recording` (a signal over time: a trace, a light curve, a seismogram, an EEG) · `other`. `artefact`: the artefact holding the record, the figure that shows it and, better, the original file (an uncropped blot, a spectrum's raw data); recommended (warning 37). `description`: what the record shows, as text. `n`: optional, how many records or specimens. A figure named as a record's artefact is of function `specimen` (an image or recording that is itself evidence) or `data_plot` (a spectrum or trace drawn from data) (§3.6); results read off it name it in `read_from`. What was seen is recorded as results: a band present (`true`), a peak position (`7.26` with unit `ppm`), a ring diameter (`42` with unit `uas` and its uncertainty), a character of a specimen (a category).
+
+Field detail (instrument settings, acquisition parameters, the lanes of a blot, a specimen's catalogue number and repository) belongs to extensions (§2.7).
+
+**Choosing the profile.** The profile follows how the evidence supports the claim:
+
+- `observation`: the claim is what a record shows, and the paper presents the record: the band is there, the spectrum has these peaks, the structure is this one, the specimen has these characters, the image shows a ring. A number measured off a record (a peak position, a diameter) is a result of observation evidence.
+- `quant`: the claim rests on a statistical analysis across cases, including measurements taken from many records (band intensities quantified over replicate blots and compared by a test, a mass fitted from images with a model). Such evidence may be `derived_from` the observation evidence whose records it measures.
+- `qual`: the claim rests on interpreting words, documents or practices. A document examined as an object (its paper, hand, binding) is a `specimen` record; a document read for what it says is `qual`.
+
 **Profile `simulation`**
 `model`, `parameters` (artefact ID), `runs`, `seeds`, `outputs`.
 
@@ -1040,7 +1055,7 @@ Warrants are for informal argument. Mathematical proofs use proof steps (§3.4).
 
 **Figures.** A figure is recorded by what it does:
 - `data_plot`: a view of observations (a chart, a forest plot, a dose–response curve, a spectrum, a flow diagram of counts). It `shows` the observations, which are recorded as results, tables or bulk data; claims cite the observations, and may cite the figure besides. Values that exist only in the plot are read off it and recorded with `read_from` (§3.4).
-- `specimen`: an image or recording that is itself evidence (a micrograph, a gel or blot, a scan, a photograph of a document or object, an audio sample). What the paper reads from it is recorded as observations whose `read_from` names it (a band present, a structure counted, a script identified).
+- `specimen`: an image or recording that is itself evidence (a micrograph, a gel or blot, a scan, a photograph of a document or object, an audio sample). What the paper reads from it is recorded as observations whose `read_from` names it (a band present, a structure counted, a script identified); the evidence that presents it is of profile `observation`, which lists it in `records` (§3.4).
 - `diagram`: shows an idea, not data (a model's structure, a mechanism, a pipeline, a conceptual framework). It is never evidence: what it shows belongs in definitions (a method, a procedure) or concepts, written out in text, and support does not cite it.
 A reading model learns little from an image; it learns from the observations. Images are files of the submission package (§2.5), never embedded in the claimset.
 
@@ -1206,6 +1221,7 @@ Each support entry: `{kind, <required pointer>, …attributes}`.
 |---|---|---|
 | `empirical_quant` | Statistical analysis of data | `evidence` (profile `quant`) |
 | `empirical_qual` | Qualitative analysis of data | `evidence` (profile `qual`) |
+| `empirical_obs` | Direct observation or characterisation: what a record shows (an image, a spectrum, a structure, a specimen, a recording) | `evidence` (profile `observation`) |
 | `simulation` | Computational experiments on synthetic/model data | `evidence` (profile `simulation`) + an artefact |
 | `demonstration` | Existence shown by construction | `artefacts` |
 | `formal_proof` | Mathematical or logical derivation | `evidence` (profile `formal`) |
@@ -1491,6 +1507,8 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 88. Units and targets (§3.2). `unit`, if present, is on a definition of kind `variable` or `setting` and is non-empty text. `targets`, if present, is on a definition of kind `intervention` and is a non-empty list of IDs of definitions of kind `substance`, `organism`, `biological_material`, `entity` or `process`.
 
+89. Observation evidence (§3.4). Evidence of profile `observation` has `records`, a non-empty list; each record has a `kind` from the list in §3.4 and only `kind`, `artefact` (the ID of an artefact) and `description` (non-empty text). Evidence of other profiles has no `records`.
+
 ### 10.4 Warnings (file accepted, warning recorded)
 
 1. A `recommended` field in §3.11 or §3.12 is missing.
@@ -1500,7 +1518,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 5. No `paper.classification.keywords` in a submission.
 6. Three or more claims share an identical `scope` object (often a sign of scope copied by section; check each claim).
 7. `novelty: extension` without an `extends` relation.
-8. Quant or simulation evidence with neither `estimate`, `results` nor `tables`.
+8. Quant, observation (from v0.39) or simulation evidence with neither `estimate`, `results` nor `tables`.
 9. An artefact without `licence`, unless it names the cited work it is taken from (`reference`) and is not a file of the submission package (§2.5). (Revised in v0.33.)
 10. An agent contributor that is not an `author` has the AI task `writing`; agents that produced the paper's content are authors.
 11. A check was made by an agent that runs on the same model as an `author` agent.
@@ -1509,15 +1527,15 @@ The file records identifier type and venue facts for cited works only. Trust in 
 14. `id_type: reference` in a native paper: give the cited work's identifier.
 15. A `supporting` claim that no principal claim rests on, directly or through other claims (by `depends_on` or `assumptions`, including the assumptions of the evidence a principal claim cites and the assumptions it inherits from the terms it rests on, §3.2 *Assumptions of a term*): link it to the claim that rests on it, or make it `secondary`. (Revised in v0.32 and v0.33.)
 16. A principal or supporting claim rests on a `secondary` claim (by `depends_on` or `assumptions`): a claim that a contribution rests on is `supporting`.
-17. A number in the statement of a claim with `empirical_quant` or `simulation` support matches, at the precision stated, no value in: the results (value, interval, uncertainty, conditions) and tables (conditions, cells, row labels) of the evidence the claim cites; that evidence's `estimate`, `interval`, `uncertainty` and `n`; the claim's `test.parameters` and `scope`; the definitions its statement references. Evidence descriptions do not count. Numbers inside LaTeX, `[[D…]]` markers and model notation (`ETS(A,N,A)`, `AR(1)`), and numbers of sections, tables, figures, equations and theorems, are ignored. The reverse of warning 12: a number a statement reports is a recorded result, or a setting in the scope.
+17. A number in the statement of a claim with `empirical_quant`, `empirical_obs` (from v0.39) or `simulation` support matches, at the precision stated, no value in: the results (value, interval, uncertainty, conditions) and tables (conditions, cells, row labels) of the evidence the claim cites; that evidence's `estimate`, `interval`, `uncertainty` and `n`; the claim's `test.parameters` and `scope`; the definitions its statement references. Evidence descriptions do not count. Numbers inside LaTeX, `[[D…]]` markers and model notation (`ETS(A,N,A)`, `AR(1)`), and numbers of sections, tables, figures, equations and theorems, are ignored. The reverse of warning 12: a number a statement reports is a recorded result, or a setting in the scope.
 18. Two evidence objects have the same `execution.code_version` and the same results (quantity, value and conditions): one computation recorded twice. Record it once and cite it from every claim it supports.
 19. `novelty: no_prior_found` on a claim whose only support is `consensus`: if established knowledge already shows the claim, the claim is known (cite it, or relate to it); if it is not, give the support that shows it. (Revised in v0.22.)
 20. In a native paper, a principal claim lists a limitation with `impact: could_reverse` and `mitigation: none`, and its author assessment neither has strength `low` or `very_low` nor names that limitation by ID in its rationale: say how the risk was weighed, or lower the strength.
 21. A public artefact's `uri` is on a git host and contains no full (40-hexadecimal-digit) commit hash: a branch or tag link can change what it shows.
 22. A statement shows a sign of holding more than one claim (§8 rule 1): a semicolon, a word of contrast, addition or explanation, a side clause with `, which`, a parenthesis holding `and`, `also` or `is`/`are`, a recommendation, or results cited from more than one evidence object. Check it: if one part could be true and another false, split it into claims, each self-contained. A comparison that states where a method is better and where it is not stays one claim.
 23. A claim that is not principal, has no warrant and is not formal, whose only support is `argument`, `consensus`, `expert_judgement` or `unstated`, and on which no claim rests (by `depends_on` or `assumptions`): the paper neither shows nor uses it (§8 rule 9). Support it and link it, record it as an open question, or leave it out; in a converted paper, check that the source's argument uses it. The message names rhetorical wording when the statement has some: importance framing ("crucial", "paramount"), promise ("promising", "paves the way"), sweeping generalisation ("always", "it is well known"), speculation ("may", "could"). The wording alone never raises the warning.
-24. The statement of a claim with `empirical_quant` or `simulation` support repeats three or more values of the result tables it cites (§3.4, *Tables and claims*): state the pattern the paper concludes and cite the table or rows, repeating a value only when the conclusion turns on it; or, if the claim only retells the table, remove it and cite the table from the claims that use it. Numbers are found as for warning 17.
-25. A `secondary` `descriptive` claim with `empirical_quant` or `simulation` support (a result, not a conclusion drawn from results) on which nothing rests: no claim depends on it or lists it in `assumptions`, no warrant names it as a premise, no open question concerns it, and it stands in no relation to another claim of the paper (it neither `explains`, `qualifies`, `supports`, `contradicts` nor `refines` one, nor is the target of such a relation, §3.7). Keep it only if it states a loss, limit or null result of the paper's own method; otherwise the result table of its evidence holds it (§3.3, *Secondary claims in converted papers*). (Revised in v0.33.)
+24. The statement of a claim with `empirical_quant`, `empirical_obs` (from v0.39) or `simulation` support repeats three or more values of the result tables it cites (§3.4, *Tables and claims*): state the pattern the paper concludes and cite the table or rows, repeating a value only when the conclusion turns on it; or, if the claim only retells the table, remove it and cite the table from the claims that use it. Numbers are found as for warning 17.
+25. A `secondary` `descriptive` claim with `empirical_quant`, `empirical_obs` (from v0.39) or `simulation` support (a result, not a conclusion drawn from results) on which nothing rests: no claim depends on it or lists it in `assumptions`, no warrant names it as a premise, no open question concerns it, and it stands in no relation to another claim of the paper (it neither `explains`, `qualifies`, `supports`, `contradicts` nor `refines` one, nor is the target of such a relation, §3.7). Keep it only if it states a loss, limit or null result of the paper's own method; otherwise the result table of its evidence holds it (§3.3, *Secondary claims in converted papers*). (Revised in v0.33.)
 26. A definition without `source` (a term of the paper's own) is named in the statement of a `formal` claim and contains no mathematics (`$…$`): if it is the paper's own method or model, give its defining equations (§3.2, *The paper's own method or model*).
 27. A supporting or secondary claim that is not an assumption has no `about` (§3.3.5). Also: a slot of `about` holds text that equals, ignoring case, the `term` of a definition in the file: give the definition's ID instead.
 28. A definition is named in a claim's `about` and in no setup of the non-formal evidence that claim's support cites, although its kind is `method`, `intervention`, `population`, `data`, `design`, `variable`, `substance`, `organism`, `biological_material`, `entity` or `source` (a part of the study that the setup leaves out; the last five from v0.39). A definition counts as named when the setup names it, names a group it is a member of, or names every member of it (§3.2, *Groups*). (Revised in v0.31.) In v0.34 an evidence object without a setup is an error (rule 61).
@@ -1529,6 +1547,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 34. A claim with `planning: confirmatory_with_deviations` lists no limitation of category `deviation`: record each departure from the plan (§3.3.3).
 35. In a native paper, an interval without `kind`, or an uncertainty component of kind `unspecified`: say what the interval or the ± is (§3.4).
 36. A registered test without `planned_at`: give the registration's date as the registry records it (§3.3.3).
+37. A record of observation evidence without `artefact`: name the figure that shows it and, better, the original file (§3.4).
 
 ## 11. Platform dependencies
 

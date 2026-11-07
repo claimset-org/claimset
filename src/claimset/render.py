@@ -263,6 +263,10 @@ def _evidence(e):
     derived = [f"{x.get('evidence')} ({x.get('how')})" for x in e.get("derived_from") or [] if isinstance(x, dict)]
     if derived:
         lines.append("  derived from " + ", ".join(derived))
+    for x in e.get("records") or []:
+        if isinstance(x, dict):
+            lines.append("  record: " + _join([x.get("kind"), f"in {x['artefact']}" if x.get("artefact") else "",
+                                               x.get("description")], "; "))
     if e.get("estimate") is not None:
         lines.append(f"  estimate: {e.get('estimand', '')} = {_num(e['estimate'])}"
                      + (f" {_uncertainty(e.get('uncertainty'))}" if e.get("uncertainty") else "")
