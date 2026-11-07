@@ -1,6 +1,6 @@
 # Candidate extensions (informative)
 
-Status: working list · Date: 2026-11-06 · Not normative: an extension is specified only when it is registered (`README.md`).
+Status: working list · Date: 2026-11-07 · Not normative: an extension is specified only when it is registered (`README.md`).
 
 This list surveys the extensions the claimset format may need, by kind of work, so that the core can be checked against them before the platform goes live, and extensions can be written in order of need. Each entry says what the extension would add, on which objects, which community standard it would follow, and where the work happens. Names are of kinds of work, not disciplines: a paper uses every extension its work needs.
 
@@ -129,7 +129,7 @@ Priority **1**: wanted for the field trials and the first months after launch. *
 
 ## 4. Order of work
 
-1. Run the field trials: one real paper each for `synthesis`, `wet-lab`, `trial`, `behavioural-experiment`, `ecology-field`, `particle-physics` and `archival`, converted under the core alone, recording what the core cannot hold.
-2. Bring the needs of §1 that the trials confirm into the core, in one version, before the platform goes live: that version is the launch baseline.
-3. Write the priority-1 extensions from what the trials needed beyond the core, each with its test files.
-4. Write further extensions as papers that need them arrive; a paper needing an unregistered extension records what the core can hold, and is corrected when the extension exists.
+1. Done (2026-11-06/07): field trials, one real paper each for `synthesis`, `wet-lab`, `trial`, `behavioural-experiment`, `ecology-field`, `particle-physics` and `archival`, converted under the core alone in two rounds (claimset-eval, `claimset/trials/`).
+2. Done: the needs of §1 the trials confirmed are in the core of v0.39, the version proposed as the launch baseline, except a support kind for direct observation (spectra, blots, described specimens), still open.
+3. After launch, on the platform roadmap (portal `docs/design-v1.md` §1): the priority-1 extensions, from what the trials needed beyond the core, each with its test files: `preregistration`, `trial`, `wet-lab`, `synthesis`, `ecology-field`, `behavioural-experiment`, `particle-physics`, `archival`.
+4. Further extensions as papers that need them arrive; a paper needing an unregistered extension records what the core can hold, and is corrected when the extension exists.

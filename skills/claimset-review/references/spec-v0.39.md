@@ -44,6 +44,12 @@ Smaller gaps from the field trials:
 - §2.6: the baseline is set when the platform launches; until then only the current version is accepted (rule 79 revised), and files of v0.37 and v0.38 are brought over with `claimset migrate`.
 - New rule 86: every field has the type this specification gives it. The validator reports a value of the wrong type (a list where one ID belongs) instead of failing on it, in files of every version.
 
+From the second round of field trials:
+
+- §3.4: a result, or a table column, may say what kind of `statistic` its value is (`mean`, `difference`, `odds_ratio`, `standardised_mean_difference`, `nnt`, …), and that it is `approximate` when the source gives it only approximately ("about 1.5-fold"). New rule 87.
+- §3.2: a `variable` or `setting` may give the `unit` of its values, so that a condition keyed by it has a unit (`{"D9": 126.5}` in GeV); an `intervention` may say what it `targets` (the gene a knockdown acts on). New kind `process` (a reaction, a decay, a pathway). New rule 88.
+- §3.4: `se` covers the posterior standard deviation of a Bayesian estimate. §3.3.3: a trial registry entry's CURIE uses the prefix the Bioregistry gives the registry.
+
 ## Changes in v0.38 (since v0.37)
 
 The format becomes a core with extensions. The core holds what every field shares and what claims are compared by across fields: claims and their atoms, support, definitions, observations, assumptions, limitations, provenance and contributors. An extension adds the detail one kind of work needs (the glosses of linguistic examples, the structures of compounds, the endpoints of a trial), in blocks of its own on the objects it concerns. Extensions have their own versions, so one can be added or revised without a new version of the core, and a paper uses as many as it needs.
@@ -638,6 +644,8 @@ Retracted papers are never deleted. All their claims inherit the retraction stat
 | `identifiers` | list | Registry identifiers of the thing the term names, each a compact identifier `prefix:local` (§4): a chemical (`chebi:15377`, `inchikey:…`), an organism (`ncbitaxon:9606`), a gene or protein (`hgnc:1100`, `uniprot:P04637`), an antibody or cell line (`rrid:AB_2138153`), a data set (`doi:10.…`), a court decision (`ecli:EU:C:2014:317`), a concept (`wikidata:Q…`). `source` says where a term is defined; `identifiers` say which thing it is |
 | `location` | list | A `setting` only: where it is, as points `{latitude, longitude, label}` in decimal degrees (WGS 84): `[{"latitude": 51.43, "longitude": 6.62, "label": "trap 1"}]`. A region is named by `identifiers` (`wikidata:Q183` for Germany) (rule 83) |
 | `measures` | list | A `variable` only: the IDs of the constructs it measures, definitions of kind `concept`: a trust item `D6` with `"measures": ["D9"]`, `D9` being trust (rule 83) |
+| `unit` | string | A `variable` or `setting` only: the unit of its values, a UCUM code (`GeV`, `Cel`, `mg/L`) or text. A condition keyed by the definition has this unit: `{"D9": 126.5}` with D9 the mass in GeV (rule 88) |
+| `targets` | list | An `intervention` only: the IDs of what it acts on, definitions of kind `substance`, `organism`, `biological_material`, `entity` or `process`: a knockdown `D7` with `"targets": ["D13"]`, D13 being the gene (rule 88) |
 
 **Kinds.** The kind says what a term names, whatever role it plays in a study; the role is given by the setup (§3.4) and the claim's `about` (§3.3.5). One term has one kind.
 
@@ -656,12 +664,13 @@ Retracted papers are never deleted. All their claims inherit the retraction stat
 | `organism` | a taxon, strain or breed: a kind of living thing | *Drosophila melanogaster*; *E. coli* K-12; flying insects (Insecta) |
 | `biological_material` | a material of biological origin with an identity of its own: a cell line, an antibody, a plasmid, a tissue or specimen collection | MCF7 cells; the anti-vinculin antibody V9131; a plasmid expressing LifeAct |
 | `entity` | any other physical thing the paper names as such: a gene or protein, a particle, a device, a celestial body, an object | RAC2; the Higgs boson; the ATLAS detector; NGC 1300; the Antikythera mechanism |
+| `process` | a process the paper names as such: a reaction, a decay, a pathway, a transition | the decay of a Higgs boson to two photons; a 1,5-hydrogen atom transfer; the MAPK signalling pathway |
 | `source` | a primary source read as evidence, one at a time: a document, letter, record, legal text, edition or recording | Bentley's *Monument of Matrones* (1582); the Poor Relief Act 1601; a letter of Erasmus |
 | `other` | anything else; a term often given this kind is a sign that the list needs a value | |
 
 A term the paper introduces as a finding (a theme, a typology, a newly named phenomenon) is a `concept`. The paper's own method or model is a `method`, defined in full as below. An instrument (a questionnaire, a scale, an interview guide, a coding frame) is defined as the `variable` it records, or as the `design` it is part of, and the document itself is an artefact (§3.6). (The kind `variable` was `measure` in v0.30 and v0.31.)
 
-**Things and their roles.** One term has one kind; its role is the setup's. A drug is a `substance`; giving it is an `intervention` ("aspirin, 100 mg daily"). A species is an `organism`; the animals sampled are a `population` ("adult flying insects in 63 German nature reserves"). A cell line is `biological_material`, also when its cells are the study's cases. A gene is an `entity`; knocking it down is an `intervention`. A `source` is one primary source; a collection searched as a whole (a corpus, an archive's catalogue) is `data`, and a work the paper cites is a reference (§3.13), not a definition. Terms of these five kinds give `identifiers` where a registry has them: ChEBI or InChIKey for substances (`chebi:16716`), NCBI Taxonomy for organisms (`ncbitaxon:7227`), RRID or Cellosaurus for biological materials (`cellosaurus:CVCL_0031`), HGNC or UniProt for genes and proteins (`hgnc:9802`), Wikidata for other entities and for sources (`wikidata:Q…`). (New in v0.39.)
+**Things and their roles.** One term has one kind; its role is the setup's. A drug is a `substance`; giving it is an `intervention` ("aspirin, 100 mg daily"). A species is an `organism`; the animals sampled are a `population` ("adult flying insects in 63 German nature reserves"). A cell line is `biological_material`, also when its cells are the study's cases. A gene is an `entity`; knocking it down is an `intervention`, which names the gene in `targets`. A reaction or a decay is a `process`; the substances or particles it involves are their own terms. A `source` is one primary source; a collection searched as a whole (a corpus, an archive's catalogue) is `data`, and a work the paper cites is a reference (§3.13), not a definition. Terms of these kinds give `identifiers` where a registry has them: ChEBI or InChIKey for substances (`chebi:16716`), NCBI Taxonomy for organisms (`ncbitaxon:7227`), RRID or Cellosaurus for biological materials (`cellosaurus:CVCL_0031`), HGNC or UniProt for genes and proteins (`hgnc:9802`), Wikidata for other entities and for sources (`wikidata:Q…`). (New in v0.39.)
 
 **Dimensions.** A term by which observations are distinguished (the method, the data set, the participant group, the temperature, the year, the language) is a **dimension** of the observations that name it (§3.4). A dimension whose values are terms of the paper (the methods compared) is a group whose `members` are those terms; a dimension whose values are literals (a temperature, a year) is a `variable` or `setting` whose definition gives its unit. A control or baseline compared with a group's members (a mock transfection beside four knockdowns, a benchmark beside the proposed methods) lies on the group's dimension without being a member, when it is of the group's kind: a table's row may be labelled with it, and a condition may name it.
 
@@ -802,7 +811,7 @@ A claim that tests a hypothesis carries it as `hypothesis`, with the test's outc
 "limitations": ["L3"]
 ```
 
-with `{"id": "B4", "target": "10.17605/OSF.IO/ABCDE", "id_type": "doi"}` in `references` and L3, of category `deviation`, saying how the analysis departed from the registration. A trial registry entry is a CURIE (`{"target": "clinicaltrials:NCT01234567", "id_type": "curie"}`); a registration with no persistent identifier is a `url` with its `archive_uri` (§3.13).
+with `{"id": "B4", "target": "10.17605/OSF.IO/ABCDE", "id_type": "doi"}` in `references` and L3, of category `deviation`, saying how the analysis departed from the registration. A trial registry entry is a CURIE whose prefix is the one the Bioregistry (bioregistry.io) gives that registry (`{"target": "clinicaltrials:NCT01234567", "id_type": "curie"}` for ClinicalTrials.gov); a registry the Bioregistry does not list is cited by the entry's `url`, with its `archive_uri`; a registration with no persistent identifier is a `url` with its `archive_uri` (§3.13).
 
 - `planned_at` is the registration's date as the registry records it, with `planned_at_anchor: registry`. When the date is not at hand (the paper does not give it and the registry cannot be read), `planned_at` is left out: the registry the test names holds it. Never estimate it (warning 36). A Stage 1 protocol accepted in principle is the registration of a registered report.
 - The rules are the registration's: expressions when it fixes thresholds (`alpha` 0.05, a Bayes factor of 10), otherwise text with `verdict: judged`. A hypothesis the registration did not name is `exploratory`, and so is every analysis it did not plan.
@@ -888,11 +897,13 @@ Common fields: `id`, `profile`, `description`, `artefacts` (list of artefact IDs
 - `conditions`: the observation's coordinates: an object whose keys are dimensions and whose values are where the observation lies on each, e.g. `{"D26": "D9", "D5": "D14", "horizon": 12}`. A key is the ID of a definition or text. A value is the ID of a definition, a number, text or a boolean. When a key is a group (§3.2, *Groups*), its value is one of the group's members; when it is a `variable` or `setting` with a unit, its value is a literal in that unit.
 - `read_from`: optional `{artefact, precision}`, when the value was read off a figure or a recording rather than taken from data or a table: `artefact` is the figure or recording, `precision` how exactly it could be read (a number in the observation's unit, or text). Values read off a figure are recorded only with it, so a reader knows they are approximate.
 - `artefact`: optional; the artefact holding the full data this observation summarises.
+- `statistic`: optional; what kind of statistic the value is: `count` · `proportion` · `mean` · `median` · `quantile` · `difference` (of two values, as in a contrast with a `comparator`) · `ratio` · `odds_ratio` · `risk_ratio` · `hazard_ratio` · `standardised_mean_difference` (Cohen's d, Hedges' g) · `correlation` · `coefficient` (of a model) · `r_squared` · `nnt` (number needed to treat) · `test_statistic` · `p_value` · `bayes_factor` · `posterior_probability`. The variable and conditions say the rest ("Cohen's d", "from a mixed model"). A table column object may carry `statistic` for its values.
+- `approximate`: optional, `true` when the source gives the value only approximately ("about 1.5-fold", "roughly doubled", "~22 min"): the number recorded is the one the source states. A table column object may carry `approximate: true` for its values.
 
 **Uncertainty** (`uncertainty`): the ± a paper reports with a number, as a list of components, each `{kind, value}` (symmetric) or `{kind, plus, minus}` (asymmetric: `plus` above the value, `minus` below it), in the observation's unit, with optional `label` and `level`. Kinds:
 
 - `sd`: the standard deviation of the observations the value summarises; their spread, not the precision of the value.
-- `se`: the standard error of the value, the precision of an estimate.
+- `se`: the standard error of the value, the precision of an estimate; for a Bayesian estimate, its posterior standard deviation.
 - `stat`: the statistical component of a measurement's uncertainty, reported beside a systematic one.
 - `sys`: a systematic component; `label` names its source (`"luminosity"`, `"theory"`). A measurement may have several, each with its own label.
 - `total`: the combined uncertainty.
@@ -1376,7 +1387,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 
 ### 10.9 Rules added in v0.14 (errors: file rejected)
 
-48. Tables appear in evidence of any profile except `formal`. Each has an `id` (`T1`, `T2`, …) unique within its evidence object, a `description`, `row_labels` (a list, possibly empty) and `columns` (a non-empty list of distinct entries, each a non-empty string or `{variable, conditions}`), and a non-empty list of `rows`; each row has an `id` (`r1`, `r2`, …) unique within the table, a `label` with one entry per row label, and `values` with one entry per column, each a value as in rule 66 or `null`, at least one value in the table not `null`. `units`, if present, has one entry per column; `artefact`, if present, resolves. (Revised in v0.32: values of any type; tables in any profile except formal.)
+48. Tables appear in evidence of any profile except `formal`. Each has an `id` (`T1`, `T2`, …) unique within its evidence object, a `description`, `row_labels` (a list, possibly empty) and `columns` (a non-empty list of distinct entries, each a non-empty string or `{variable, conditions}`, which may also carry `statistic` and `approximate` (§3.4, from v0.39)), and a non-empty list of `rows`; each row has an `id` (`r1`, `r2`, …) unique within the table, a `label` with one entry per row label, and `values` with one entry per column, each a value as in rule 66 or `null`, at least one value in the table not `null`. `units`, if present, has one entry per column; `artefact`, if present, resolves. (Revised in v0.32: values of any type; tables in any profile except formal.)
 
 ### 10.10 Rules added in v0.15 (errors: file rejected)
 
@@ -1475,6 +1486,10 @@ The file records identifier type and venue facts for cited works only. Trust in 
 85. `paper.collaborations`, if present, is a non-empty list; each entry has a non-empty `name` and optionally `identifiers`, a non-empty list of compact identifiers; no other fields.
 
 86. Types. Every field has the type this specification gives it: one ID or a piece of text is a string, a list is a list, an object an object. A value of another type is an error under the rule of its field and, where no rule names that field's type, under this rule. This rule states what every version assumed, and applies to files of every version (the errata of v0.38 say so).
+
+87. Statistics (§3.4). `statistic`, if present on a result or a table column object, is a value from the list in §3.4; `approximate`, if present, is `true`.
+
+88. Units and targets (§3.2). `unit`, if present, is on a definition of kind `variable` or `setting` and is non-empty text. `targets`, if present, is on a definition of kind `intervention` and is a non-empty list of IDs of definitions of kind `substance`, `organism`, `biological_material`, `entity` or `process`.
 
 ### 10.4 Warnings (file accepted, warning recorded)
 

@@ -75,6 +75,9 @@ ENUM = {
     "framework": {"frequentist", "equivalence", "bayesian", "deterministic", "formal", "qualitative"},
     "interval_kind": {"confidence", "credible", "prediction"},
     "uncertainty_kind": {"sd", "se", "stat", "sys", "total", "unspecified"},
+    "statistic": {"count", "proportion", "mean", "median", "quantile", "difference", "ratio", "odds_ratio",
+                  "risk_ratio", "hazard_ratio", "standardised_mean_difference", "correlation", "coefficient",
+                  "r_squared", "nnt", "test_statistic", "p_value", "bayes_factor", "posterior_probability"},
     "verdict": {"computed", "judged"},
     "test_flag": {"code_changed_after_plan", "holdout_used_elsewhere", "reproduces_prompting_result",
                   "sources_captured_after_plan"},
@@ -125,7 +128,7 @@ ENUM = {
     "reviewer_type": {"ai", "human"},
     "strength": {"high", "moderate", "low", "very_low"},
     "definition_kind": {"method", "intervention", "population", "data", "setting", "design", "variable", "concept",
-                        "theory", "substance", "organism", "biological_material", "entity", "source", "other"},
+                        "theory", "substance", "organism", "biological_material", "entity", "process", "source", "other"},
 }
 
 PREFIX = {"definitions": "D", "claims": "C", "evidence": "E", "warrants": "W",
@@ -1153,7 +1156,9 @@ DEF_ID_RE = re.compile(r"^D\d+$")
 # Kinds of the parts a setup should name (warning 28): a defined term of these kinds in a claim's `about` is a part
 # of the study the claim's evidence should list.
 SETUP_PART_KINDS = {"method", "intervention", "population", "data", "design", "variable", "substance", "organism",
-                    "biological_material", "entity", "source"}
+                    "biological_material", "entity", "process", "source"}
+#: Kinds of the things an intervention may target (spec §3.2, `targets`).
+TARGET_KINDS = {"substance", "organism", "biological_material", "entity", "process"}
 CURIE_RE = re.compile(r"^[a-z][a-z0-9._-]*:\S+$")
 ROW_REF_RE = re.compile(r"^(A\d+)#row=(\d+)(?:-(\d+))?$")
 EXCERPT_FIELDS = {"text", "locator", "language", "translation"}
@@ -1614,7 +1619,7 @@ def value_ok(v):
 
 
 #: What an observation measures besides its variable: the fields a lab record's result carries (lab record §5.10).
-OBSERVATION_MEASURES = ("value", "unit", "interval", "uncertainty", "conditions")
+OBSERVATION_MEASURES = ("value", "unit", "interval", "uncertainty", "statistic", "approximate", "conditions")
 #: Where a test quantity reads a result from (§3.3.3, `field`).
 QUANTITY_FIELDS = ("value", "value.limit", "value.min", "value.max", "interval.lower", "interval.upper") + tuple(
     f"uncertainty.{k}" for k in sorted(ENUM["uncertainty_kind"]))
@@ -1677,6 +1682,19 @@ def measure_problems(obj, number, parts=("interval", "uncertainty")):
     return out
 
 
+def statistic_problems(obj):
+    """Rule 87: what kind of statistic an observation (or a table column) is, and whether the source gives it only
+    approximately, as (field, message)."""
+    out = []
+    if "statistic" in obj and _h(obj["statistic"]) not in ENUM["statistic"]:
+        out.append(("statistic", f"one of {', '.join(sorted(ENUM['statistic']))}; the variable and conditions say "
+                                 f"more (\"Cohen's d\", \"MMRM\")"))
+    if "approximate" in obj and obj["approximate"] is not True:
+        out.append(("approximate", "true when the source gives the value only approximately ('about', 'roughly', "
+                                   "'~'); leave it out otherwise"))
+    return out
+
+
 def _coord_ok(k, v):
     return isinstance(k, str) and k.strip() and (isinstance(v, bool) or _is_number(v)
                                                  or (isinstance(v, str) and v.strip()))
@@ -1719,6 +1737,8 @@ def check_result(r, rw, rs, ref):
         r.err("66", f"{rw}.unit", "a UCUM code or text")
     if "n" in rs and not (isinstance(rs["n"], int) and not isinstance(rs["n"], bool) and rs["n"] >= 0):
         r.err("66", f"{rw}.n", "a non-negative integer")
+    for fld, msg in statistic_problems(rs):
+        r.err("87", f"{rw}.{fld}", msg)
     if "interval" in rs and not isinstance(rs["interval"], dict):
         r.err("66", f"{rw}.interval", "{level, lower, upper}")
     else:
@@ -1771,7 +1791,8 @@ def check_tables(r, w, e, ref):
         def col_ok(c):
             if isinstance(c, str):
                 return bool(c.strip())
-            return (isinstance(c, dict) and set(c) <= {"variable", "conditions"} and isinstance(c.get("variable"), str)
+            return (isinstance(c, dict) and set(c) <= {"variable", "conditions", "statistic", "approximate"}
+                    and isinstance(c.get("variable"), str)
                     and c["variable"].strip() != "" and isinstance(c.get("conditions", {}), dict)
                     and all(_coord_ok(k, v) for k, v in c.get("conditions", {}).items()))
         if not isinstance(cols, list) or not cols or not all(col_ok(x) for x in cols):
@@ -1780,6 +1801,8 @@ def check_tables(r, w, e, ref):
         elif len({json.dumps(x, sort_keys=True) for x in cols}) != len(cols):
             r.err("48", f"{tw}.columns", "columns must be distinct")
         for i, c in enumerate(cols or []):
+            for fld, msg in statistic_problems(as_dict(c)):
+                r.err("87", f"{tw}.columns[{i}].{fld}", msg)
             u = as_dict(as_dict(c).get("conditions")).get("uncertainty")
             if u is not None and u not in ENUM["uncertainty_kind"]:
                 r.err("82", f"{tw}.columns[{i}].conditions.uncertainty", f"the kind of uncertainty the column holds: "
@@ -2015,6 +2038,23 @@ def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
                             and ("label" not in pt or isinstance(pt["label"], str) and pt["label"].strip())):
                         r.err("83", f"{dw}.location[{i}]", "{latitude, longitude, label}: decimal degrees (WGS 84), "
                                                            "latitude -90 to 90, longitude -180 to 180, label text")
+        if "unit" in d:
+            if d.get("kind") not in ("variable", "setting"):
+                r.err("88", f"{dw}.unit", "only a variable or a setting has a unit: the unit of its values")
+            if not (isinstance(d["unit"], str) and d["unit"].strip()):
+                r.err("88", f"{dw}.unit", "a UCUM code or text: GeV, Cel, mg/L")
+        if "targets" in d:
+            tl = d["targets"]
+            if d.get("kind") != "intervention":
+                r.err("88", f"{dw}.targets", "only an intervention targets something")
+            if not isinstance(tl, list) or not tl:
+                r.err("88", f"{dw}.targets", "a non-empty list of IDs of what the intervention acts on")
+            else:
+                for x in tl:
+                    if not (isinstance(x, str) and x in defs and defs[x].get("kind") in TARGET_KINDS):
+                        r.err("88", f"{dw}.targets", f"{x} is not a definition of kind "
+                                                     f"{', '.join(sorted(TARGET_KINDS))}: an intervention targets a "
+                                                     f"thing or process the paper defines")
         if "measures" in d:
             ml = d["measures"]
             if d.get("kind") != "variable":

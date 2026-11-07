@@ -130,11 +130,12 @@ def _declarations(d):
 
 def _definition(d):
     tags = [("members", "members"), ("part_of", "part of"), ("broader", "a kind of"), ("assumptions", "assumes"),
-            ("identifiers", "identifiers"), ("measures", "measures")]
+            ("identifiers", "identifiers"), ("measures", "measures"), ("targets", "targets"), ("unit", "unit")]
     line = f"{d.get('id')} " + (f"[{d['kind']}] " if d.get("kind") else "") + f"{d.get('term')}: {d.get('definition')}"
     for key, label in tags:
         if d.get(key):
-            line += f" [{label} {', '.join(_s(x) for x in d[key])}]"
+            vals = d[key] if isinstance(d[key], list) else [d[key]]
+            line += f" [{label} {', '.join(_s(x) for x in vals)}]"
     if isinstance(d.get("location"), list):
         pts = [_join([f"{_num(x.get('latitude'))}, {_num(x.get('longitude'))}", x.get("label")], " ")
                for x in d["location"] if isinstance(x, dict)]
@@ -274,7 +275,9 @@ def _evidence(e):
             extra = _join([_uncertainty(r.get("uncertainty")), r.get("unit"), _interval(r.get("interval")),
                            f"n {_num(r['n'])}" if r.get("n") is not None else "", _conditions(r.get("conditions")),
                            f"read from {rf.get('artefact')}, precision {_s(rf.get('precision'))}" if rf else ""], " ")
-            lines.append(f"  {e.get('id')}.{r.get('id')} {_s(r.get('variable'))} = {_val(r.get('value'))}"
+            stat = f" ({r['statistic']})" if isinstance(r.get("statistic"), str) else ""
+            approx = "about " if r.get("approximate") is True else ""
+            lines.append(f"  {e.get('id')}.{r.get('id')} {_s(r.get('variable'))}{stat} = {approx}{_val(r.get('value'))}"
                          + (f" {extra}" if extra else "") + _ext(r))
     for t in e.get("tables") or []:
         if isinstance(t, dict):
