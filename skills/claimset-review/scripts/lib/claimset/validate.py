@@ -2605,8 +2605,13 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
     if c.get("planning") is not None:
         check_enum(r, "42", f"{w}.planning", c.get("planning"), "planning")
         if c.get("planning") in ("confirmatory", "confirmatory_with_deviations"):
-            if not c.get("planned_at"):
-                r.err("43", f"{w}.planned_at", "required for confirmatory claims")
+            registered = c.get("planned_at_anchor") == "registry" and as_dict(c.get("test")).get("registration")
+            if not c.get("planned_at") and not registered:
+                r.err("43", f"{w}.planned_at", "required for confirmatory claims, unless the test names its "
+                                               "registration and the anchor is registry: the registry holds the date")
+            elif not c.get("planned_at"):
+                r.warn("W36", f"{w}.planned_at", "the registration's date is not given: give it as the registry "
+                                                 "records it, so readers need not look it up")
             check_enum(r, "43", f"{w}.planned_at_anchor", c.get("planned_at_anchor"), "anchor", required=True)
             check_test(r, c.get("test"), f"{w}.test")
             check_plan(r, c, w, by_id)
