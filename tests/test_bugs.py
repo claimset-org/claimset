@@ -72,6 +72,14 @@ class TestPercentages(unittest.TestCase):
                 self.assertNotIn("W12", w, (v, value))
                 self.assertNotIn("W17", w, (v, value))
 
+    def test_scientific_notation_is_read(self):
+        for text in ("(6.5 ± 0.7) × 10^9", "6.5 × 10⁹ ± 0.7 × 10⁹", "6.5 x 10^9 and 0.7 x 10^9",
+                     "6.5 \\times 10^{9} \\pm 0.7 \\times 10^{9}"):
+            self.assertTrue(current.number_matches(6.5e9, text), text)
+            self.assertTrue(current.number_matches(0.7e9, text), text)
+        self.assertTrue(current.number_matches(1.2e-3, "1.2 × 10^−3"))
+        self.assertFalse(current.number_matches(3e10, "3 x 10 matrices"))
+
     def test_a_different_number_still_warns(self):
         self.assertFalse(current.number_matches(7.67, "by 76.7%"))
         self.assertFalse(current.number_matches(0.77, "by 76.7%"))

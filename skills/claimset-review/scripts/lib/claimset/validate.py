@@ -84,7 +84,8 @@ ENUM = {
     "assumption_category": {"theoretical", "statistical", "methodological", "data", "axiom",
                             "theorem_condition", "paradigmatic"},
     "check": {"tested", "sensitivity_analysed", "unchecked", "untestable"},
-    "profile": {"quant", "qual", "simulation", "formal"},
+    "profile": {"quant", "qual", "observation", "simulation", "formal"},
+    "record_kind": {"image", "spectrum", "structure", "specimen", "recording", "other"},
     "data_origin": {"primary", "secondary"},
     "design": {"experiment", "quasi_experiment", "observational", "survey", "benchmark", "other"},
     "data_sources": {"interview", "focus_group", "ethnography", "observation", "document", "other"},
@@ -119,7 +120,7 @@ ENUM = {
     "record_source": {"harness", "user_reported", "self_reported"},
     "agent_model_role": {"sole", "orchestrator", "subagent"},
     "weights": {"open", "api_only"},
-    "support_kind": {"empirical_quant", "empirical_qual", "simulation", "demonstration", "formal_proof",
+    "support_kind": {"empirical_quant", "empirical_qual", "empirical_obs", "simulation", "demonstration", "formal_proof",
                      "argument", "cited", "consensus", "expert_judgement", "assumption", "unstated"},
     "id_type": {"doi", "arxiv", "handle", "pmid", "isbn", "url", "curie", "physical", "reference", "claimset_local"},
     "rel_id_type": {"claimset", "doi", "arxiv", "handle", "pmid", "isbn", "url", "curie", "physical", "claimset_local",
@@ -679,7 +680,7 @@ def _validate(doc, published=False, local_root=None, revision=False, file_name=N
     for cid, c in claims.items():
         if c.get("role") != "secondary" or c.get("type") != "descriptive" or cid in named:
             continue
-        if any(as_dict(s).get("kind") in ("empirical_quant", "simulation") for s in as_list(c.get("support"))):
+        if any(as_dict(s).get("kind") in ("empirical_quant", "empirical_obs", "simulation") for s in as_list(c.get("support"))):
             r.warn("W25", f"claims:{cid}", "a secondary result on which no claim, warrant or open question rests, and that "
                                            "stands in no relation to another claim: keep it "
                                            "only if it states a loss, limit or null result of the paper's own method; "
@@ -839,6 +840,10 @@ def _validate(doc, published=False, local_root=None, revision=False, file_name=N
         if e.get("profile") in ("quant", "simulation"):
             if e.get("estimate") is None and not as_list(e.get("results")) and not as_list(e.get("tables")):
                 r.warn("W8", w, "no estimate and no results: add a structured results list for the numbers this evidence produced")
+        if e.get("profile") == "observation":
+            check_records(r, e, w, by_id)
+        elif "records" in e:
+            r.err("89", f"{w}.records", "only evidence of profile observation has records")
         if "estimate" in e or "uncertainty" in e or isinstance(e.get("interval"), dict):
             for fld, msg in measure_problems(e, e.get("estimate")):
                 r.err("82", f"{w}.{fld}", msg)
@@ -1385,11 +1390,27 @@ def model_key(m, fallback):
 NUM_RE = re.compile(r"(?<![\w.^_{])([-+]?\d+(?:\.(\d+))?)(?:[eE]([-+]?\d+))?(\s*%|\s+percentage points?|\s+per ?cent)?")
 
 
+_SUPERSCRIPT = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺", "0123456789-+")
+_TIMES_TEN = r"\s*(?:×|x|\*|·|⋅|\\times)\s*10\s*(?:\^|\*\*)\s*\{?\s*([-+−]?\d+)\s*\}?"
+
+
+def sci_text(text):
+    """The text with numbers in scientific notation written as the number reader reads them: 6.5 × 10^9, 6.5 x 10^9,
+    6.5×10⁹ and 6.5 \\times 10^{9} become 6.5e9, and (6.5 ± 0.7) × 10^9 becomes 6.5e9 ± 0.7e9."""
+    if not isinstance(text, str):
+        return ""
+    text = re.sub(r"10([⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺]+)", lambda m: "10^" + m.group(1).translate(_SUPERSCRIPT), text)
+    exp = lambda m, g: m.group(g).replace("−", "-")   # noqa: E731
+    text = re.sub(r"\(\s*([-+]?\d+(?:\.\d+)?)\s*±\s*(\d+(?:\.\d+)?)\s*\)" + _TIMES_TEN,
+                  lambda m: f"{m.group(1)}e{exp(m, 3)} ± {m.group(2)}e{exp(m, 3)}", text)
+    return re.sub(r"(?<![\w.])([-+]?\d+(?:\.\d+)?)" + _TIMES_TEN, lambda m: f"{m.group(1)}e{exp(m, 2)}", text)
+
+
 def number_matches(value, statement):
     """True if value appears in statement at the precision written there (W12 heuristic)."""
     if value == 0 and re.search(r"\b(no|zero|none)\b", statement, re.I):
         return True
-    for m in NUM_RE.finditer(statement):
+    for m in NUM_RE.finditer(sci_text(statement)):
         try:
             t = float(m.group(1))
         except ValueError:
@@ -1429,7 +1450,7 @@ def _numbers_in(x, out):
     if isinstance(x, (int, float)):
         out.append(float(x))
     elif isinstance(x, str):
-        for m in NUM_RE.finditer(NUMBER_SKIP.sub(" ", x)):
+        for m in NUM_RE.finditer(NUMBER_SKIP.sub(" ", sci_text(x))):
             try:
                 out.append(float(m.group(1)) * 10 ** (int(m.group(3)) if m.group(3) else 0))
             except ValueError:
@@ -1448,7 +1469,7 @@ def unsourced_numbers(c, support, by_id):
     cited evidence's results (values, intervals, conditions) and table cells and conditions, the test's
     parameters, the claim's scope, and the definitions the statement references. Evidence descriptions do not
     count: a number a statement reports should be a recorded result."""
-    if not {_h(s.get("kind")) for s in support} & {"empirical_quant", "simulation"}:
+    if not {_h(s.get("kind")) for s in support} & {"empirical_quant", "empirical_obs", "simulation"}:
         return []
     sources = []
     for s in support:
@@ -1470,7 +1491,7 @@ def unsourced_numbers(c, support, by_id):
         if d is not None:
             _numbers_in(d.get("definition"), sources)
     out = []
-    for m in NUM_RE.finditer(NUMBER_SKIP.sub(" ", stmt)):
+    for m in NUM_RE.finditer(NUMBER_SKIP.sub(" ", sci_text(stmt))):
         token = m.group(0)
         if not any(number_matches(v, token) for v in sources) and token.strip() not in out:
             out.append(token.strip())
@@ -1483,7 +1504,7 @@ def table_echo(c, support, by_id):
     Numbers are found as for W17; each distinct number in the statement that equals a cell counts once."""
     cells = []
     for s in support:
-        if s.get("kind") not in ("empirical_quant", "simulation"):
+        if s.get("kind") not in ("empirical_quant", "empirical_obs", "simulation"):
             continue
         e = by_id(s.get("evidence"), "evidence") if s.get("evidence") else None
         if e is None:
@@ -1498,7 +1519,7 @@ def table_echo(c, support, by_id):
     if not cells:
         return []
     out = []
-    for m in NUM_RE.finditer(NUMBER_SKIP.sub(" ", _text(c.get("statement")))):
+    for m in NUM_RE.finditer(NUMBER_SKIP.sub(" ", sci_text(_text(c.get("statement"))))):
         token = m.group(0).strip()
         if token not in out and not m.group(4) and any(number_matches(v, token) for v in cells):
             out.append(token)
@@ -1680,6 +1701,40 @@ def measure_problems(obj, number, parts=("interval", "uncertainty")):
         out.append(("interval" if iv is not None else "uncertainty", "an interval or uncertainty belongs to a "
                                                                       "numeric value"))
     return out
+
+
+RECORD_FIELDS = {"kind", "artefact", "description"}
+
+
+def check_records(r, e, w, by_id):
+    """Rule 89 and warnings 8 and 37: evidence of profile observation names what was recorded (an image, a spectrum,
+    a structure, a specimen, a recording), each in the artefact that holds it, and says what was seen as results."""
+    recs = e.get("records")
+    if not isinstance(recs, list) or not recs:
+        r.err("89", f"{w}.records", "observation evidence lists what was recorded: a non-empty list of "
+                                   "{kind, artefact, description}")
+        recs = []
+    for i, x in enumerate(recs):
+        rw = f"{w}.records[{i}]"
+        if not isinstance(x, dict):
+            r.err("89", rw, "{kind, artefact, description}")
+            continue
+        extra = sorted(set(x) - RECORD_FIELDS)
+        if extra:
+            r.err("89", rw, f"only kind, artefact and description; not {', '.join(extra)}")
+        check_enum(r, "89", f"{rw}.kind", x.get("kind"), "record_kind", required=True)
+        if "description" in x and not (isinstance(x["description"], str) and x["description"].strip()):
+            r.err("89", f"{rw}.description", "what the record shows, as text")
+        if "artefact" in x:
+            if not isinstance(x["artefact"], str) or by_id(x["artefact"], "artefacts") is None:
+                r.err("89", f"{rw}.artefact", f"the ID of the artefact holding the record (a figure, the original "
+                                              f"file), not {json.dumps(x['artefact'])}")
+        else:
+            r.warn("W37", rw, "name the artefact that holds the record: the figure that shows it and, better, the "
+                              "original file (an uncropped blot, the spectrum's raw data)")
+    if not as_list(e.get("results")) and not as_list(e.get("tables")):
+        r.warn("W8", w, "no results: record what the observation showed as results (a band present, a peak at "
+                        "7.26 ppm, a diameter of 42 µas)")
 
 
 def statistic_problems(obj):
@@ -2156,7 +2211,7 @@ def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
         if a.get("function") == "data_plot" and not a.get("shows") and not a.get("underlying_data"):
             r.warn("W30", f"artefacts:{a.get('id')}", "a data plot that names neither the observations it shows nor "
                                                       "its underlying data: record its values as observations")
-        if a.get("function") == "specimen" and a.get("id") not in read_from:
+        if a.get("function") == "specimen" and _h(a.get("id")) not in read_from:
             r.warn("W30", f"artefacts:{a.get('id')}", "a specimen from which no observation is read: record what "
                                                       "the paper reads from it, with read_from")
     if published:
@@ -2506,7 +2561,7 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
                     and k != "demonstration":
                 r.err("67", f"{sw}.artefacts", f"{aid} is a diagram: it illustrates and is never evidence; cite the "
                                                f"observations or the definition it shows")
-        profile_for = {"empirical_quant": "quant", "empirical_qual": "qual",
+        profile_for = {"empirical_quant": "quant", "empirical_qual": "qual", "empirical_obs": "observation",
                        "simulation": "simulation", "formal_proof": "formal"}
         if _h(k) in profile_for:
             e = ref("10", f"{sw}.evidence", s.get("evidence"), "evidence")

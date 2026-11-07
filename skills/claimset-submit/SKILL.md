@@ -143,6 +143,7 @@ Each claim needs at least one support entry. Use these exact pointer fields:
 ```json
 {"kind": "empirical_quant", "evidence": "E1", "artefacts": ["A2"]}
 {"kind": "empirical_qual", "evidence": "E2"}
+{"kind": "empirical_obs", "evidence": "E5", "results": ["E5.R1"]}
 {"kind": "simulation", "evidence": "E3", "artefacts": ["A4"], "results": ["E3.R1", "E3.R2"]}
 {"kind": "demonstration", "artefacts": ["A5"]}
 {"kind": "formal_proof", "evidence": "E4"}
@@ -180,6 +181,7 @@ A part's role is what it does in this study; its kind is what it is. A regressio
 Fill the profile fields:
 - `quant`: design, estimand, n, model (the statistical model); `estimate` and `interval` for a single result, otherwise `results`.
 - `qual`: data_sources, n_participants_or_cases, sampling, analytic_approach, reflexivity; excerpts are results (below).
+- `observation`: when the claim is what a record shows and the paper presents the record (a blot, a micrograph, a spectrum, a crystal structure, a described specimen, a telescope image, a trace): `records`, each `{kind, artefact, description}` with `kind` `image` · `spectrum` · `structure` · `specimen` · `recording` · `other` and `artefact` the figure (better, the original file); what was seen goes in `results` (a band present, a peak at 7.26 ppm). A statistical analysis across many records is `quant` evidence `derived_from` it (spec §3.4, *Choosing the profile*).
 - `simulation`: model, parameters (artefact), runs, seeds, `results`.
 - `formal`: foundation (e.g. `ZFC`), assumptions, steps (each `{id, statement, by, rule}`), proof_artefact, checker. No `theorem` field: the formal claim's statement is the theorem.
 
