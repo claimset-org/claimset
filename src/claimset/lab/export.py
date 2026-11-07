@@ -268,7 +268,7 @@ class _Exporter:
                 refs[res["id"]] = f"{eid}.{rid}"
                 entry = {"id": rid}
                 entry.update({("variable" if k == "quantity" else k): res["body"][k]
-                              for k in ("variable", "quantity", "value", "unit", "interval", "conditions")
+                              for k in ("variable", "quantity") + _claimset.OBSERVATION_MEASURES
                               if res["body"].get(k) is not None})
                 if isinstance(res["body"].get("ext"), dict):
                     entry["ext"] = dict(res["body"]["ext"])      # an observation's extension blocks (§9)

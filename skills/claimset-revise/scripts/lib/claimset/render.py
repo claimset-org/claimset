@@ -32,7 +32,22 @@ def _interval(iv):
         return ""
     level = iv.get("level")
     lvl = f"{_num(level * 100 if isinstance(level, (int, float)) and level <= 1 else level)}% " if level is not None else ""
-    return f"{lvl}interval {_num(iv.get('lower'))} to {_num(iv.get('upper'))}"
+    kind = f"{iv['kind']} " if isinstance(iv.get("kind"), str) else ""
+    return f"{lvl}{kind}interval {_num(iv.get('lower'))} to {_num(iv.get('upper'))}"
+
+
+def _uncertainty(unc):
+    """± 0.4 (stat) ± 0.4 (sys); +0.5/-0.3 (sys, luminosity); the level when not one standard deviation."""
+    parts = []
+    for u in unc if isinstance(unc, list) else []:
+        if not isinstance(u, dict):
+            continue
+        size = f"± {_num(u['value'])}" if "value" in u else f"+{_num(u.get('plus'))}/-{_num(u.get('minus'))}"
+        level = u.get("level")
+        note = _join([u.get("kind"), u.get("label"),
+                      f"{_num(level * 100)}%" if isinstance(level, (int, float)) else ""], ", ")
+        parts.append(f"{size} ({note})")
+    return " ".join(parts)
 
 
 def _conditions(c):
@@ -48,6 +63,13 @@ def _val(v):
         return "yes" if v else "no"
     if isinstance(v, (int, float)):
         return _num(v)
+    if isinstance(v, dict) and "bound" in v:
+        level = f", {_num(v['level'] * 100)}%" if isinstance(v.get("level"), (int, float)) else ""
+        sign = "<" if v.get("bound") == "upper" else ">"
+        return f"{sign} {_num(v.get('limit'))} ({v.get('bound')} limit{level})"
+    if isinstance(v, dict) and ("min" in v or "max" in v):
+        level = f", {_num(v['level'] * 100)}%" if isinstance(v.get("level"), (int, float)) else ""
+        return f"{_num(v.get('min'))} to {_num(v.get('max'))} (range{level})"
     if isinstance(v, dict) and "text" in v:
         out = f"\"{v.get('text')}\""
         if v.get("language"):
@@ -90,7 +112,9 @@ def _declarations(d):
     parts = []
     if "funding" in d:
         fund = [_join([f.get("funder"), f"({f['funder_id']})" if f.get("funder_id") else "",
-                       f"award {f['award']}" if f.get("award") else ""], " ")
+                       f"award {f['award']}" if f.get("award") else "",
+                       "in kind" if f.get("kind") == "in_kind" else "",
+                       f"(role: {f['role']})" if f.get("role") else ""], " ")
                 for f in d.get("funding") or [] if isinstance(f, dict)]
         parts.append("funding: " + ("; ".join(fund) if fund else "none"))
     if d.get("competing_interests"):
@@ -106,11 +130,15 @@ def _declarations(d):
 
 def _definition(d):
     tags = [("members", "members"), ("part_of", "part of"), ("broader", "a kind of"), ("assumptions", "assumes"),
-            ("identifiers", "identifiers")]
+            ("identifiers", "identifiers"), ("measures", "measures")]
     line = f"{d.get('id')} " + (f"[{d['kind']}] " if d.get("kind") else "") + f"{d.get('term')}: {d.get('definition')}"
     for key, label in tags:
         if d.get(key):
             line += f" [{label} {', '.join(_s(x) for x in d[key])}]"
+    if isinstance(d.get("location"), list):
+        pts = [_join([f"{_num(x.get('latitude'))}, {_num(x.get('longitude'))}", x.get("label")], " ")
+               for x in d["location"] if isinstance(x, dict)]
+        line += f" [location {'; '.join(pts)}]"
     if d.get("source"):
         line += f" [source {_s(d['source']) if not isinstance(d['source'], dict) else d['source'].get('target')}]"
     return [line + _ext(d)]
@@ -236,13 +264,14 @@ def _evidence(e):
         lines.append("  derived from " + ", ".join(derived))
     if e.get("estimate") is not None:
         lines.append(f"  estimate: {e.get('estimand', '')} = {_num(e['estimate'])}"
+                     + (f" {_uncertainty(e.get('uncertainty'))}" if e.get("uncertainty") else "")
                      + (f" ({_interval(e.get('interval'))})" if e.get("interval") else ""))
     if e.get("assumptions"):
         lines.append("  assumes " + ", ".join(e["assumptions"]))
     for r in e.get("results") or []:
         if isinstance(r, dict):
             rf = r.get("read_from") if isinstance(r.get("read_from"), dict) else {}
-            extra = _join([r.get("unit"), _interval(r.get("interval")),
+            extra = _join([_uncertainty(r.get("uncertainty")), r.get("unit"), _interval(r.get("interval")),
                            f"n {_num(r['n'])}" if r.get("n") is not None else "", _conditions(r.get("conditions")),
                            f"read from {rf.get('artefact')}, precision {_s(rf.get('precision'))}" if rf else ""], " ")
             lines.append(f"  {e.get('id')}.{r.get('id')} {_s(r.get('variable'))} = {_val(r.get('value'))}"
@@ -282,6 +311,10 @@ def render(doc):
     out.append(_join(meta))
     if p.get("declarations"):
         out.append("declarations " + _declarations(p["declarations"]))
+    if isinstance(p.get("collaborations"), list):
+        out.append("on behalf of " + "; ".join(
+            _join([x.get("name"), ", ".join(x.get("identifiers") or [])], " ") for x in p["collaborations"]
+            if isinstance(x, dict)))
     if isinstance(doc.get("extensions"), dict) and doc["extensions"]:
         out.append("extensions " + ", ".join(f"{k} {v}" for k, v in doc["extensions"].items()) + _ext(p))
     if isinstance(p.get("exploration"), dict):

@@ -10,6 +10,7 @@ The claimset specification is this record's vocabulary. Lists this specification
 - §5.10, §5.10.1, §5.7.1: a result names what it observes by `variable`, as a claimset observation does, and a decision rule's quantities bind results by `variable` (both were `quantity`). Results files may still say `quantity`.
 - §2.1, §5.22 (new), §6 rule L30: extensions. The record uses the extensions of the claimset format (claimset §2.7): an `extension` event declares one, and events then carry its blocks (`ext`) or are of its event types. Export carries the blocks into the claimset and declares the extensions there.
 - The codebook, codings and counts of coded material (v0.17 to v0.18: a term's `code`, the `coding` event, a run's `codings`, count quantities and their flags, rule L27) move to the qualitative extension (`spec/extensions/qualitative-v0.1.md`), which the tool declares the first time it is needed. Captured and private sources stay here.
+- Amended with claimset v0.39: a result may carry `uncertainty` (claimset §3.4), and a decision rule's quantity may read one of its components (`field: "uncertainty.se"`). The fields come from the claimset specification, so any record may use them.
 - Records begun before v0.20 are read as they were written: `quantity`, a term's `code`, codings, a run's `codings` and count quantities, with the qualitative extension declared from their start.
 
 ## Changes in v0.19 (since v0.18)
@@ -234,7 +235,7 @@ A lab record is distilled into a claimset, so it speaks the claimset's language.
 | a check's `outcome` and `extent` | checks (§5) |
 | an artefact's `kind` | artefacts (§3.6) |
 | the reason a body is withheld | availability reasons (§3.10) |
-| a result: `variable`, `value`, `unit`, `interval`, `conditions` | observations (§3.4) |
+| a result: `variable`, `value`, `unit`, `interval`, `uncertainty`, `conditions` | observations (§3.4) |
 | a hypothesis's `about`, a plan's `setup` | atoms (§3.3.5), setup roles (§3.4) |
 | a statement | statement rules (§8) |
 | a decision rule's `framework`, required `parameters`, `quantities`, rule expressions and outcomes | the test of a claim (§3.3.3) |
@@ -595,9 +596,9 @@ An agent never approves on its own judgement. It does not treat silence, a gener
 
 ### 5.10 `result` (prefix `RS`), written by the tool
 
-`{run, variable, value, unit, interval, conditions, source}`
+`{run, variable, value, unit, interval, uncertainty, conditions, source}`
 
-An observation (claimset §3.4: `variable`, `value`, `unit`, `interval`, `conditions`), plus `run` and `source`: the output file the value was read from, whose path is in the run's `outputs`. Records begun before v0.20 have `quantity` for `variable`; it is read as `variable`.
+An observation (claimset §3.4: `variable`, `value`, `unit`, `interval`, `uncertainty`, `conditions`), plus `run` and `source`: the output file the value was read from, whose path is in the run's `outputs`. Records begun before v0.20 have `quantity` for `variable`; it is read as `variable`.
 
 #### 5.10.1 Results file
 
@@ -610,7 +611,7 @@ A script reports results by writing a JSON array to the file named by `CLAIMSET_
   "interval": {"level": 0.95, "lower": 0.15, "upper": 0.21}}]
 ```
 
-Each entry needs `variable` (text; `quantity`, its older name, is read as `variable`) and `value` (a finite number: not NaN or infinite); `unit`, `interval` and `conditions` are optional. Values are written exactly as computed. An entry that is not valid produces no event and is reported by the tool.
+Each entry needs `variable` (text; `quantity`, its older name, is read as `variable`) and `value` (a finite number: not NaN or infinite); `unit`, `interval`, `uncertainty` and `conditions` are optional, in the forms of claimset §3.4; an entry whose `uncertainty` is not well formed (claimset rule 82) is not valid. Values are written exactly as computed. An entry that is not valid produces no event and is reported by the tool.
 
 ### 5.11 `decision` (prefix `DC`)
 

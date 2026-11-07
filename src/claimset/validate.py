@@ -24,9 +24,15 @@ import re
 import sys
 
 SCHEMA_VERSION = "0.39"
-#: The first specification version accepted (spec §2.6). Files of every version from it to SCHEMA_VERSION are
-#: valid for good; each is checked by its own version's rules (a frozen validator in claimset.versions).
-BASELINE_VERSION = "0.37"
+#: The first specification version accepted (spec §2.6), set when the platform launches. Files of every version from
+#: it to SCHEMA_VERSION are then valid for good, each checked by its own version's rules (a frozen validator in
+#: claimset.versions). None until then: only SCHEMA_VERSION is accepted, and earlier files are migrated.
+BASELINE_VERSION = None
+
+
+def baseline_version():
+    """The first version accepted: BASELINE_VERSION once set, the current version until then."""
+    return BASELINE_VERSION or SCHEMA_VERSION
 SCHEMA_VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
 
@@ -51,9 +57,10 @@ ENUM = {
     "origin": {"native", "converted"},
     "autonomy": {"autonomous", "human_supervised", "human_assisted", "unknown"},
     "contribution_record": {"complete", "partial", "unknown"},
-    "claim_type": {"descriptive", "associational", "causal", "predictive", "interpretive", "formal", "methodological"},
+    "claim_type": {"descriptive", "associational", "causal", "mechanistic", "predictive", "interpretive", "formal",
+                   "methodological"},
     "role": {"principal", "supporting", "secondary"},
-    "novelty": {"no_prior_found", "replication", "extension", "refutation"},
+    "novelty": {"no_prior_found", "replication", "extension", "refutation", "not_applicable"},
     "provenance": {"author_stated", "extracted", "inferred"},
     "verification": {"machine_checked", "agent_checked", "peer_checked", "disputed", "unchecked"},
     "check_outcome": {"confirmed", "disputed", "inconclusive"},
@@ -66,6 +73,8 @@ ENUM = {
     "planning": {"confirmatory", "confirmatory_with_deviations", "exploratory"},
     "anchor": {"platform", "rfc3161", "registry", "git_remote", "none"},
     "framework": {"frequentist", "equivalence", "bayesian", "deterministic", "formal", "qualitative"},
+    "interval_kind": {"confidence", "credible", "prediction"},
+    "uncertainty_kind": {"sd", "se", "stat", "sys", "total", "unspecified"},
     "verdict": {"computed", "judged"},
     "test_flag": {"code_changed_after_plan", "holdout_used_elsewhere", "reproduces_prompting_result",
                   "sources_captured_after_plan"},
@@ -77,7 +86,7 @@ ENUM = {
     "design": {"experiment", "quasi_experiment", "observational", "survey", "benchmark", "other"},
     "data_sources": {"interview", "focus_group", "ethnography", "observation", "document", "other"},
     "analytic_approach": {"thematic", "grounded_theory", "ipa", "discourse", "framework", "case_study",
-                          "content_analysis", "other"},
+                          "content_analysis", "source_criticism", "other"},
     "design_model_role": {"subject", "instrument", "annotator", "generator", "baseline"},
     "reasoning": {"deductive", "inductive", "abductive", "analogical", "interpretive"},
     "artefact_kind": {"code", "data", "protocol", "proof", "model", "software", "figure", "table",
@@ -87,7 +96,7 @@ ENUM = {
     "derived_how": {"reanalysis", "subset", "pooled", "extension"},
     "ethics_decision": {"approved", "exempt", "not_required"},
     "relation": {"supports", "contradicts", "extends", "refines", "replicates", "fails_to_replicate", "supersedes",
-                 "addresses", "explains", "qualifies"},
+                 "addresses", "explains", "qualifies", "disputes_evidence"},
     "limitation_category": {"sampling", "sample_size", "measurement", "confounding", "data_quality",
                             "model_specification", "analytic_flexibility", "researcher_position",
                             "computational", "deviation", "other"},
@@ -96,6 +105,7 @@ ENUM = {
     "level": {"public", "platform", "audit", "author_only", "unavailable", "not_stated"},
     "reason": {"personal_data", "commercial", "legal", "ethics", "security", "other"},
     "contributor_type": {"agent", "human", "organisation"},
+    "funding_kind": {"grant", "in_kind"},
     "position": {"author", "supervisor", "guarantor", "conversion_guarantor", "contributor", "converter"},
     "credit": {"conceptualization", "data_curation", "formal_analysis", "funding_acquisition", "investigation",
                "methodology", "project_administration", "resources", "software", "supervision", "validation",
@@ -115,7 +125,7 @@ ENUM = {
     "reviewer_type": {"ai", "human"},
     "strength": {"high", "moderate", "low", "very_low"},
     "definition_kind": {"method", "intervention", "population", "data", "setting", "design", "variable", "concept",
-                        "theory", "other"},
+                        "theory", "substance", "organism", "biological_material", "entity", "source", "other"},
 }
 
 PREFIX = {"definitions": "D", "claims": "C", "evidence": "E", "warrants": "W",
@@ -168,12 +178,23 @@ def as_dict(x):
     return x if isinstance(x, dict) else {}
 
 
+def _h(x):
+    """x when it can be looked up in a set or dict; otherwise a string that matches no ID or value, so that the
+    rule checking the field reports it instead of the validator failing on it."""
+    return x if isinstance(x, (str, int, float, bool, type(None))) else "<" + json.dumps(x, sort_keys=True) + ">"
+
+
+def _text(x):
+    """x when it is text; otherwise "" (the rule checking the field reports the wrong type)."""
+    return x if isinstance(x, str) else ""
+
+
 def check_enum(r, rule, where, value, enum_name, required=False):
     if value is None:
         if required:
             r.err(rule, where, "missing required value")
         return
-    if value not in ENUM[enum_name]:
+    if _h(value) not in ENUM[enum_name]:
         r.err(rule, where, f"'{value}' is not one of {sorted(ENUM[enum_name])}")
 
 
@@ -248,7 +269,7 @@ def check_local(r, doc, published, local_root):
             r.err("57", where, f"{m.group(1)}/{m.group(2)}.claimset.json is not a readable claimset in "
                                f"{local_root}")
             continue
-        if m.group(3) and m.group(3) not in {as_dict(c).get("id") for c in as_list(as_dict(other).get("claims"))}:
+        if m.group(3) and m.group(3) not in {_h(as_dict(c).get("id")) for c in as_list(as_dict(other).get("claims"))}:
             r.err("57", where, f"{m.group(1)}/{m.group(2)}.claimset.json has no claim {m.group(3)}")
 
 
@@ -373,6 +394,24 @@ def process_warnings(r, doc, claims, coll, by_id, converted):
 
 
 def validate(doc, published=False, local_root=None, revision=False, file_name=None):
+    """Check a claimset (see _validate). A value of a type the specification does not allow (a list where one ID
+    belongs, an object where text does) is reported, under the rule of its field where a rule checks the type and
+    otherwise under rule 86; it never stops the validator."""
+    try:
+        return _validate(doc, published=published, local_root=local_root, revision=revision, file_name=file_name)
+    except (TypeError, AttributeError, KeyError, ValueError) as exc:
+        import traceback
+        frame = traceback.extract_tb(exc.__traceback__)[-1]
+        r = Report()
+        r.err("86", "$", f"a field has a value of a type the specification does not allow, and the check stopped "
+                         f"before it finished ({type(exc).__name__}: {exc}; at {frame.name}, line {frame.lineno} of "
+                         f"{frame.filename.rsplit('/', 1)[-1]}). Look for a list, object or number where the "
+                         f"specification gives one ID or text, fix it and validate again; please report the file "
+                         f"so the validator can name the field")
+        return r
+
+
+def _validate(doc, published=False, local_root=None, revision=False, file_name=None):
     """Check a claimset. `local_root`: the repository's claimset/ folder, when the file lies in one, so that
     local references to other papers can be resolved (rule 57); `file_name`: the file's name there (warning 31). `revision`: the file is a revision submission,
     which names the claimset it revises in paper.id (rule 25; revision spec §5.1)."""
@@ -391,7 +430,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
                   f"({SCHEMA_VERSION}), which does not know its rules. The file may be valid: check it with a "
                   f"current validator (update the claimset package)")
             return r
-        if gv is not None and gv >= schema_version_tuple(BASELINE_VERSION):
+        if gv is not None and gv >= schema_version_tuple(baseline_version()):
             try:
                 from .versions import frozen_validator
             except ImportError:                     # run as a script beside its versions folder (the submit skill)
@@ -400,8 +439,9 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
             if frozen is not None:
                 return frozen.validate(doc, published=published, local_root=local_root, revision=revision,
                                        file_name=file_name)
-        r.err("79", "schema_version", f"must be a specification version from {BASELINE_VERSION} to "
-              f"{SCHEMA_VERSION}" + (
+        r.err("79", "schema_version", (f"must be a specification version from {baseline_version()} to "
+                                       f"{SCHEMA_VERSION}" if baseline_version() != SCHEMA_VERSION else
+                                       f"must be {SCHEMA_VERSION}, the current specification version") + (
                   f"; the file follows specification {got}, an earlier version with different rules. Bring it "
                   f"to the current one (`claimset migrate`), read the current specification (`claimset spec`) "
                   f"and update the skills (`claimset skill install`)" if isinstance(got, str) and got else ""))
@@ -429,16 +469,19 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
             ids[oid] = (k, obj)
 
     def by_id(oid, kind):
-        hit = ids.get(oid)
+        hit = ids.get(oid) if isinstance(oid, str) else None   # a list or object where an ID belongs is no ID
         return hit[1] if hit and hit[0] == kind else None
 
     def ref(rule, where, oid, kind):
+        if not isinstance(oid, str):
+            r.err(rule, where, f"one ID of an object in {kind}, as a string; not {json.dumps(oid)}")
+            return None
         if by_id(oid, kind) is None:
             r.err(rule, where, f"reference '{oid}' does not resolve to an object in {kind}")
             return None
         return by_id(oid, kind)
 
-    claims = {c["id"]: c for c in coll["claims"] if isinstance(c, dict) and "id" in c}
+    claims = {_h(c["id"]): c for c in coll["claims"] if isinstance(c, dict) and "id" in c}
     origin = paper.get("origin")
     converted = origin == "converted"
 
@@ -535,7 +578,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
                     r.err("49", f"{w}.field", f"'{fld}' does not begin with the ID of an object in the file")
 
     # ---------- References (rule 51) ----------
-    captured = {a.get("reference") for a in coll["artefacts"] if isinstance(a, dict)
+    captured = {_h(a.get("reference")) for a in coll["artefacts"] if isinstance(a, dict)
                 and isinstance(a.get("version"), str) and a["version"].startswith("sha256:")}
     for b in coll["references"]:
         if not isinstance(b, dict):
@@ -543,7 +586,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
         bw = f"references:{b.get('id')}"
         if not isinstance(b.get("target"), str) or not b["target"].strip():
             r.err("51", bw, "missing target")
-        if b.get("id_type") not in ENUM["id_type"] | ENUM["rel_id_type"]:
+        if _h(b.get("id_type")) not in ENUM["id_type"] | ENUM["rel_id_type"]:
             r.err("51", f"{bw}.id_type", f"'{b.get('id_type')}' is not an identifier type for cited works")
         if b.get("id_type") == "url" and not b.get("archive_uri"):
             if b.get("id") in captured:     # a captured copy, held with its hash (v0.37, amended)
@@ -557,19 +600,19 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
         pointed = set()
         for c in coll["claims"]:
             c = as_dict(c)
-            pointed |= {as_dict(s).get("reference") for s in as_list(c.get("support"))}
-            pointed |= {as_dict(x).get("reference") for x in as_list(c.get("relations"))}
+            pointed |= {_h(as_dict(s).get("reference")) for s in as_list(c.get("support"))}
+            pointed |= {_h(as_dict(x).get("reference")) for x in as_list(c.get("relations"))}
             if isinstance(as_dict(c.get("test")).get("registration"), str):
                 pointed.add(c["test"]["registration"])
-        pointed |= {as_dict(d).get("source") for d in coll["definitions"] if isinstance(as_dict(d).get("source"), str)}
-        pointed |= {as_dict(a).get("reference") for a in coll["artefacts"]}
+        pointed |= {_h(as_dict(d).get("source")) for d in coll["definitions"] if isinstance(as_dict(d).get("source"), str)}
+        pointed |= {_h(as_dict(a).get("reference")) for a in coll["artefacts"]}
         for b in coll["references"]:
-            if isinstance(b, dict) and b.get("id") and b["id"] not in pointed:
+            if isinstance(b, dict) and b.get("id") and _h(b["id"]) not in pointed:
                 r.err("51", f"references:{b['id']}", "listed but never cited: list only works that are cited")
 
     # ---------- Roles and what the contributions rest on (warnings 15 and 16) ----------
-    defs_by_id = {d.get("id"): d for d in coll["definitions"] if isinstance(d, dict)}
-    evidence_by_id = {e.get("id"): e for e in coll["evidence"] if isinstance(e, dict)}
+    defs_by_id = {_h(d.get("id")): d for d in coll["definitions"] if isinstance(d, dict)}
+    evidence_by_id = {_h(e.get("id")): e for e in coll["evidence"] if isinstance(e, dict)}
 
     def rests_on(c):
         """Claims this claim rests on: depends_on, assumptions, and the assumptions of the evidence it cites."""
@@ -595,9 +638,9 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
             continue
         support = [as_dict(s) for s in as_list(c.get("support"))]
         if not support or any(s.get("warrant") for s in support) or \
-                not {s.get("kind") for s in support} <= {"argument", "consensus", "expert_judgement", "unstated"}:
+                not {_h(s.get("kind")) for s in support} <= {"argument", "consensus", "expert_judgement", "unstated"}:
             continue
-        words = rhetoric_cues(c.get("statement"))
+        words = rhetoric_cues(_text(c.get("statement")))
         why = f"; it also uses {', '.join(words)}" if words else ""
         if converted:
             r.warn("W23", f"claims:{cid}", f"no evidence or citation supports it and no claim rests on it{why}: "
@@ -614,7 +657,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
     for dfn in coll["definitions"]:
         dfn = as_dict(dfn)
         did, text = dfn.get("id"), dfn.get("definition")
-        if did in marked_formal and not dfn.get("source") and isinstance(text, str) and "$" not in text \
+        if _h(did) in marked_formal and not dfn.get("source") and isinstance(text, str) and "$" not in text \
                 and "```" not in text:
             r.warn("W26", f"definitions:{did}", "a term of the paper's own that a formal claim names, with no "
                                               "mathematics: if it is the paper's method or model, give its "
@@ -793,6 +836,9 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
         if e.get("profile") in ("quant", "simulation"):
             if e.get("estimate") is None and not as_list(e.get("results")) and not as_list(e.get("tables")):
                 r.warn("W8", w, "no estimate and no results: add a structured results list for the numbers this evidence produced")
+        if "estimate" in e or "uncertainty" in e or isinstance(e.get("interval"), dict):
+            for fld, msg in measure_problems(e, e.get("estimate")):
+                r.err("82", f"{w}.{fld}", msg)
         if e.get("profile") != "formal":
             seen_r = set()
             for i, rs in enumerate(as_list(e.get("results"))):
@@ -853,6 +899,19 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
                 if c is not None and not is_assumption(c):
                     r.err("3", f"{w}.assumptions", f"{aid} is not an assumption claim")
 
+    # ---------- Kinds of interval and uncertainty in native papers (warning 35) ----------
+    if origin == "native":
+        for e in coll["evidence"]:
+            e = as_dict(e)
+            for x, where in [(e, f"evidence:{e.get('id')}")] + [
+                    (as_dict(rs), f"evidence:{e.get('id')}.{as_dict(rs).get('id')}") for rs in as_list(e.get("results"))]:
+                iv = x.get("interval")
+                if isinstance(iv, dict) and "kind" not in iv:
+                    r.warn("W35", f"{where}.interval", "say what kind of interval it is: confidence, credible or "
+                                                       "prediction")
+                if any(as_dict(u).get("kind") == "unspecified" for u in as_list(x.get("uncertainty"))):
+                    r.warn("W35", f"{where}.uncertainty", "say what the ± is: sd, se, stat, sys or total")
+
     # ---------- Warrants ----------
     for wa in coll["warrants"]:
         if not isinstance(wa, dict):
@@ -890,7 +949,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
     for p in coll["contributors"]:
         if isinstance(p, dict) and p.get("type") == "agent" and "author" in as_list(p.get("positions")):
             for m in as_list(p.get("models")):
-                author_models.add(model_key(by_id(as_dict(m).get("model"), "models"), as_dict(m).get("model")))
+                author_models.add(model_key(by_id(as_dict(m).get("model"), "models"), _h(as_dict(m).get("model"))))
     for cid, c in claims.items():
         validate_claim(r, c, cid, ids, by_id, ref, converted, author_models)
 
@@ -936,7 +995,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
             if la.get("kind") != "lab_record":
                 r.err("44", "paper.exploration.lab_record", "must point to an artefact of kind lab_record")
             lab["level"] = as_dict(la.get("availability")).get("level")
-            lab["withheld"] = {as_dict(x).get("event") for x in as_list(la.get("withheld_events"))}
+            lab["withheld"] = {_h(as_dict(x).get("event")) for x in as_list(la.get("withheld_events"))}
             for i, x in enumerate(as_list(la.get("withheld_events"))):
                 x = as_dict(x)
                 if not x.get("event"):
@@ -977,7 +1036,7 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
             if rn["failed"] > rn["total"]:
                 r.err("45", "paper.exploration.runs.failed", "cannot exceed total")
         for oc in ("supported", "not_supported", "inconclusive"):
-            n = len({as_dict(c["hypothesis"]).get("lab_event") for c in hyp_claims
+            n = len({_h(as_dict(c["hypothesis"]).get("lab_event")) for c in hyp_claims
                      if as_dict(c["hypothesis"]).get("outcome") == oc and not c.get("test")})
             if nonneg(hy.get(oc)) and n > hy[oc]:
                 r.err("46", "paper.exploration.hypotheses", f"{n} distinct hypotheses reported as {oc} outside "
@@ -1012,11 +1071,11 @@ def validate(doc, published=False, local_root=None, revision=False, file_name=No
         if as_dict(c.get("hypothesis")).get("lab_event") and not is_assumption(c):
             if lab["level"] not in (None, "public"):
                 exp_flags.add("lab_record_withheld")
-            linked = {as_dict(c["hypothesis"]).get("lab_event")}
+            linked = {_h(as_dict(c["hypothesis"]).get("lab_event"))}
             for s_ in as_list(c.get("support")):
                 ev = by_id(as_dict(s_).get("evidence"), "evidence") if as_dict(s_).get("evidence") else None
                 if ev is not None:
-                    linked |= set(as_list(ev.get("lab_runs")))
+                    linked |= {_h(x) for x in as_list(ev.get("lab_runs"))}
             if linked & lab["withheld"]:
                 exp_flags.add("lab_events_withheld")
             if c.get("planning") in ("confirmatory", "confirmatory_with_deviations") and c.get("planned_at_anchor") == "none":
@@ -1093,12 +1152,13 @@ ABOUT_SLOTS = ("subject", "relation", "object", "comparator", "conditions")
 DEF_ID_RE = re.compile(r"^D\d+$")
 # Kinds of the parts a setup should name (warning 28): a defined term of these kinds in a claim's `about` is a part
 # of the study the claim's evidence should list.
-SETUP_PART_KINDS = {"method", "intervention", "population", "data", "design", "variable"}
+SETUP_PART_KINDS = {"method", "intervention", "population", "data", "design", "variable", "substance", "organism",
+                    "biological_material", "entity", "source"}
 CURIE_RE = re.compile(r"^[a-z][a-z0-9._-]*:\S+$")
 ROW_REF_RE = re.compile(r"^(A\d+)#row=(\d+)(?:-(\d+))?$")
 EXCERPT_FIELDS = {"text", "locator", "language", "translation"}
 ENCODING_KEYS = {"x", "y", "colour", "shape", "size", "panel"}
-LOCAL_RELATION_TYPES = {"supports", "contradicts", "refines", "explains", "qualifies"}
+LOCAL_RELATION_TYPES = {"supports", "contradicts", "refines", "explains", "qualifies", "disputes_evidence"}
 #: Relation types for other works only (§3.7)
 EXTERNAL_ONLY_RELATIONS = {"replicates", "fails_to_replicate", "supersedes", "addresses"}
 
@@ -1113,7 +1173,7 @@ def check_frame(r, coll, claims, by_id):
         names = set()
         for ids_ in as_dict(e.get("setup")).values():
             names |= {d for d in as_list(ids_) if isinstance(d, str)}
-        in_setup[e.get("id")] = names
+        in_setup[_h(e.get("id"))] = names
         framed |= names
     terms = {}
     for d in coll["definitions"]:
@@ -1123,7 +1183,7 @@ def check_frame(r, coll, claims, by_id):
         if d.get("kind") == "measure":
             r.err("68", f"definitions:{d.get('id')}.kind", "renamed in v0.32: the kind measure is now variable "
                                                           "(`claimset migrate` renames it)")
-        elif "kind" in d and d["kind"] not in ENUM["definition_kind"]:
+        elif "kind" in d and _h(d["kind"]) not in ENUM["definition_kind"]:
             r.err("63", f"definitions:{d.get('id')}.kind",
                   f"'{d['kind']}' is not a kind: {', '.join(sorted(ENUM['definition_kind']))}")
 
@@ -1188,8 +1248,8 @@ def check_frame(r, coll, claims, by_id):
                     slots.append((f"conditions[{i}]", v))
                 else:
                     r.err("64", f"{w}.about.conditions[{i}]", "a definition ID or a short text")
-        marked = set(TERM_RE.findall(c.get("statement") or "")) if isinstance(c.get("statement"), str) else set()
-        cited = {as_dict(s).get("evidence") for s in as_list(c.get("support"))} - {None}
+        marked = set(TERM_RE.findall(_text(c.get("statement")))) if isinstance(c.get("statement"), str) else set()
+        cited = {_h(as_dict(s).get("evidence")) for s in as_list(c.get("support"))} - {None}
         # only evidence that can have a setup counts: formal evidence has none (rule 61)
         cited = {eid for eid in cited if as_dict(by_id(eid, "evidence")).get("profile") not in ("formal", None)}
 
@@ -1220,7 +1280,7 @@ def check_frame(r, coll, claims, by_id):
                 if v not in marked:
                     r.err("64", f"{w}.about.{path}", f"{v} is not marked in the statement: write [[{v}:{d.get('term')}]] "
                                                      f"where the statement names it")
-                if (cited and d.get("kind") in SETUP_PART_KINDS
+                if (cited and _h(d.get("kind")) in SETUP_PART_KINDS
                         and not any(named_in(v, eid) for eid in cited)):
                     r.warn("W28", f"{w}.about.{path}", f"{v} ({d.get('kind')}) is part of the study the claim rests on "
                                                        f"but no setup of its evidence ({', '.join(sorted(cited))}) "
@@ -1235,7 +1295,7 @@ def check_frame(r, coll, claims, by_id):
                                                       "(§3.2)")
 
     # Groups (rule 65): members are other definitions of the group's kind; no group contains itself
-    defs = {as_dict(d).get("id"): as_dict(d) for d in coll["definitions"]}
+    defs = {_h(as_dict(d).get("id")): as_dict(d) for d in coll["definitions"]}
     for d in defs.values():
         if "members" not in d:
             continue
@@ -1333,11 +1393,12 @@ def number_matches(value, statement):
         exp = int(m.group(3)) if m.group(3) else 0
         tv = t * (10 ** exp)
         tol = 0.5 * 10 ** (exp - dec)
-        if m.group(4):
-            tv, tol = tv / 100, tol / 100
+        # a percentage matches a value given as a fraction (0.767) or in percent (76.7, unit %)
+        readings = [(tv, tol), (tv / 100, tol / 100)] if m.group(4) else [(tv, tol)]
         for v in (value, abs(value)):
-            if abs(v - tv) <= tol * (1 + 1e-9) + 1e-15:
-                return True
+            for x, xt in readings:
+                if abs(v - x) <= xt * (1 + 1e-9) + 1e-15:
+                    return True
     return False
 
 
@@ -1382,7 +1443,7 @@ def unsourced_numbers(c, support, by_id):
     cited evidence's results (values, intervals, conditions) and table cells and conditions, the test's
     parameters, the claim's scope, and the definitions the statement references. Evidence descriptions do not
     count: a number a statement reports should be a recorded result."""
-    if not {s.get("kind") for s in support} & {"empirical_quant", "simulation"}:
+    if not {_h(s.get("kind")) for s in support} & {"empirical_quant", "simulation"}:
         return []
     sources = []
     for s in support:
@@ -1391,14 +1452,14 @@ def unsourced_numbers(c, support, by_id):
             continue
         for x in as_list(e.get("results")):
             x = as_dict(x)
-            _numbers_in([x.get("value"), x.get("interval"), x.get("conditions")], sources)
+            _numbers_in([x.get("value"), x.get("interval"), x.get("uncertainty"), x.get("conditions")], sources)
         for t in as_list(e.get("tables")):
             t = as_dict(t)
             _numbers_in([t.get("conditions"), [as_dict(row).get("values") for row in as_list(t.get("rows"))],
                          [as_dict(row).get("label") for row in as_list(t.get("rows"))]], sources)
-        _numbers_in([e.get("estimate"), e.get("interval"), e.get("n")], sources)
+        _numbers_in([e.get("estimate"), e.get("interval"), e.get("uncertainty"), e.get("n")], sources)
     _numbers_in([as_dict(c.get("test")).get("parameters"), c.get("scope")], sources)
-    stmt = c.get("statement") or ""
+    stmt = _text(c.get("statement"))
     for m in re.finditer(r"\[\[(D\d+):", stmt):
         d = by_id(m.group(1), "definitions")
         if d is not None:
@@ -1432,7 +1493,7 @@ def table_echo(c, support, by_id):
     if not cells:
         return []
     out = []
-    for m in NUM_RE.finditer(NUMBER_SKIP.sub(" ", c.get("statement") or "")):
+    for m in NUM_RE.finditer(NUMBER_SKIP.sub(" ", _text(c.get("statement")))):
         token = m.group(0).strip()
         if token not in out and not m.group(4) and any(number_matches(v, token) for v in cells):
             out.append(token)
@@ -1469,7 +1530,7 @@ def check_test(r, test, w):
         if not isinstance(test.get(outcome), str) or not test[outcome].strip():
             r.err("47", f"{w}.{outcome}", "the rule for this outcome is required")
     params = test.get("parameters") if isinstance(test.get("parameters"), dict) else {}
-    for key in TEST_PARAMETERS.get(fw, ()):
+    for key in TEST_PARAMETERS.get(_h(fw), ()):
         if params.get(key) in (None, ""):
             r.err("47", f"{w}.parameters.{key}", f"required by the {fw} framework")
     check_enum(r, "47", f"{w}.verdict", test.get("verdict"), "verdict", required=True)
@@ -1496,6 +1557,8 @@ def check_test(r, test, w):
                                                        "quantity binds its variable \"count: <name>\"")
         elif not isinstance(q.get("variable"), str) or not q["variable"].strip():
             r.err("47", f"{w}.quantities.{name}.variable", "the variable of the result the quantity binds")
+        elif q.get("field", "value") not in QUANTITY_FIELDS:
+            r.err("47", f"{w}.quantities.{name}.field", f"one of {', '.join(QUANTITY_FIELDS)}")
     if "addresses" in test:
         if not isinstance(test["addresses"], list) or not test["addresses"]:
             r.err("59", f"{w}.addresses", "a non-empty list of review comments' global IDs")
@@ -1509,19 +1572,109 @@ def _is_number(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
 
 
+def _level_ok(x):
+    return _is_number(x) and 0 < x < 1
+
+
+LIMIT_FIELDS = {"bound", "limit", "level"}
+RANGE_FIELDS = {"min", "max", "level"}
+
+
+def limit_ok(v):
+    """A limit {bound, limit, level} (§3.4): the value is known only to lie below (bound upper) or above (bound
+    lower) the number `limit`; `level` the confidence of a statistical limit."""
+    return (set(v) <= LIMIT_FIELDS and v.get("bound") in ("upper", "lower") and _is_number(v.get("limit"))
+            and ("level" not in v or _level_ok(v["level"])))
+
+
+def range_ok(v):
+    """A range {min, max, level} (§3.4): the value spans min to max."""
+    return (set(v) <= RANGE_FIELDS and _is_number(v.get("min")) and _is_number(v.get("max"))
+            and v["min"] <= v["max"] and ("level" not in v or _level_ok(v["level"])))
+
+
 def value_ok(v):
     """A value of an observation (rule 66): a number, a non-empty string (a category: a definition ID or a code),
-    a boolean, or an excerpt {text, locator, language, translation}."""
+    a boolean, an excerpt {text, locator, language, translation}, a limit {bound, limit, level} or a range
+    {min, max, level} (the last two from v0.39)."""
     if isinstance(v, bool) or _is_number(v):
         return True
     if isinstance(v, str):
         return bool(v.strip())
+    if isinstance(v, dict) and "bound" in v:
+        return limit_ok(v)
+    if isinstance(v, dict) and ("min" in v or "max" in v):
+        return range_ok(v)
     if isinstance(v, dict):
         loc = v.get("locator")
         return (set(v) <= EXCERPT_FIELDS and isinstance(v.get("text"), str) and v["text"].strip() != ""
                 and (isinstance(loc, str) and loc.strip() != "" or isinstance(loc, dict))
                 and all(isinstance(v[k], str) for k in v if k != "locator"))
     return False
+
+
+#: What an observation measures besides its variable: the fields a lab record's result carries (lab record §5.10).
+OBSERVATION_MEASURES = ("value", "unit", "interval", "uncertainty", "conditions")
+#: Where a test quantity reads a result from (§3.3.3, `field`).
+QUANTITY_FIELDS = ("value", "value.limit", "value.min", "value.max", "interval.lower", "interval.upper") + tuple(
+    f"uncertainty.{k}" for k in sorted(ENUM["uncertainty_kind"]))
+INTERVAL_FIELDS = {"level", "lower", "upper", "kind"}
+UNCERTAINTY_FIELDS = {"kind", "value", "plus", "minus", "level", "label"}
+
+
+def measure_problems(obj, number, parts=("interval", "uncertainty")):
+    """Rule 82: the interval and the uncertainty of an observation whose value is `number`, as (field, message)."""
+    out = []
+    iv = obj.get("interval") if "interval" in parts else None
+    if iv is not None:
+        if not isinstance(iv, dict):
+            out.append(("interval", "{level, lower, upper, kind}"))
+        else:
+            extra = sorted(set(iv) - INTERVAL_FIELDS)
+            if extra:
+                out.append(("interval", f"only level, lower, upper and kind; not {', '.join(extra)}"))
+            if not (_is_number(iv.get("lower")) and _is_number(iv.get("upper")) and iv["lower"] <= iv["upper"]):
+                out.append(("interval", "lower and upper are numbers, lower <= upper"))
+            if "level" in iv and not _level_ok(iv["level"]):
+                out.append(("interval.level", "the coverage as a fraction between 0 and 1: 0.95"))
+            if "kind" in iv and _h(iv["kind"]) not in ENUM["interval_kind"]:
+                out.append(("interval.kind", f"one of {', '.join(sorted(ENUM['interval_kind']))}"))
+    unc = obj.get("uncertainty") if "uncertainty" in parts else None
+    if unc is not None:
+        if not isinstance(unc, list) or not unc:
+            out.append(("uncertainty", "a non-empty list of components {kind, value} or {kind, plus, minus}"))
+            unc = []
+        seen = set()
+        for i, u in enumerate(unc):
+            uw = f"uncertainty[{i}]"
+            if not isinstance(u, dict):
+                out.append((uw, "{kind, value} or {kind, plus, minus}"))
+                continue
+            extra = sorted(set(u) - UNCERTAINTY_FIELDS)
+            if extra:
+                out.append((uw, f"only kind, value, plus, minus, level and label; not {', '.join(extra)}"))
+            if u.get("kind") not in ENUM["uncertainty_kind"]:
+                out.append((f"{uw}.kind", f"one of {', '.join(sorted(ENUM['uncertainty_kind']))}"))
+            sym = "value" in u
+            asym = "plus" in u or "minus" in u
+            nonneg = lambda x: _is_number(x) and x >= 0   # noqa: E731
+            if sym == asym or (sym and not nonneg(u["value"])) or \
+                    (asym and not (nonneg(u.get("plus")) and nonneg(u.get("minus")))):
+                out.append((uw, "either value (a symmetric uncertainty, ±) or plus and minus (an asymmetric one), "
+                                "each a non-negative number in the observation's unit"))
+            if "level" in u and not _level_ok(u["level"]):
+                out.append((f"{uw}.level", "the coverage as a fraction between 0 and 1, when not one standard "
+                                           "deviation"))
+            if "label" in u and not (isinstance(u["label"], str) and u["label"].strip()):
+                out.append((f"{uw}.label", "the source of this component, as text"))
+            key = (u.get("kind"), u.get("label"))
+            if key in seen:
+                out.append((uw, "two components of the same kind need different labels (their sources)"))
+            seen.add(key)
+    if (iv is not None or unc is not None) and not _is_number(number):
+        out.append(("interval" if iv is not None else "uncertainty", "an interval or uncertainty belongs to a "
+                                                                      "numeric value"))
+    return out
 
 
 def _coord_ok(k, v):
@@ -1558,7 +1711,8 @@ def check_result(r, rw, rs, ref):
         r.err("66", f"{rw}.value.gloss", "an excerpt's gloss is in the linguistics extension since v0.38: "
                                          "ext.linguistics.gloss on the result (`claimset migrate` moves it)")
     elif not value_ok(rs.get("value")):
-        r.err("66", f"{rw}.value", "a number, a category, a boolean, or an excerpt {text, locator}")
+        r.err("66", f"{rw}.value", "a number, a category, a boolean, an excerpt {text, locator}, a limit {bound: "
+                                   "upper or lower, limit, level} or a range {min, max, level} with min <= max")
     elif isinstance(rs.get("value"), dict) and isinstance(rs["value"].get("locator"), dict):
         check_locator(r, f"{rw}.value.locator", rs["value"]["locator"], ref)
     if "unit" in rs and rs["unit"] is not None and not (isinstance(rs["unit"], str) and rs["unit"].strip()):
@@ -1567,6 +1721,9 @@ def check_result(r, rw, rs, ref):
         r.err("66", f"{rw}.n", "a non-negative integer")
     if "interval" in rs and not isinstance(rs["interval"], dict):
         r.err("66", f"{rw}.interval", "{level, lower, upper}")
+    else:
+        for fld, msg in measure_problems(rs, rs.get("value")):
+            r.err("82", f"{rw}.{fld}", msg)
     conds = rs.get("conditions")
     if conds is not None and (not isinstance(conds, dict) or not all(_coord_ok(k, v) for k, v in conds.items())):
         r.err("66", f"{rw}.conditions", "an object of dimension: value, each a definition ID, text, number or boolean")
@@ -1622,6 +1779,11 @@ def check_tables(r, w, e, ref):
             cols = None
         elif len({json.dumps(x, sort_keys=True) for x in cols}) != len(cols):
             r.err("48", f"{tw}.columns", "columns must be distinct")
+        for i, c in enumerate(cols or []):
+            u = as_dict(as_dict(c).get("conditions")).get("uncertainty")
+            if u is not None and u not in ENUM["uncertainty_kind"]:
+                r.err("82", f"{tw}.columns[{i}].conditions.uncertainty", f"the kind of uncertainty the column holds: "
+                                                                          f"one of {', '.join(sorted(ENUM['uncertainty_kind']))}")
         if cols is not None and "units" in t:
             u = t["units"]
             if not isinstance(u, list) or len(u) != len(cols) or not all(x is None or isinstance(x, str) for x in u):
@@ -1657,8 +1819,8 @@ def check_tables(r, w, e, ref):
                     if value_ok(v):
                         any_value = True
                     else:
-                        r.err("48", f"{rw}.values", f"'{v}' is not a value (number, category, boolean or excerpt) "
-                                                    f"or null")
+                        r.err("48", f"{rw}.values", f"'{v}' is not a value (number, category, boolean, excerpt, "
+                                                    f"limit or range) or null")
         if rows and not any_value:
             r.err("48", tw, "the table has no value")
         if t.get("artefact"):
@@ -1712,7 +1874,7 @@ def inherited_assumptions(c, defs, evid):
     subjects = [subject.strip()] + members(subject.strip()) if isinstance(subject, str) else []
     start = []
     for s in as_list(c.get("support")):
-        e = evid.get(as_dict(s).get("evidence"))
+        e = evid.get(_h(as_dict(s).get("evidence")))
         for role, ids in as_dict(as_dict(e).get("setup")).items():
             ids = [i for i in as_list(ids) if isinstance(i, str)]
             if about is None or role != "studied":
@@ -1805,7 +1967,7 @@ def check_artefact_v032(r, w, a, ref, by_id, coll):
 def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
     """Rules 66 (terms of observations), 68, 69, 70 (published files), 71 (cycles), 72 (cycles), 73, 74;
     warnings 29 and 30 (spec v0.32)."""
-    defs = {as_dict(d).get("id"): as_dict(d) for d in coll["definitions"]}
+    defs = {_h(as_dict(d).get("id")): as_dict(d) for d in coll["definitions"]}
 
     def members_of(g, seen=()):
         out = set()
@@ -1838,6 +2000,32 @@ def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
             if not isinstance(idl, list) or not idl or not all(isinstance(x, str) and CURIE_RE.match(x) for x in idl):
                 r.err("68", f"{dw}.identifiers", "a non-empty list of compact identifiers prefix:local "
                                                  "(e.g. chebi:15377, ncbitaxon:9606, doi:10.…)")
+        if "location" in d:
+            loc = d["location"]
+            if d.get("kind") != "setting":
+                r.err("83", f"{dw}.location", "only a setting has a location")
+            if not isinstance(loc, list) or not loc:
+                r.err("83", f"{dw}.location", "a non-empty list of points {latitude, longitude, label}")
+            else:
+                for i, pt in enumerate(loc):
+                    pt = pt if isinstance(pt, dict) else {}
+                    lat, lon = pt.get("latitude"), pt.get("longitude")
+                    if not (set(pt) <= {"latitude", "longitude", "label"} and _is_number(lat) and -90 <= lat <= 90
+                            and _is_number(lon) and -180 <= lon <= 180
+                            and ("label" not in pt or isinstance(pt["label"], str) and pt["label"].strip())):
+                        r.err("83", f"{dw}.location[{i}]", "{latitude, longitude, label}: decimal degrees (WGS 84), "
+                                                           "latitude -90 to 90, longitude -180 to 180, label text")
+        if "measures" in d:
+            ml = d["measures"]
+            if d.get("kind") != "variable":
+                r.err("83", f"{dw}.measures", "only a variable measures a construct")
+            if not isinstance(ml, list) or not ml:
+                r.err("83", f"{dw}.measures", "a non-empty list of IDs of concepts")
+            else:
+                for x in ml:
+                    if not (isinstance(x, str) and x in defs and defs[x].get("kind") == "concept"):
+                        r.err("83", f"{dw}.measures", f"{x} is not a definition of kind concept: a variable measures "
+                                                      f"a construct the paper defines as a concept")
         if "assumptions" in d:
             al = d["assumptions"]
             if not isinstance(al, list) or not al:
@@ -1905,8 +2093,11 @@ def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
                     continue
                 if k in defs and members_of(k):
                     groups.append(k)
-                    if isinstance(v, str) and DEF_ID_RE.match(v) and v in defs and v not in members_of(k):
-                        r.err("66", f"{ow}.conditions", f"{v} is not a member of {k}, the dimension it lies on")
+                    if isinstance(v, str) and DEF_ID_RE.match(v) and v in defs and v not in members_of(k) and \
+                            defs[v].get("kind") != defs[k].get("kind"):
+                        r.err("66", f"{ow}.conditions", f"{v} is not a member of {k}, the dimension it lies on, nor "
+                                                        f"of its kind ({defs[k].get('kind')}), as a control or "
+                                                        f"baseline compared with its members is")
             comp = cond.get("comparator")
             if isinstance(comp, str) and DEF_ID_RE.match(comp) and comp in defs and groups \
                     and not any(comp in members_of(g) for g in groups):
@@ -1954,11 +2145,26 @@ def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
     for cid in claims:
         if cyc(explains, cid):
             r.err("71", f"claims:{cid}.relations", "explains forms a cycle among the paper's claims")
-    derived = {as_dict(e).get("id"): [as_dict(x).get("evidence") for x in as_list(as_dict(e).get("derived_from"))]
+    derived = {_h(as_dict(e).get("id")): [as_dict(x).get("evidence") for x in as_list(as_dict(e).get("derived_from"))]
                for e in coll["evidence"]}
     for eid in derived:
         if cyc(derived, eid):
             r.err("72", f"evidence:{eid}.derived_from", "derived_from forms a cycle")
+
+    # ----- collaborations (rule 85) -----
+    if "collaborations" in paper:
+        cl = paper["collaborations"]
+        if not isinstance(cl, list) or not cl:
+            r.err("85", "paper.collaborations", "a non-empty list of {name, identifiers}")
+        else:
+            for i, x in enumerate(cl):
+                x = x if isinstance(x, dict) else {}
+                ok = (set(x) <= {"name", "identifiers"} and isinstance(x.get("name"), str) and x["name"].strip()
+                      and ("identifiers" not in x or isinstance(x["identifiers"], list) and x["identifiers"]
+                           and all(isinstance(y, str) and CURIE_RE.match(y) for y in x["identifiers"])))
+                if not ok:
+                    r.err("85", f"paper.collaborations[{i}]", "{name, identifiers}: the collaboration's name and, "
+                                                             "optionally, compact identifiers (ror:…, wikidata:Q…)")
 
     # ----- declarations (rule 69, warning 29) -----
     decl = paper.get("declarations")
@@ -1977,6 +2183,15 @@ def check_v032(r, paper, coll, claims, by_id, ids, converted, published):
                     f = as_dict(f)
                     if not isinstance(f.get("funder"), str) or not f["funder"].strip():
                         r.err("69", f"paper.declarations.funding[{i}]", "missing funder")
+                    x = f
+                    extra = sorted(set(x) - {"funder", "funder_id", "award", "kind", "role"})
+                    if extra:
+                        r.err("69", f"paper.declarations.funding[{i}]", f"only funder, funder_id, award, kind and "
+                                                                       f"role; not {', '.join(extra)}")
+                    check_enum(r, "69", f"paper.declarations.funding[{i}].kind", x.get("kind"), "funding_kind")
+                    if "role" in x and not (isinstance(x["role"], str) and x["role"].strip()):
+                        r.err("69", f"paper.declarations.funding[{i}].role", "non-empty text: what the funder did, "
+                                                                            "or did not do, in the work")
             if "ethics" in decl:
                 if not isinstance(decl["ethics"], list):
                     r.err("69", "paper.declarations.ethics", "a list (empty when no ethics review was needed)")
@@ -2186,8 +2401,8 @@ def result_ref_resolves(ref_id, evidence_id, e, by_id=None):
         return False
     rm = ROW_REF_RE.match(ref_id)
     if rm:
-        held = set(as_list(e.get("artefacts"))) | {as_dict(x).get("artefact") for x in as_list(e.get("results"))} \
-            | {as_dict(t).get("artefact") for t in as_list(e.get("tables"))}
+        held = set(as_list(e.get("artefacts"))) | {_h(as_dict(x).get("artefact")) for x in as_list(e.get("results"))} \
+            | {_h(as_dict(t).get("artefact")) for t in as_list(e.get("tables"))}
         if rm.group(1) not in held:
             return False
         a = by_id(rm.group(1), "artefacts") if by_id else None
@@ -2198,11 +2413,11 @@ def result_ref_resolves(ref_id, evidence_id, e, by_id=None):
     if not m or m.group(1) != evidence_id:
         return False
     if m.group(2).startswith("R"):
-        return m.group(3) is None and m.group(2) in {as_dict(x).get("id") for x in as_list(e.get("results"))}
+        return m.group(3) is None and m.group(2) in {_h(as_dict(x).get("id")) for x in as_list(e.get("results"))}
     table = next((t for t in as_list(e.get("tables")) if isinstance(t, dict) and t.get("id") == m.group(2)), None)
     if table is None:
         return False
-    return m.group(3) is None or m.group(3) in {as_dict(x).get("id") for x in as_list(table.get("rows"))}
+    return m.group(3) is None or m.group(3) in {_h(as_dict(x).get("id")) for x in as_list(table.get("rows"))}
 
 
 def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozenset()):
@@ -2223,6 +2438,11 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
                                         "result stating the claim")
         else:
             check_enum(r, "1", f"{w}.novelty", c.get("novelty"), "novelty", required=True)
+            if c.get("novelty") == "not_applicable" and c.get("role") == "principal":
+                r.err("84", f"{w}.novelty", "a principal claim is a finding of the paper: say whether it is new "
+                                            "(no_prior_found, replication, extension or refutation); not_applicable is "
+                                            "for secondary and supporting claims that are not findings (a control, a "
+                                            "routine check)")
     if c.get("provenance") is not None:
         check_enum(r, "1", f"{w}.provenance", c.get("provenance"), "provenance")
     if c.get("verification") is not None:
@@ -2248,7 +2468,7 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
                                                f"observations or the definition it shows")
         profile_for = {"empirical_quant": "quant", "empirical_qual": "qual",
                        "simulation": "simulation", "formal_proof": "formal"}
-        if k in profile_for:
+        if _h(k) in profile_for:
             e = ref("10", f"{sw}.evidence", s.get("evidence"), "evidence")
             if e is not None and e.get("profile") != profile_for[k]:
                 r.err("10", f"{sw}.evidence", f"{k} must point to evidence with profile {profile_for[k]}")
@@ -2303,8 +2523,9 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
 
 
     if c.get("type") == "interpretive":
-        if not c.get("warrant"):
-            r.err("6", w, "interpretive claims require a warrant")
+        argued = any(as_dict(x).get("kind") == "argument" and as_dict(x).get("warrant") for x in support)
+        if not c.get("warrant") and not argued:
+            r.err("6", w, "interpretive claims require a warrant: on the claim, or on its argument support entry")
     if c.get("warrant"):
         ref("6", f"{w}.warrant", c.get("warrant"), "warrants")
 
@@ -2438,12 +2659,12 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
             r.err("36", f"{w}.verification", f"'{ver}' is inconsistent with the recorded checks (§5)")
 
     # numbers in the statement vs cited results (W12)
-    stmt = c.get("statement") or ""
+    stmt = _text(c.get("statement"))
     for s in support:
         e = by_id(s.get("evidence"), "evidence") if s.get("evidence") else None
         if e is None:
             continue
-        rmap = {as_dict(x).get("id"): as_dict(x) for x in as_list(e.get("results"))}
+        rmap = {_h(as_dict(x).get("id")): as_dict(x) for x in as_list(e.get("results"))}
         for ref_id in as_list(s.get("results")):
             rid = str(ref_id).split(".")[-1]
             val = rmap.get(rid, {}).get("value")
@@ -2465,7 +2686,7 @@ def validate_claim(r, c, cid, ids, by_id, ref, converted, author_models=frozense
         r.warn("W22", f"{w}.statement", f"cites results of {', '.join(with_results)}: if the statement reports a "
                                         f"result of each, it may hold more than one claim; split it if one part could "
                                         f"be true and another false")
-    kinds = {s.get("kind") for s in support}
+    kinds = {_h(s.get("kind")) for s in support}
     if c.get("novelty") == "no_prior_found" and kinds == {"consensus"}:
         r.warn("W19", w, "novelty no_prior_found, but the only support is established knowledge (consensus): if the claim is "
                          "itself known, cite it or relate to it; if it is new, give the support that shows it")
@@ -2535,7 +2756,7 @@ def compute_verifiability(c, by_id, read_from=frozenset()):
     seen = set()
     queue = list(artefact_ids)
     while queue:
-        aid = queue.pop()
+        aid = _h(queue.pop())
         if aid in seen:
             continue
         seen.add(aid)
@@ -2677,7 +2898,7 @@ def validate_contributors(r, contributors, paper, ref, converted):
                 r.err("17", f"paper.converted_from.{f}", "missing required field")
         if len(has("guarantor")) > 1:
             r.err("17", "contributors", "a converted paper has at most one guarantor, a source author who claimed it")
-        source_orcids = {as_dict(a).get("orcid") for a in as_list(cf.get("source_authors"))} - {None}
+        source_orcids = {_h(as_dict(a).get("orcid")) for a in as_list(cf.get("source_authors"))} - {None}
         for g in has("guarantor"):
             if g.get("orcid") not in source_orcids:
                 r.err("17", f"contributors:{g.get('id')}", "in converted papers a guarantor must be a source author (by ORCID)")

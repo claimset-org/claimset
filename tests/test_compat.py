@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from claimset.validate import BASELINE_VERSION, SCHEMA_VERSION, schema_version_tuple, validate  # noqa: E402
+from claimset.validate import SCHEMA_VERSION, baseline_version, schema_version_tuple, validate  # noqa: E402
 
 COMPAT = ROOT / "tests" / "compat"
 
@@ -28,7 +28,7 @@ def example(name="submission-native.json"):
 class TestCompatibilityFiles(unittest.TestCase):
     def test_every_version_from_the_baseline_stays_valid(self):
         folders = sorted(p for p in COMPAT.iterdir() if p.is_dir())
-        self.assertIn(BASELINE_VERSION, [p.name for p in folders])
+        self.assertIn(baseline_version(), [p.name for p in folders])
         for folder in folders:
             for f in sorted(folder.glob("*.json")):
                 doc = json.loads(f.read_text(encoding="utf-8"))
@@ -67,6 +67,30 @@ class TestRule79(unittest.TestCase):
         self.assertGreater(schema_version_tuple("1.0"), schema_version_tuple("0.99"))
 
 
+class TestBaselineNotSet(unittest.TestCase):
+    """Until the platform launches no baseline is set: only the current version is accepted, and nothing is frozen."""
+
+    def test_only_the_current_version_until_launch(self):
+        from claimset.validate import BASELINE_VERSION
+        from claimset.versions import FROZEN
+        if BASELINE_VERSION is not None:
+            self.skipTest("the baseline is set")
+        self.assertEqual(FROZEN, ())
+        doc = example()
+        major, minor = schema_version_tuple(SCHEMA_VERSION)
+        doc["schema_version"] = f"{major}.{minor - 1}"
+        report = validate(doc)
+        self.assertEqual(rules(report), {"79"})
+        self.assertIn(f"must be {SCHEMA_VERSION}", str(report.errors))
+        self.assertIn("claimset migrate", str(report.errors))
+
+    def test_the_freeze_tool_refuses(self):
+        out = subprocess.run([sys.executable, str(ROOT / "tools" / "freeze_validator.py")], capture_output=True,
+                             text=True)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("baseline is not set", out.stderr)
+
+
 class TestFreezing(unittest.TestCase):
     """A rehearsal of a version change on a copy of the package: freeze, raise the version, add a rule. Files of the
     old version keep being checked by the old rules; files of the new version get the new rule."""
@@ -76,6 +100,10 @@ class TestFreezing(unittest.TestCase):
             tmp = Path(tmp)
             shutil.copytree(ROOT / "src", tmp / "src", ignore=shutil.ignore_patterns("__pycache__", "data"))
             shutil.copytree(ROOT / "tools", tmp / "tools", ignore=shutil.ignore_patterns("__pycache__"))
+            v = tmp / "src" / "claimset" / "validate.py"         # the baseline is set: the current version is kept
+            v.write_text(v.read_text(encoding="utf-8").replace("BASELINE_VERSION = None",
+                                                               f'BASELINE_VERSION = "{SCHEMA_VERSION}"', 1),
+                         encoding="utf-8")
             out = subprocess.run([sys.executable, str(tmp / "tools" / "freeze_validator.py")], capture_output=True,
                                  text=True)
             self.assertEqual(out.returncode, 0, out.stderr)

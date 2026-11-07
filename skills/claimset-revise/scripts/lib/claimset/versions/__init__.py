@@ -2,14 +2,15 @@
 
 A file is checked by the rules of the version it declares in `schema_version`. The current version's rules are
 `claimset.validate`; when the specification moves on, `tools/freeze_validator.py` copies that module here as
-`v<major>_<minor>.py` (`v0_37.py`) and lists it in FROZEN. A frozen validator is never edited: it is the
-definition of its version's rules. Files of every version from the baseline (0.37) stay valid for good.
+`v<major>_<minor>.py` (`v0_39.py`) and lists it in FROZEN. A frozen validator's rules never change (its bugs are
+fixed): it is the definition of its version's rules. Files of every version from the baseline stay valid for good.
+Nothing is frozen until the baseline is set, when the platform launches (BASELINE_VERSION in claimset.validate).
 """
 
 import importlib
 
 #: Versions with a frozen validator here, earlier than the current one. Filled by tools/freeze_validator.py.
-FROZEN = ("0.37", "0.38",)
+FROZEN = ()
 
 
 def frozen_validator(version):
