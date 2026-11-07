@@ -97,6 +97,28 @@ class TestRules44And46(unittest.TestCase):
         self.assertIn("46", rules(validate(d)))
 
 
+class TestRule43(unittest.TestCase):
+    def test_a_registered_test_may_leave_out_its_date(self):
+        d, c = doc()
+        del c["planned_at"]
+        r = validate(d)
+        self.assertEqual(r.errors, [])
+        self.assertEqual(warnings(r), ["W36"])
+
+    def test_other_confirmatory_tests_need_the_date(self):
+        d, c = doc()
+        del c["planned_at"]
+        c["planned_at_anchor"] = "none"
+        self.assertEqual(rules(validate(d)), ["43"])
+        d, c = doc()
+        del c["planned_at"]
+        del c["test"]["registration"]
+        c["test"]["lab_plan"] = "PL1"
+        c["planned_at_anchor"] = "rfc3161"
+        del d["references"]
+        self.assertEqual(rules(validate(d)), ["43"])
+
+
 class TestRule81(unittest.TestCase):
     def test_a_confirmatory_test_names_its_plan(self):
         d, c = doc()

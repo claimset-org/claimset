@@ -10,7 +10,7 @@ Tests planned outside a Claimset lab record can be reported as planned. A study 
 
 - §3.3, §3.3.3: a claim's `hypothesis` may come from a registration or from the paper itself, not only from a lab record. `hypothesis.lab_event` is given for claims exported from a lab record, and only for them.
 - §3.3.3: a test's `registration` is the ID of the registration in `references` (§3.13), so it has an identifier type: the DOI of an OSF registration, a trial registry number as a CURIE, an archived URL. A confirmatory test names the plan it was planned under, `lab_plan` or `registration`. New rule 81.
-- §3.3.3: new `planned_at_anchor` value `registry`: `planned_at` is the date a public registry records for the registration.
+- §3.3.3: new `planned_at_anchor` value `registry`: `planned_at` is the date a public registry records for the registration, and may be left out when it is not at hand, since the registry holds it (rule 43 revised, warning 36).
 - §3.3.3, *Tests registered outside a lab record*: how a registered test is recorded, in native and converted papers. A rule the converter reconstructs is `inferred` in `field_provenance`.
 - §3.9: new limitation category `deviation`, a departure from the plan a test was planned under. New warning 34: a claim `confirmatory_with_deviations` without a limitation of that category.
 - Rules 42, 44 and 46 (revised): only claims exported from a lab record need `hypothesis.lab_event`, `paper.exploration` and its counts.
@@ -710,7 +710,7 @@ A definition explains in full only a term the paper introduces or uses in its ow
 | `checks` | list | Independent checks of this claim and their outcomes (§5): re-derivations of formal claims, reproductions of empirical ones |
 | `hypothesis` | object | `{lab_event, outcome}`: the hypothesis this claim tests, and its outcome `supported` · `not_supported` · `inconclusive`. `lab_event`, the hypothesis event of the lab record, only in claims exported from a lab record (§3.3.3) |
 | `planning` | enum | `confirmatory` · `confirmatory_with_deviations` · `exploratory` (§3.3.3) |
-| `planned_at` | datetime | When the plan that tested this claim was recorded (ISO 8601, UTC): the lab-record plan's time, or the registration's date |
+| `planned_at` | datetime | When the plan that tested this claim was recorded (ISO 8601, UTC): the lab-record plan's time, or the registration's date. May be left out for a registered test whose date is not at hand (rule 43) |
 | `planned_at_anchor` | enum | Strength of `planned_at`: `platform` · `rfc3161` · `registry` · `git_remote` · `none` |
 | `test` | object | The decision rule fixed before the test (§3.3.3); required for confirmatory claims |
 | `source_spans` | list | Locations in the source text; required for converted papers |
@@ -804,7 +804,7 @@ A claim that tests a hypothesis carries it as `hypothesis`, with the test's outc
 
 with `{"id": "B4", "target": "10.17605/OSF.IO/ABCDE", "id_type": "doi"}` in `references` and L3, of category `deviation`, saying how the analysis departed from the registration. A trial registry entry is a CURIE (`{"target": "clinicaltrials:NCT01234567", "id_type": "curie"}`); a registration with no persistent identifier is a `url` with its `archive_uri` (§3.13).
 
-- `planned_at` is the registration's date as the registry records it, with `planned_at_anchor: registry`. A Stage 1 protocol accepted in principle is the registration of a registered report.
+- `planned_at` is the registration's date as the registry records it, with `planned_at_anchor: registry`. When the date is not at hand (the paper does not give it and the registry cannot be read), `planned_at` is left out: the registry the test names holds it. Never estimate it (warning 36). A Stage 1 protocol accepted in principle is the registration of a registered report.
 - The rules are the registration's: expressions when it fixes thresholds (`alpha` 0.05, a Bayes factor of 10), otherwise text with `verdict: judged`. A hypothesis the registration did not name is `exploratory`, and so is every analysis it did not plan.
 - The platform cannot check that the registration says what the test records; the registration is public, and readers and reviewers can.
 - Converted papers: the rules are taken from the registration or from the paper's account of it. A rule the converter has to reconstruct (a threshold the paper applies but never states) is marked `inferred` in `field_provenance` (`{"test.supported": "inferred"}`); the outcome is the paper's.
@@ -1365,7 +1365,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 ### 10.7 Rules added in v0.11 (errors: file rejected)
 
 42. (Revised in v0.39.) `hypothesis` present ⇒ `hypothesis.outcome` and `planning` present. (Until v0.38: `hypothesis.lab_event` present as well.)
-43. `planning` is `confirmatory` or `confirmatory_with_deviations` ⇒ `planned_at` and `planned_at_anchor` present.
+43. (Revised in v0.39.) `planning` is `confirmatory` or `confirmatory_with_deviations` ⇒ `planned_at_anchor` present, and `planned_at` present unless `planned_at_anchor` is `registry` and `test.registration` names the registration (the registry holds the date).
 44. (Revised in v0.39.) Any claim has `hypothesis.lab_event` ⇒ `paper.exploration` present, and `exploration.lab_record` is an artefact of kind `lab_record`.
 45. (Revised in v0.12.) `exploration` counts are non-negative integers; `hypotheses.total` equals the sum of the other hypothesis counts (`open` included, 0 if absent); `tests.total`, if `tests` is present, equals the sum of its verdict counts; `runs.total` equals `confirmatory` + `exploratory`; `failed` ≤ `total`.
 46. (Revised in v0.12 and v0.39.) Among claims with `hypothesis.lab_event` (claims exported from a lab record), for each outcome (`supported`, `not_supported`, `inconclusive`): the number of claims with `test` reporting it does not exceed the corresponding `exploration.tests` count, and the number of distinct `hypothesis.lab_event` values among claims without `test` reporting it does not exceed the corresponding `exploration.hypotheses` count.
@@ -1513,6 +1513,7 @@ The file records identifier type and venue facts for cited works only. Trust in 
 33. An extension is declared in `extensions` and no object has a block of it (§2.7).
 34. A claim with `planning: confirmatory_with_deviations` lists no limitation of category `deviation`: record each departure from the plan (§3.3.3).
 35. In a native paper, an interval without `kind`, or an uncertainty component of kind `unspecified`: say what the interval or the ± is (§3.4).
+36. A registered test without `planned_at`: give the registration's date as the registry records it (§3.3.3).
 
 ## 11. Platform dependencies
 
